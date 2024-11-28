@@ -1,0 +1,18 @@
+name: gift-registry
+
+services:
+  
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:v0.14.2
+    pull_policy: missing
+    volumes:
+      - type: bind
+        source: ./open_observe_data
+        target: /data
+    ports: 
+      - 5880:5080
+    # You'll need to include the following environment variables to pre-populate OpenObserve with an initial user the first time the container is run: ZO_ROOT_USER_EMAIL and ZO_ROOT_USER_PASSWORD. 
+    # Once you start OpenObserve for the first time, create your own account and remove the environment variables
+    environment:
+      ZO_ROOT_USER_EMAIL: ${ZO_ROOT_USER_EMAIL} 
+      ZO_ROOT_USER_PASSWORD: ${ZO_ROOT_USER_PASSWORD}
