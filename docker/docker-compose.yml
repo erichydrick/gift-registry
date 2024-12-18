@@ -1,0 +1,31 @@
+name: gift-registry
+
+services: 
+  jaeger:
+    image: jaegertracing/jaeger:2.1.0
+    container_name: jaeger
+    expose: 
+      - "4317"
+      - "4318"
+      - "5778"
+      - "9411"
+    ports: 
+      - "166860:16686"
+    networks:
+      - gift-registry
+    healthceck:
+      test: ["CMD", "curl", "-f", "http://localhost:16686"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 1m # TODO: EXPERIMENT WITH MAKING THIS SHORTER
+      start_inteval: 5s
+    restart: unless-stopped
+    volumes: 
+      - "data:/data"
+
+    # TODO: DELETE THIS ONCE I CONFIRM JAEGER IS WORKING
+    hotrod:
+
+networks: 
+  gift-registry:
