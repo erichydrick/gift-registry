@@ -10,22 +10,35 @@ services:
       - "5778"
       - "9411"
     ports: 
-      - "166860:16686"
+      - "18868:16686"
     networks:
       - gift-registry
-    healthceck:
+    healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:16686"]
       interval: 1m
       timeout: 10s
       retries: 3
       start_period: 1m # TODO: EXPERIMENT WITH MAKING THIS SHORTER
-      start_inteval: 5s
+      start_interval: 5s
     restart: unless-stopped
     volumes: 
-      - "data:/data"
+      - "./data:/data"
 
-    # TODO: DELETE THIS ONCE I CONFIRM JAEGER IS WORKING
-    hotrod:
+  # TODO: ADD PROMETHEUS FOR METRICS
+
+  hotrod:
+    image: jaegertracing/example-hotrod:latest
+    container_name: hotrod
+    ports:
+      - "8080:8080"
+      - "8083:8083"
+    command: ["all"]
+    environment: 
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+    networks:
+      - gift-registry
+    depends_on:
+      - jaeger
 
 networks: 
   gift-registry:
