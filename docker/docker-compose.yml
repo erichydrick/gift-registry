@@ -7,12 +7,13 @@ services:
     expose: 
       - "4317"
       - "4318"
-      - "5778"
-      - "9411"
+      - "8888"
+      - "8889"
     ports: 
       - "18868:16686"
     networks:
-      - gift-registry
+      gift-registry:
+        aliases: [spm_metrics_store]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:16686"]
       interval: 1m
@@ -22,9 +23,18 @@ services:
       start_interval: 5s
     restart: unless-stopped
     volumes: 
-      - "./data:/data"
+      - "../config/jaeger/jaeger-config.yml:/etc/jaeger/config.yml" 
+    command: ["--config", "/etc/jaeger/config.yml"]
 
-  # TODO: ADD PROMETHEUS FOR METRICS
+  prometheus: 
+    image: prom/prometheus:v3.0.1
+    container_name: prometheus
+    ports: 
+      - "9090:9090"
+    volumes: 
+      - "../config/jaeger/prometheus-config.yml:/etc/prometheus/prometheus.yml" # TODO: GET CONFIGS FROM DEMO
+    networks: 
+      - gift-registry
 
   hotrod:
     image: jaegertracing/example-hotrod:latest
