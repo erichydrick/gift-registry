@@ -2,7 +2,9 @@ name: gift-registry
 
 services: 
   jaeger:
-    image: jaegertracing/jaeger:2.1.0
+    image: gift-registry-jaeger
+    build: jaeger
+    pull_policy: missing
     container_name: jaeger
     expose: 
       - "4317"
@@ -22,17 +24,18 @@ services:
       start_period: 1m # TODO: EXPERIMENT WITH MAKING THIS SHORTER
       start_interval: 5s
     restart: unless-stopped
-    volumes: 
-      - "../config/jaeger/jaeger-config.yml:/etc/jaeger/config.yml" 
     command: ["--config", "/etc/jaeger/config.yml"]
 
   prometheus: 
-    image: prom/prometheus:v3.0.1
+    image: gift-registry-prometheus
+    build: prometheus
+    pull_policy: missing
     container_name: prometheus
     ports: 
       - "9090:9090"
     volumes: 
-      - "../config/jaeger/prometheus-config.yml:/etc/prometheus/prometheus.yml" # TODO: GET CONFIGS FROM DEMO
+      - "./data/jaeger:/tmp/jaeger"
+      - "./data/jaeger_archive:/tmp/jaeger_archive"
     networks: 
       - gift-registry
 
