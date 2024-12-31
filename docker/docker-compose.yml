@@ -1,43 +1,6 @@
 name: gift-registry
 
-services: 
-  jaeger:
-    image: gift-registry-jaeger
-    build: jaeger
-    pull_policy: missing
-    container_name: jaeger
-    expose: 
-      - "4317"
-      - "4318"
-      - "8888"
-      - "8889"
-    ports: 
-      - "18868:16686"
-    networks:
-      gift-registry:
-        aliases: [spm_metrics_store]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:16686"]
-      interval: 1m
-      timeout: 10s
-      retries: 3
-      start_period: 1m # TODO: EXPERIMENT WITH MAKING THIS SHORTER
-      start_interval: 5s
-    restart: unless-stopped
-    command: ["--config", "/etc/jaeger/config.yml"]
-
-  prometheus: 
-    image: gift-registry-prometheus
-    build: prometheus
-    pull_policy: missing
-    container_name: prometheus
-    ports: 
-      - "9090:9090"
-    volumes: 
-      - "./data/jaeger:/tmp/jaeger"
-      - "./data/jaeger_archive:/tmp/jaeger_archive"
-    networks: 
-      - gift-registry
+services:
 
   hotrod:
     image: jaegertracing/example-hotrod:latest
@@ -52,6 +15,53 @@ services:
       - gift-registry
     depends_on:
       - jaeger
+
+  jaeger:
+    image: jaegertracing/jaeger:2.1.0
+    pull_policy: missing
+    container_name: jaeger
+    expose: 
+      - "4317"
+      - "4318"
+      - "8888"
+      - "8889"
+    ports: 
+      - "18868:16686"
+    volumes: 
+      - "./jaeger/config/config.yml:/etc/jaeger/config.yml"
+    networks:
+      gift-registry:
+        aliases: [spm_metrics_store]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:16686"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 1m # TODO: EXPERIMENT WITH MAKING THIS SHORTER
+      start_interval: 5s
+    command: ["--config", "/etc/jaeger/config.yml"]
+
+  microsim:
+    networks:
+      - gift-registry
+    image: yurishkuro/microsim:v0.4.1
+    container_name: microsim
+    command: "-d 24h -s 500ms"
+    environment:
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://jaeger:4318/v1/traces
+    depends_on:
+      - jaeger
+  
+  prometheus:
+    networks:
+      - gift-registry
+    image: prom/prometheus:v3.0.1
+    pull_policy: missing
+    container_name: prometheus
+    volumes:
+      - "./prometheus/config:/etc/prometheus/"
+    ports:
+      - "9009:9090"
 
 networks: 
   gift-registry:
