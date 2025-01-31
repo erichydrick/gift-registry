@@ -23,3 +23,7 @@ go.work.sum
 
 # env file
 .env
+
+# OpenObserve data
+**/open_observe_data/
+**/sample_data/
