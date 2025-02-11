@@ -1,7 +1,17 @@
-all: observability 
+all: build test
 
-observability:
-	echo "Building Jaeger image..."
-	cd docker/jaeger && docker build -t gift-registry-jaeger .
-	echo "Building Prometheus image..."
-	cd docker/prometheus && docker build -t gift-registry-prometheus .
+build: 
+	go build -o main cmd/api/main.go
+
+docker-build: build
+	docker build -t gift-registry -f docker/Dockerfile .
+
+docker-compose-down: 
+	docker compose -f docker/docker-compose.yml down
+
+docker-compose-up: #docker-build
+	docker compose -f docker/docker-compose.yml up -d
+	docker ps -a
+
+test: 
+	echo "RUN THE TESTS!"
