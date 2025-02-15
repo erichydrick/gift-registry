@@ -1,7 +1,7 @@
 all: build test
 
 build: 
-	echo "BUILD THE APPLICATION"
+	go build -o main cmd/api/main.go
 
 docker-build: build
 	docker build -t gift-registry -f docker/Dockerfile .
@@ -11,6 +11,7 @@ docker-compose-down:
 
 docker-compose-up: #docker-build
 	docker compose -f docker/docker-compose.yml up -d
+	docker ps -a
 
 test: 
 	echo "RUN THE TESTS!"

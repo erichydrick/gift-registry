@@ -17,7 +17,6 @@ services:
       ZO_ROOT_USER_EMAIL: ${ZO_ROOT_USER_EMAIL} 
       ZO_ROOT_USER_PASSWORD: ${ZO_ROOT_USER_PASSWORD}
 
-  # TODO: ADD A POSTGRES CONTAINER HERE
   postgres: 
     image: postgres:17.2
     pull_policy: missing
@@ -28,4 +27,14 @@ services:
     environment:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_USER: ${DB_USER}
-  # TODO: ADD A GOLANG APP CONTAINER HERE
+  app: 
+    image: gift-registry
+    pull_policy: missing
+    depends_on: 
+      - postgres
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASSWORD}
+      DB_PORT: ${DB_PORT}
+      DB_HOST: ${DB_HOST}
+      DB_NAME: ${DB_NAME}

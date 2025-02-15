@@ -15,5 +15,6 @@ COMMIT;
     TODO: DELETE THIS ONCE I ESTABLISH THE APP LAUNCHES, CAN CONNECT TO THE DB, 
         AND START BUILDING THE WEB INTERFACE 
 */
-INSERT INTO gift_registry.person (external_id, first_name, last_name, email_address) VALUES ('Eric', 'Hydrick', 'erichydrick@yopmail.com');
-INSERT INTO gift_registry.person (external_id, first_name, last_name, email_address) VALUES ('Other', 'Hydrick', 'otherhydrick@yopmail.com');
+INSERT INTO person (external_id, first_name, last_name, email_address) VALUES ('HYD-ERI', 'Eric', 'Hydrick', 'erichydrick@yopmail.com');
+INSERT INTO person (external_id, first_name, last_name, email_address) VALUES ('HYD-OTH', 'Other', 'Hydrick', 'otherhydrick@yopmail.com');
+COMMIT;
