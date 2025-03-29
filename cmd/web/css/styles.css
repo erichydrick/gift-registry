@@ -1,0 +1,75 @@
+:root {
+    --black-color: #111111;
+    --black-color-300: #585858;
+    --black-color-700: #0C0C0C;
+    --danger-color: #cc0000;
+    --danger-color-300: #e78293;
+    --danger-color-700: #d33c52;
+    --gray-color: #eeeeee;
+    --gray-color-300: #f3f3f3;
+    --gray-color-700: #e9e9e9;
+    --primary-color: #1634A1;
+    --primary-color-300: #5c71bd;
+    --primary-color-700: #10278f;
+    --secondary-color: #1B881C;
+    --secondary-color-300: #5fac60;
+    --secondary-color-700: #147514;
+    --warning-color: #e4a11b;
+    --warning-color-300: #e7ab43;
+    --warning-olor-700: #c68b16;
+    --white-color: #ffffff;
+}
+
+body {
+    background-color: var(--gray-color);
+    font-family: Arial;
+    font-size: 1.125rem;
+}
+
+label {
+    font-weight: 700;
+}
+
+.center-text {
+    text-align: center;
+}
+
+.centered {
+    margin-bottom: 2rem;
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 2rem;
+    max-width: 90%;
+    min-width: 10%;
+}
+
+.content {
+    background-color: var(--white-color);
+    padding: 1rem;
+}
+
+.healthy {
+    color: var(--secondary-color);
+}
+
+.li-plain {
+    list-style-type: none;
+}
+
+.padding-0 {
+    padding: 0;
+}
+
+.shadowed {
+    box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+    -webkit-box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+}
+
+.unhealthy {
+    color: var(--danger-color);
+    font-weight: 700;
+}
+
+#page-header {
+    margin-bottom: 2rem;
+}
