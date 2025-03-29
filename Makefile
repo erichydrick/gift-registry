@@ -1,17 +1,29 @@
 all: build test
 
-build: 
+build:
+	clear
 	go build -o main cmd/api/main.go
 
-docker-build: build
+docker-build: test
 	docker build -t gift-registry -f docker/Dockerfile .
 
-docker-compose-down: 
+docker-down:
+	clear
 	docker compose -f docker/docker-compose.yml down
 
-docker-compose-up: #docker-build
+docker-up: docker-build
 	docker compose -f docker/docker-compose.yml up -d
 	docker ps -a
 
-test: 
-	echo "RUN THE TESTS!"
+fmt:
+	clear
+	go fmt ./...
+
+init: 
+	go install honnef.co/go/tools/cmd/staticcheck@latest
+
+staticcheck: fmt
+	staticcheck ./...
+
+test: staticcheck 
+	go test ./...

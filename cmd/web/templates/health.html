@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>Gift registry health status</title>
+    <link rel="stylesheet" href="css/styles.css" />
+
+</head>
+
+<body>
+
+    <div class="center-text content shadowed" id="page-header">
+        <h1 class="centered">
+            Gift Registry Health Status:
+            <span class="{{if .Healthy}}healthy{{else}}unhealthy{{end}}">
+                {{if .Healthy}}Healthy{{else}}Unhealthy{{end}}
+            </span>
+
+        </h1>
+    </div>
+
+    <div class="centered content shadowed">
+        <h2 class="center-text">Database Health</h2>
+        <p>
+
+            <label>Status:</label> <span
+                class="{{if .DBHealth.Healthy}}healthy{{else}}unhealthy{{end}}">{{.DBHealth.Status}}</span>
+            <em>({{if .DBHealth.Healthy}}{{.DBHealth.Message}}{{else}}{{.DBHealth.Error}}{{end}})</em>
+
+        </p>
+
+        <label>Stats:</label>
+        <ul>
+            <li>
+                <label>Open connections:</label>
+                <span class="db-health-item">{{.DBHealth.OpenConnections}}</span>
+            </li>
+            <li>
+                <label>Idle connections:</label>
+                <span class="db-health-item">{{.DBHealth.IdleConnections}}</span>
+            </li>
+            <li>
+                <label>In-use connections:</label>
+                <span class="db-health-item">{{.DBHealth.ConnectionsInUse}}</span>
+            </li>
+            <li>
+                <label>Max closed idle connections:</label>
+                <span class="db-health-item">{{.DBHealth.MaxIdleConnClosed}}</span>
+            </li>
+            <li>
+                <label>Wait count:</label>
+                <span class="db-health-item">{{.DBHealth.WaitCount}}</span>
+            </li>
+            <li>
+                <label>Wait duration:</label>
+                <span class="db-health-item">{{.DBHealth.WaitDuration}}</span>
+            </li>
+        </ul>
+
+    </div>
+
+</body>
+
+</html>
