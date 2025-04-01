@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,14 @@ import (
 
 	"gift-registry/internal/database"
 	"gift-registry/internal/server"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 )
 
 /* Copied from the go-blueprint by Melkey for shutting down the server cleanly. */
@@ -44,6 +53,52 @@ func gracefulShutdown(apiServer *http.Server, done chan bool, logger *slog.Logge
 	done <- true
 }
 
+func initTracer(ctx context.Context, getenv func(string) string, logger *slog.Logger) (*sdktrace.TracerProvider, error) {
+
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
+
+	/* TODO: RENMAME ME */
+	otelOTLPHTTPEndpoint := getenv("OTEL_OTLP_HTTP_ENDPOINT")
+
+	if otelOTLPHTTPEndpoint == "" {
+
+		return nil, errors.New("no otel otlp http endpoint defined")
+
+	}
+
+	otlptracehttp.NewClient()
+	otlpHTTPExporter, err := otlptracehttp.New(
+		ctx,
+		otlptracehttp.WithInsecure(),
+		otlptracehttp.WithEndpoint(otelOTLPHTTPEndpoint),
+		otlptracehttp.WithURLPath("/api/default/v1/traces"),
+		otlptracehttp.WithHeaders(map[string]string{"Authorization": "TODOSETME"}),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	resource := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String("family-gift-registry"),
+		semconv.ServiceVersionKey.String("0.0.0"),
+		attribute.String("environment", getenv("environment")),
+	)
+
+	traceProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithResource(resource),
+		sdktrace.WithBatcher(otlpHTTPExporter),
+	)
+	otel.SetTracerProvider(traceProvider)
+
+	return traceProvider, nil
+
+}
+
 /* Launches and runs the application. Returns an error indicating a failure so the application can exit with a non-0 status */
 func Run(ctx context.Context, getenv func(string) string, logger *slog.Logger) error {
 
@@ -53,6 +108,18 @@ func Run(ctx context.Context, getenv func(string) string, logger *slog.Logger) e
 
 	/* Create a done channel to signal when the shutdown is complete */
 	done := make(chan bool, 1)
+
+	/* Set up telemetry exporting */
+	traceProvider, err := initTracer(ctx, getenv, logger)
+	if err != nil {
+		logger.Error("error setting up opentelemetry integrations", slog.String("errorMessage", err.Error()))
+		return err
+	}
+	defer func() {
+		if err := traceProvider.Shutdown(ctx); err != nil {
+			logger.Error("Error shutting down OTel trace provider", slog.String("errorMessage", err.Error()))
+		}
+	}()
 
 	/* Get a database connection to pass to our handlers */
 	db, err := database.Connection(getenv)

@@ -43,5 +43,6 @@ services:
       DB_PORT: ${DB_PORT}
       DB_HOST: ${DB_HOST}
       DB_NAME: ${DB_NAME}
+      OTEL_OTLP_HTTP_ENDPOINT: http://openobserve:5080
       PORT: ${PORT}
       TEMPLATES_DIR: "templates"
