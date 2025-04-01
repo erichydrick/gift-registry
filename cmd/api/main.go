@@ -60,7 +60,6 @@ func initTracer(ctx context.Context, getenv func(string) string, logger *slog.Lo
 		propagation.Baggage{},
 	))
 
-	/* TODO: RENMAME ME */
 	otelOTLPHTTPEndpoint := getenv("OTEL_OTLP_HTTP_ENDPOINT")
 
 	if otelOTLPHTTPEndpoint == "" {
@@ -75,7 +74,7 @@ func initTracer(ctx context.Context, getenv func(string) string, logger *slog.Lo
 		otlptracehttp.WithInsecure(),
 		otlptracehttp.WithEndpoint(otelOTLPHTTPEndpoint),
 		otlptracehttp.WithURLPath("/api/default/v1/traces"),
-		otlptracehttp.WithHeaders(map[string]string{"Authorization": "TODOSETME"}),
+		otlptracehttp.WithHeaders(map[string]string{"Authorization": getenv("OTEL_AUTHORIZATION")}),
 	)
 	if err != nil {
 		return nil, err
@@ -109,6 +108,7 @@ func Run(ctx context.Context, getenv func(string) string, logger *slog.Logger) e
 	/* Create a done channel to signal when the shutdown is complete */
 	done := make(chan bool, 1)
 
+	// TODO: FIGURE OUT WHAT TO DO WITH THIS TO EMIT TRACES FROM CALLING MY ENDPOINTS
 	/* Set up telemetry exporting */
 	traceProvider, err := initTracer(ctx, getenv, logger)
 	if err != nil {

@@ -119,6 +119,7 @@ func TestHealthCheck(t *testing.T) {
 	ctx := context.Background()
 
 	testData := []struct {
+		dbError               bool
 		dbHostAndPort         string
 		expectedHealthEntries int
 		expectedHttpStatus    int
@@ -126,8 +127,9 @@ func TestHealthCheck(t *testing.T) {
 		templatesDir          string
 		testName              string
 	}{
-		{dbHostAndPort: hostAndPort, expectedHealthEntries: 6, expectedHttpStatus: http.StatusOK, statusMismatchErrMsg: "Expected an HTTP 200 response", templatesDir: "../../cmd/web/templates", testName: "Successful health check"},
-		{dbHostAndPort: hostAndPort, expectedHealthEntries: 0, expectedHttpStatus: http.StatusInternalServerError, statusMismatchErrMsg: "Expected an HTTP 200 response", templatesDir: "templates", testName: "Invalid templates dir"},
+		{dbError: false, dbHostAndPort: hostAndPort, expectedHealthEntries: 6, expectedHttpStatus: http.StatusOK, statusMismatchErrMsg: "Expected an HTTP 200 response", templatesDir: "../../cmd/web/templates", testName: "Successful health check"},
+		{dbError: false, dbHostAndPort: hostAndPort, expectedHealthEntries: 0, expectedHttpStatus: http.StatusInternalServerError, statusMismatchErrMsg: "Expected an HTTP 500 response", templatesDir: "templates", testName: "Invalid templates dir"},
+		{dbError: true, dbHostAndPort: hostAndPort, expectedHealthEntries: 0, expectedHttpStatus: http.StatusInternalServerError, statusMismatchErrMsg: "Expected an HTTP 500 response", templatesDir: "../../cmd/web/templates", testName: "Database error"},
 	}
 
 	for _, data := range testData {
@@ -165,6 +167,13 @@ func TestHealthCheck(t *testing.T) {
 			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/health", nil)
 			if err != nil {
 				t.Fatal("error building health check request", err)
+			}
+
+			/* Fake a database error by just closing the databse (if applicable) */
+			if data.dbError {
+
+				db.Close()
+
 			}
 
 			res, err := http.DefaultClient.Do(req)

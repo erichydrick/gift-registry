@@ -38,9 +38,11 @@ func HealthCheckHandler(templatesDir string, db *sql.DB, logger *slog.Logger) ht
 
 		dbStatus, err := dbHealth(db)
 		if err != nil {
+
 			logger.Error("Error getting database health data", slog.String("errorMessage", err.Error()))
 			responseStatus = 500
-			/* TODO: Make an error page and render it */
+			dbStatus.Error = err.Error()
+
 		}
 
 		status := healthStatus{
@@ -56,8 +58,7 @@ func HealthCheckHandler(templatesDir string, db *sql.DB, logger *slog.Logger) ht
 				logger.Error("Fatal error doing an application health check.", slog.Any("errorMessage", fail))
 				responseStatus = 500
 				res.WriteHeader(responseStatus)
-				/* TODO: MAKE THIS A ERROR HTML SNIPPET */
-				res.Write([]byte{})
+				dbStatus.Error = err.Error()
 			}
 		}()
 		tmpl := template.Must(template.ParseFiles(templatesDir + "/health.html"))

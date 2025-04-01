@@ -30,6 +30,7 @@
 
         </p>
 
+        {{if .DBHealth.Healthy}}
         <label>Stats:</label>
         <ul>
             <li>
@@ -57,6 +58,7 @@
                 <span class="db-health-item">{{.DBHealth.WaitDuration}}</span>
             </li>
         </ul>
+        {{end}}
 
     </div>
 
