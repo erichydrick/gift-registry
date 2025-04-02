@@ -58,7 +58,7 @@ func HealthCheckHandler(templatesDir string, db *sql.DB, logger *slog.Logger) ht
 				logger.Error("Fatal error doing an application health check.", slog.Any("errorMessage", fail))
 				responseStatus = 500
 				res.WriteHeader(responseStatus)
-				dbStatus.Error = err.Error()
+				dbStatus.Error = fmt.Sprintf("%v", fail)
 			}
 		}()
 		tmpl := template.Must(template.ParseFiles(templatesDir + "/health.html"))
