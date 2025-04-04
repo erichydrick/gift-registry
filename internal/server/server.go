@@ -28,7 +28,7 @@ func NewServer(getenv func(string) string, db *sql.DB, logger *slog.Logger) (htt
 		templateDir: getenv("TEMPLATES_DIR"),
 	}
 
-	handler, err := appSrv.RegisterRoutes(db, logger)
+	handler, err := appSrv.registerRoutes(db, logger)
 	if err != nil {
 		logger.Error("Server failed to start", slog.String("errorMessage", err.Error()))
 		return nil, err

@@ -5,10 +5,12 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // All HTTP routes go here so devs can get an overview of the application
-func (svr *server) RegisterRoutes(db *sql.DB, logger *slog.Logger) (http.Handler, error) {
+func (svr *server) registerRoutes(db *sql.DB, logger *slog.Logger) (http.Handler, error) {
 
 	/*
 	   I'm using a vertical slice architecture, so the handler logic will be
@@ -17,11 +19,20 @@ func (svr *server) RegisterRoutes(db *sql.DB, logger *slog.Logger) (http.Handler
 	*/
 
 	mux := http.NewServeMux()
-	mux.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
-	mux.Handle("GET /health", HealthCheckHandler(svr.templateDir, db, logger))
 
+	handleFunc := func(pattern string, appHandler http.Handler) {
+
+		handler := otelhttp.WithRouteTag(pattern, appHandler)
+		mux.Handle(pattern, handler)
+
+	}
+
+	handleFunc("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
+	handleFunc("GET /health", HealthCheckHandler(svr.templateDir, db, logger))
+
+	handler := otelhttp.NewHandler(cors(mux, logger), "/")
 	logger.Info("Registered all routes")
-	return cors(mux, logger), nil
+	return handler, nil
 
 }
 

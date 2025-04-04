@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -61,6 +62,7 @@ func Run(ctx context.Context, getenv func(string) string, logger *slog.Logger) e
 
 	appServer := &http.Server{
 		Addr:         fmt.Sprintf(":%s", getenv("PORT")),
+		BaseContext:  func(_ net.Listener) context.Context { return ctx },
 		Handler:      appHandler,
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
@@ -71,7 +73,7 @@ func Run(ctx context.Context, getenv func(string) string, logger *slog.Logger) e
 	   Run the graceful shutdown in a separate goroutine so it listens for
 	   the shutdown signal in the background
 	*/
-	go gracefulShutdown(appServer, done, logger)
+	go gracefulShutdown(ctx, appServer, done, otelShutdown, logger)
 
 	/* Now we actually start and run the server */
 	err = appServer.ListenAndServe()
@@ -110,10 +112,10 @@ func main() {
 }
 
 /* Copied from the go-blueprint by Melkey for shutting down the server cleanly. */
-func gracefulShutdown(apiServer *http.Server, done chan bool, logger *slog.Logger) {
+func gracefulShutdown(ctx context.Context, apiServer *http.Server, done chan bool, otelShutdown func(context.Context) error, logger *slog.Logger) {
 
 	/* Create context that listens for the interrupt signal from the OS. */
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	/* Listen for the interrupt signal. */
@@ -131,6 +133,7 @@ func gracefulShutdown(apiServer *http.Server, done chan bool, logger *slog.Logge
 		logger.Error("Server shutdown encountered an error, force quitting.", slog.String("errorMessage", err.Error()))
 	}
 
+	otelShutdown(ctx)
 	logger.Info("Server exiting")
 
 	/* Notify the main goroutine that the shutdown is complete */
