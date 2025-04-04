@@ -8,7 +8,6 @@ import (
 )
 
 type server struct {
-	logger      *slog.Logger
 	port        int
 	templateDir string
 }
@@ -23,7 +22,6 @@ func NewServer(getenv func(string) string, db *sql.DB, logger *slog.Logger) (htt
 	}
 
 	appSrv := &server{
-		logger:      logger,
 		port:        port,
 		templateDir: getenv("TEMPLATES_DIR"),
 	}

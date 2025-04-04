@@ -13,6 +13,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
@@ -25,6 +26,10 @@ import (
 
 	"gift-registry/internal/database"
 	"gift-registry/internal/server"
+)
+
+const (
+	name = "net.hydrick.gift-registry"
 )
 
 /* Launches and runs the application. Returns an error indicating a failure so the application can exit with a non-0 status */
@@ -97,9 +102,7 @@ func main() {
 	/*
 	   Configure logging
 	*/
-	options := &slog.HandlerOptions{Level: slog.LevelDebug}
-	handler := slog.NewJSONHandler(os.Stderr, options)
-	logger := slog.New(handler)
+	logger := otelslog.NewLogger(name, otelslog.WithSource(true))
 
 	ctx := context.Background()
 

@@ -34,12 +34,16 @@ func HealthCheckHandler(templatesDir string, db *sql.DB, logger *slog.Logger) ht
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
+		logger.Debug("Handle the health check?")
+		ctx := req.Context()
+		logger.DebugContext(ctx, "Got the context")
 		responseStatus := 200
 
 		dbStatus, err := dbHealth(db)
+		logger.DebugContext(ctx, "DB status info obtained", slog.Any("statusObj", dbStatus))
 		if err != nil {
 
-			logger.Error("Error getting database health data", slog.String("errorMessage", err.Error()))
+			logger.ErrorContext(ctx, "Error getting database health data", slog.String("errorMessage", err.Error()))
 			responseStatus = 500
 			dbStatus.Error = err.Error()
 
@@ -55,7 +59,7 @@ func HealthCheckHandler(templatesDir string, db *sql.DB, logger *slog.Logger) ht
 		*/
 		defer func() {
 			if fail := recover(); fail != nil {
-				logger.Error("Fatal error doing an application health check.", slog.Any("errorMessage", fail))
+				logger.ErrorContext(ctx, "Fatal error doing an application health check.", slog.Any("errorMessage", fail))
 				responseStatus = 500
 				res.WriteHeader(responseStatus)
 				dbStatus.Error = fmt.Sprintf("%v", fail)
@@ -63,7 +67,7 @@ func HealthCheckHandler(templatesDir string, db *sql.DB, logger *slog.Logger) ht
 		}()
 		tmpl := template.Must(template.ParseFiles(templatesDir + "/health.html"))
 
-		logger.Info("Canonical log line for application health check.",
+		logger.InfoContext(ctx, "Canonical log line for application health check.",
 			slog.Bool("healthy", status.Healthy),
 			slog.Any("details", status))
 		res.WriteHeader(responseStatus)
