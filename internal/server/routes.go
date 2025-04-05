@@ -8,16 +8,6 @@ import (
 	"os"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel"
-)
-
-const (
-	name = "net.hydrick.gift-registry/server"
-)
-
-var (
-	log    *slog.Logger
-	tracer = otel.Tracer(name)
 )
 
 // All HTTP routes go here so devs can get an overview of the application
@@ -28,7 +18,6 @@ func (svr *server) registerRoutes(db *sql.DB, logger *slog.Logger) (http.Handler
 	   split amongst several different packages. They'll all need to be
 	   initialized before registering, so do that here.
 	*/
-	log = logger
 	mux := http.NewServeMux()
 
 	handleFunc := func(pattern string, appHandler http.Handler) {
@@ -39,11 +28,11 @@ func (svr *server) registerRoutes(db *sql.DB, logger *slog.Logger) (http.Handler
 	}
 
 	handleFunc("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
-	handleFunc("GET /health", HealthCheckHandler(svr.templateDir, db, log))
+	handleFunc("GET /health", HealthCheckHandler(svr.templateDir, db, logger))
 
 	/* TODO: PASSING THE LOGGER TWICE SEEMS STUPID, CAN I CLEAN THAT UP? */
-	handler := otelhttp.NewHandler(telemetry(cors(mux, log), log), "/")
-	log.Info("Registered all routes")
+	handler := otelhttp.NewHandler(cors(mux, logger), "/")
+	logger.Info("Registered all routes")
 	return handler, nil
 
 }
@@ -69,22 +58,6 @@ func cors(next http.Handler, logger *slog.Logger) http.Handler {
 
 		logger.Debug(fmt.Sprintf("Now calling the handler for %s", req.URL.Path))
 		next.ServeHTTP(res, req)
-
-	})
-
-}
-
-func telemetry(next http.Handler, logger *slog.Logger) http.Handler {
-
-	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-
-		/* TODO: SET UP TRACE HERE - DOES DOING THIS HERE DO ANY GOOD? */
-		ctx, span := tracer.Start(req.Context(), req.URL.Path)
-		defer span.End()
-		next.ServeHTTP(res, req)
-		/* TODO: EMIT CANONICAL LOG LINE HERE */
-		/* TODO: MAKE SURE ATTRIBUTES ARE CAPTURED HERE TOO */
-		logger.InfoContext(ctx, fmt.Sprintf("Finished the %s operation", req.URL.Path))
 
 	})
 

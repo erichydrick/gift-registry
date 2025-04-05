@@ -8,6 +8,9 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type healthStatus struct {
@@ -29,14 +32,22 @@ type dbHealthInfo struct {
 	WaitDuration      time.Duration
 }
 
+const (
+	name = "net.hydrick.gift-registry/server"
+)
+
+var (
+	tracer = otel.Tracer(name)
+)
+
 // Checks the health of the application and returns some relevant statistics
 func HealthCheckHandler(templatesDir string, db *sql.DB, logger *slog.Logger) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
-		logger.Debug("Handle the health check?")
-		ctx := req.Context()
-		logger.DebugContext(ctx, "Got the context")
+		ctx, span := tracer.Start(req.Context(), "health")
+		defer span.End()
+
 		responseStatus := 200
 
 		dbStatus, err := dbHealth(db)
@@ -54,9 +65,6 @@ func HealthCheckHandler(templatesDir string, db *sql.DB, logger *slog.Logger) ht
 			Healthy:  dbStatus.Error == "",
 		}
 
-		/*
-			TODO: WRITE A LIST OF ATTRIBUTES THAT I CAN ADD THE ERROR MESSAGE AND DB HEALTH TO, THEN JUST ALWAYS LOG THE ATTR LIST
-		*/
 		defer func() {
 			if fail := recover(); fail != nil {
 				logger.ErrorContext(ctx, "Fatal error doing an application health check.", slog.Any("errorMessage", fail))
@@ -65,11 +73,17 @@ func HealthCheckHandler(templatesDir string, db *sql.DB, logger *slog.Logger) ht
 				dbStatus.Error = fmt.Sprintf("%v", fail)
 			}
 		}()
+
+		span.SetAttributes(
+			attribute.Bool("healthy", status.Healthy),
+			attribute.Bool("dbHealthy", status.DBHealth.Healthy),
+			attribute.String("dbMessage", status.DBHealth.Message),
+			attribute.String("dbError", status.DBHealth.Error),
+		)
+
 		tmpl := template.Must(template.ParseFiles(templatesDir + "/health.html"))
 
-		logger.InfoContext(ctx, "Canonical log line for application health check.",
-			slog.Bool("healthy", status.Healthy),
-			slog.Any("details", status))
+		logger.InfoContext(ctx, fmt.Sprintf("Finished the %s operation", req.URL.Path))
 		res.WriteHeader(responseStatus)
 		tmpl.Execute(res, status)
 
