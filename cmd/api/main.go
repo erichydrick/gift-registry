@@ -16,9 +16,9 @@ import (
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
-	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/log"
@@ -164,19 +164,36 @@ func newLoggerProvider() (*log.LoggerProvider, error) {
 }
 
 /* Sets up the OTel meter provider */
-func newMeterProvider() (*metric.MeterProvider, error) {
+func newMeterProvider(ctx context.Context, getenv func(string) string) (*metric.MeterProvider, error) {
 
-	exporter, err := stdoutmetric.New()
+	httpExporter, err := otlpmetrichttp.New(ctx,
+		otlpmetrichttp.WithInsecure(),
+		otlpmetrichttp.WithEndpoint(getenv("OTEL_OTLP_HTTP_ENDPOINT")),
+		otlpmetrichttp.WithURLPath("/api/default/v1/metrics"),
+		otlpmetrichttp.WithHeaders(map[string]string{"Authorization": "Basic " + getenv("OTEL_AUTHORIZATION")}),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	meter := metric.NewMeterProvider(
-		metric.WithReader(metric.NewPeriodicReader(exporter,
-			metric.WithInterval( /*1 * time.Minute*/ 3*time.Second))),
+	/*
+		TODO: BOTH THE SERVICEVERSIONKEY AND THE ENVIRONMENT SHOULD BE SET VIA
+		COMPOSE FILES PROPERTIES AND/OR ENVIRONMENT VARIABLES SO I DON'T HAVE
+		TO REMEMBER TO MANUALLY EDIT THESE
+	*/
+	res := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String(name),
+		semconv.ServiceVersionKey.String("0.0.1"),
+		attribute.String("environment", "test"),
 	)
 
-	return meter, nil
+	metricProvider := metric.NewMeterProvider(
+		metric.WithReader(metric.NewPeriodicReader(httpExporter)),
+		metric.WithResource(res),
+	)
+
+	return metricProvider, nil
 
 }
 
@@ -266,7 +283,7 @@ func setupOTelSDK(ctx context.Context, getenv func(string) string) (shutdown fun
 	shutdownFuncs = append(shutdownFuncs, traceProvider.Shutdown)
 	otel.SetTracerProvider(traceProvider)
 
-	metricProvider, err := newMeterProvider()
+	metricProvider, err := newMeterProvider(ctx, getenv)
 	if err != nil {
 		errReturned(err)
 		return
