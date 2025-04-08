@@ -15,14 +15,17 @@ import (
 	_ "github.com/lib/pq"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
-	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
 
 	"gift-registry/internal/database"
 	"gift-registry/internal/server"
@@ -43,7 +46,7 @@ func Run(ctx context.Context, getenv func(string) string, logger *slog.Logger) e
 	done := make(chan bool, 1)
 
 	/* Set up OpenTelemetry integration */
-	otelShutdown, err := setupOTelSDK(ctx)
+	otelShutdown, err := setupOTelSDK(ctx, getenv)
 	if err != nil {
 		logger.Error("Error setting up OpenTelemetry", slog.String("errorMessage", err.Error()))
 		return err
@@ -188,24 +191,44 @@ func newPropagator() propagation.TextMapPropagator {
 }
 
 /* Sets up the OTel tracing provider */
-func newTracerProvier() (*trace.TracerProvider, error) {
+func newTracerProvier(ctx context.Context, getenv func(string) string) (*trace.TracerProvider, error) {
 
-	/* TODO: SHOULD THIS BE STDERRTRACE SINCE THE LOGGER WRITES TO STDERR? */
-	exporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
+	otlptracehttp.NewClient()
+
+	httpExporter, err := otlptracehttp.New(ctx,
+		otlptracehttp.WithInsecure(),
+		otlptracehttp.WithEndpoint(getenv("OTEL_OTLP_HTTP_ENDPOINT")),
+		otlptracehttp.WithURLPath("/api/default/v1/traces"),
+		otlptracehttp.WithHeaders(map[string]string{"Authorization": "Basic " + getenv("OTEL_AUTHORIZATION")}),
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	tracer := trace.NewTracerProvider(
-		trace.WithBatcher(exporter, trace.WithBatchTimeout( /* 5 * */ time.Second)),
+	/*
+		TODO: BOTH THE SERVICEVERSIONKEY AND THE ENVIRONMENT SHOULD BE SET VIA
+		COMPOSE FILES PROPERTIES AND/OR ENVIRONMENT VARIABLES SO I DON'T HAVE
+		TO REMEMBER TO MANUALLY EDIT THESE
+	*/
+	res := resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceNameKey.String(name),
+		semconv.ServiceVersionKey.String("0.0.1"),
+		attribute.String("environment", "test"),
 	)
 
-	return tracer, nil
+	tracerProvider := trace.NewTracerProvider(
+		trace.WithSampler(trace.AlwaysSample()),
+		trace.WithResource(res),
+		trace.WithBatcher(httpExporter),
+	)
+
+	return tracerProvider, nil
 
 }
 
 /* Set up the OTel instrumentation and integration */
-func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, err error) {
+func setupOTelSDK(ctx context.Context, getenv func(string) string) (shutdown func(context.Context) error, err error) {
 
 	var shutdownFuncs []func(context.Context) error
 
@@ -235,29 +258,29 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 
 	otel.SetTextMapPropagator(newPropagator())
 
-	tracer, err := newTracerProvier()
+	traceProvider, err := newTracerProvier(ctx, getenv)
 	if err != nil {
 		errReturned(err)
 		return
 	}
-	shutdownFuncs = append(shutdownFuncs, tracer.Shutdown)
-	otel.SetTracerProvider(tracer)
+	shutdownFuncs = append(shutdownFuncs, traceProvider.Shutdown)
+	otel.SetTracerProvider(traceProvider)
 
-	meter, err := newMeterProvider()
+	metricProvider, err := newMeterProvider()
 	if err != nil {
 		errReturned(err)
 		return
 	}
-	shutdownFuncs = append(shutdownFuncs, meter.Shutdown)
-	otel.SetMeterProvider(meter)
+	shutdownFuncs = append(shutdownFuncs, metricProvider.Shutdown)
+	otel.SetMeterProvider(metricProvider)
 
-	logger, err := newLoggerProvider()
+	logProvider, err := newLoggerProvider()
 	if err != nil {
 		errReturned(err)
 		return
 	}
-	shutdownFuncs = append(shutdownFuncs, logger.Shutdown)
-	global.SetLoggerProvider(logger)
+	shutdownFuncs = append(shutdownFuncs, logProvider.Shutdown)
+	global.SetLoggerProvider(logProvider)
 
 	return
 
