@@ -1,4 +1,8 @@
-package main_test
+/*
+This *should* be a separate package (main_test) to avoid direct access to
+private methods, but I want to test gracefulShutdown without exporting it.
+*/
+package main
 
 import (
 	"context"
@@ -6,6 +10,7 @@ import (
 	"fmt"
 	"gift-registry/internal/database"
 	"gift-registry/internal/server"
+	"io"
 	"log"
 	"log/slog"
 	"net"
@@ -31,16 +36,15 @@ const (
 )
 
 var (
-	hostAndPort string
+	dbHostPort  string
 	logger      *slog.Logger
+	obsHostPort string
 )
 
 // Sets up the application tests.
 // Creates a Postrgres database container to use for testing.
 // Sets up a logger for the tests
 func TestMain(m *testing.M) {
-
-	log.Println("Creating the embedded Postgres for application testing")
 
 	/* Sets up a testing logger */
 	options := &slog.HandlerOptions{Level: slog.LevelDebug}
@@ -58,7 +62,7 @@ func TestMain(m *testing.M) {
 		log.Fatal("could not connect to docker ", err)
 	}
 
-	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
+	dbResource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "postgres",
 		Tag:        "17.2",
 		Env: []string{
@@ -76,13 +80,11 @@ func TestMain(m *testing.M) {
 		log.Fatal("could not start docker ", err)
 	}
 
-	hostAndPort = resource.GetHostPort("5432/tcp")
-	databaseUrl := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", dbUser, dbPass, hostAndPort, dbName)
-
-	log.Println("Connecting to database on url: ", databaseUrl)
+	dbHostPort = dbResource.GetHostPort("5432/tcp")
+	dbUrl := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", dbUser, dbPass, dbHostPort, dbName)
 
 	/* Tell docker to hard kill the container in 120 seconds */
-	resource.Expire(10)
+	dbResource.Expire(30)
 
 	/*
 		Exponential backoff-retry, because the application in the container might not
@@ -90,7 +92,7 @@ func TestMain(m *testing.M) {
 	*/
 	pool.MaxWait = 10 * time.Second
 	if err = pool.Retry(func() error {
-		db, err := sql.Open("postgres", databaseUrl)
+		db, err := sql.Open("postgres", dbUrl)
 		if err != nil {
 			return err
 		}
@@ -101,8 +103,56 @@ func TestMain(m *testing.M) {
 
 	/* Clean up container resources when the testing is done */
 	defer func() {
-		if err := pool.Purge(resource); err != nil {
-			log.Fatalf("Could not purge resource: %s", err)
+		if err := pool.Purge(dbResource); err != nil {
+			log.Fatalf("Could not purge database resource: %s", err)
+		}
+	}()
+
+	/*
+		Create a test container with the observability endpoints (checked as part of
+		the health check)
+	*/
+	obsResource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository:   "grafana/otel-lgtm",
+		Tag:          "0.11.0",
+		ExposedPorts: []string{"3000/tcp"},
+		Env: []string{
+			"listen_addresses = '*'",
+		},
+	}, func(config *docker.HostConfig) {
+		/* Autoremove = true ensures stopped containers are removed */
+		config.AutoRemove = true
+		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+	})
+	if err != nil {
+		log.Fatal("could not start docker ", err)
+	}
+
+	obsHostPort = obsResource.GetHostPort("3000/tcp")
+	obsUrl := fmt.Sprintf("http://%s/api/health", obsHostPort)
+
+	/* Tell docker to hard kill the container in 120 seconds */
+	obsResource.Expire(30)
+
+	/*
+		Exponential backoff-retry, because the application in the container might not
+		be ready to accept connections yet
+	*/
+	pool.MaxWait = 30 * time.Second
+	if err = pool.Retry(func() error {
+		_, err := http.Get(obsUrl)
+		if err != nil && err != io.EOF {
+			return err
+		}
+		return nil
+	}); err != nil {
+		log.Fatalf("Could not connect to observability docker: %s", err)
+	}
+
+	/* Clean up container obsResources when the testing is done */
+	defer func() {
+		if err := pool.Purge(obsResource); err != nil {
+			log.Fatalf("Could not purge obsResource: %s", err)
 		}
 	}()
 
@@ -119,15 +169,22 @@ func TestHealthCheck(t *testing.T) {
 	ctx := context.Background()
 
 	testData := []struct {
-		dbHostAndPort         string
-		expectedHealthEntries int
-		expectedHttpStatus    int
-		statusMismatchErrMsg  string
-		templatesDir          string
-		testName              string
+		dbError                   bool
+		dbPort                    string
+		expectedDBStatusClass     string
+		expectedDBHealthEntries   int
+		expectedHttpStatus        int
+		expectedObservStatusClass string
+		healthy                   string
+		observError               bool
+		statusMismatchErrMsg      string
+		testName                  string
 	}{
-		{dbHostAndPort: hostAndPort, expectedHealthEntries: 6, expectedHttpStatus: http.StatusOK, statusMismatchErrMsg: "Expected an HTTP 200 response", templatesDir: "../../cmd/web/templates", testName: "Successful health check"},
-		{dbHostAndPort: hostAndPort, expectedHealthEntries: 0, expectedHttpStatus: http.StatusInternalServerError, statusMismatchErrMsg: "Expected an HTTP 200 response", templatesDir: "templates", testName: "Invalid templates dir"},
+		{dbError: false, dbPort: dbHostPort, expectedDBHealthEntries: 6, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Successful health check"},
+		{dbError: false, dbPort: dbHostPort, expectedDBHealthEntries: 0, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusInternalServerError, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, statusMismatchErrMsg: "Expected an HTTP 500 response", testName: "Invalid templates dir"},
+		{dbError: true, dbPort: dbHostPort, expectedDBHealthEntries: 0, expectedDBStatusClass: "unhealthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Database error"},
+		{dbError: false, dbPort: dbHostPort, expectedDBHealthEntries: 6, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "unhealthy", healthy: "Healthy", observError: true, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Observability error"},
+		{dbError: true, dbPort: dbHostPort, expectedDBHealthEntries: 0, expectedDBStatusClass: "unhealthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "unhealthy", healthy: "Healthy", observError: true, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Nothing healthy"},
 	}
 
 	for _, data := range testData {
@@ -135,13 +192,23 @@ func TestHealthCheck(t *testing.T) {
 		port := freePort()
 
 		env := map[string]string{
-			"DB_USER":       dbUser,
-			"DB_PASS":       dbPass,
-			"DB_HOST":       strings.Split(data.dbHostAndPort, ":")[0],
-			"DB_PORT":       strings.Split(data.dbHostAndPort, ":")[1],
-			"DB_NAME":       dbName,
-			"PORT":          strconv.Itoa(port),
-			"TEMPLATES_DIR": data.templatesDir,
+			"DB_USER": dbUser,
+			"DB_PASS": dbPass,
+			"DB_HOST": strings.Split(dbHostPort, ":")[0],
+			"DB_PORT": strings.Split(dbHostPort, ":")[1],
+			"DB_NAME": dbName,
+			"OTEL_HC": fmt.Sprintf("http://%s/api/health", obsHostPort),
+			"PORT":    strconv.Itoa(port),
+		}
+
+		if data.testName == "Invalid templates dir" {
+
+			env["TEMPLATES_DIR"] = "templates"
+
+		} else {
+
+			env["TEMPLATES_DIR"] = "../../cmd/web/templates"
+
 		}
 
 		getenv := func(key string) string { return env[key] }
@@ -167,6 +234,13 @@ func TestHealthCheck(t *testing.T) {
 				t.Fatal("error building health check request", err)
 			}
 
+			/* Fake a database error by just closing the databse (if applicable) */
+			if data.dbError {
+
+				db.Close()
+
+			}
+
 			res, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatal("server call failed", err)
@@ -185,31 +259,129 @@ func TestHealthCheck(t *testing.T) {
 			}
 
 			/*
+				Don't try to validate document contents if there was an HTTP error
+			*/
+			if data.expectedDBHealthEntries != http.StatusOK {
+
+				return
+
+			}
+
+			/*
 				I don't care about the actual values per se (and if I make this parallel
 				they won't be reliable), I just care that I'm picking up the correct number
 				of data points and that they have data.
 			*/
+			dbStatusFound, observStatusFound := false, false
 			var dbHealthItems int = 0
 			for node := range doc.Descendants() {
+
+				if slices.Contains(node.Attr, html.Attribute{Key: "id", Val: "db-health-status"}) {
+
+					dbStatusFound = true
+
+					if !slices.Contains(node.Attr, html.Attribute{Key: "class", Val: data.expectedDBStatusClass}) {
+
+						t.Fatal("invalid database health status class, expected ", data.expectedDBStatusClass)
+
+					}
+
+				}
+
+				if slices.Contains(node.Attr, html.Attribute{Key: "id", Val: "observ-health-status"}) {
+
+					observStatusFound = true
+
+					if !slices.Contains(node.Attr, html.Attribute{Key: "class", Val: data.expectedDBStatusClass}) {
+
+						t.Fatal("invalid database health status class, expected ", data.expectedDBStatusClass)
+
+					}
+
+				}
+
+				if node.Type == html.ElementNode &&
+					slices.Contains(node.Attr, html.Attribute{Key: "id", Val: "overall-health"}) &&
+					node.FirstChild.Data != "" {
+
+					if node.FirstChild.Data != data.healthy {
+
+						t.Fatalf("Expected an overall health status of %s, but was %s", data.healthy, node.FirstChild.Data)
+
+					}
+
+				}
 
 				if node.Type == html.ElementNode &&
 					slices.Contains(node.Attr, html.Attribute{Key: "class", Val: "db-health-item"}) &&
 					node.FirstChild.Data != "" {
 
 					dbHealthItems++
+
 				}
 
 			}
 
-			if data.expectedHealthEntries != dbHealthItems {
+			if !dbStatusFound {
 
-				t.Fatal("Expected", data.expectedHealthEntries,
+				t.Fatal("no database health status found!")
+
+			}
+
+			if !observStatusFound {
+
+				t.Fatal("no observability health status found!")
+
+			}
+
+			if data.expectedDBHealthEntries != dbHealthItems {
+
+				t.Fatal("Expected", data.expectedDBHealthEntries,
 					" database health items in the application health report, but got",
 					dbHealthItems, "instead")
 
 			}
 
 		})
+	}
+}
+
+// Tests the shutdown handler
+// Starts an application server
+// Triggers a shutdown signal to shut the server down
+func TestShutdown(t *testing.T) {
+
+	ctx := context.Background()
+
+	testData := []struct {
+		testName string
+	}{
+		{testName: "Graceful shutdown"},
+	}
+
+	for _, data := range testData {
+
+		t.Run(data.testName, func(t *testing.T) {
+
+			t.Parallel()
+
+			done := make(chan bool, 1)
+			server := &http.Server{}
+
+			ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			gracefulShutdown(ctx, server, done, func(context.Context) error { return nil }, logger)
+
+			completed := <-done
+
+			if !completed {
+
+				t.Fatal("Expected the shutdown to have completed gracefully!")
+
+			}
+
+		})
+
 	}
 }
 

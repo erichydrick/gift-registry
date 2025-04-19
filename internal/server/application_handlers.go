@@ -3,16 +3,23 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 )
 
 type healthStatus struct {
-	DBHealth dbHealthInfo
-	Healthy  bool
+	DBHealth     dbHealthInfo
+	Healthy      bool
+	ObservHealth observHealthInfo
 }
 
 type dbHealthInfo struct {
@@ -29,42 +36,111 @@ type dbHealthInfo struct {
 	WaitDuration      time.Duration
 }
 
+type observHealthInfo struct {
+	Error   string
+	Healthy bool
+	Status  string
+}
+
+const (
+	name = "net.hydrick.gift-registry/server"
+)
+
+var (
+	meter          = otel.Meter(name)
+	tracer         = otel.Tracer(name)
+	healthCheckCtr metric.Int64Counter
+)
+
+func init() {
+
+	var err error
+	healthCheckCtr, err = meter.Int64Counter(
+		"health.check.counter",
+		metric.WithDescription("Number of calls to the /health endpoint"),
+		metric.WithUnit("{call}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+}
+
 // Checks the health of the application and returns some relevant statistics
-func HealthCheckHandler(templatesDir string, db *sql.DB, logger *slog.Logger) http.Handler {
+func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Logger) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
+		ctx, span := tracer.Start(req.Context(), "health")
+		defer span.End()
 
 		responseStatus := 200
 
 		dbStatus, err := dbHealth(db)
+		logger.DebugContext(ctx, "DB status info obtained", slog.Any("statusObj", dbStatus))
 		if err != nil {
-			logger.Error("Error getting database health data", slog.String("errorMessage", err.Error()))
-			responseStatus = 500
-			/* TODO: Make an error page and render it */
+			logger.ErrorContext(ctx, "Error getting database health data", slog.String("errorMessage", err.Error()))
+			dbStatus.Error = err.Error()
+		}
+
+		observStatus, err := observHealth(getenv)
+		logger.DebugContext(ctx, "Observability health info obtained", slog.Any("statusObj", observStatus))
+		if err != nil {
+			logger.ErrorContext(ctx, "Error getting the observability health data", slog.String("errorMessage", err.Error()))
+			observStatus.Error = err.Error()
 		}
 
 		status := healthStatus{
-			DBHealth: dbStatus,
-			Healthy:  dbStatus.Error == "",
+			DBHealth:     dbStatus,
+			Healthy:      dbStatus.Healthy && observStatus.Healthy,
+			ObservHealth: observStatus,
 		}
 
-		/*
-			TODO: WRITE A LIST OF ATTRIBUTES THAT I CAN ADD THE ERROR MESSAGE AND DB HEALTH TO, THEN JUST ALWAYS LOG THE ATTR LIST
-		*/
 		defer func() {
 			if fail := recover(); fail != nil {
-				logger.Error("Fatal error doing an application health check.", slog.Any("errorMessage", fail))
+				logger.ErrorContext(ctx, "Fatal error doing an application health check.", slog.Any("errorMessage", fail))
 				responseStatus = 500
 				res.WriteHeader(responseStatus)
-				/* TODO: MAKE THIS A ERROR HTML SNIPPET */
-				res.Write([]byte{})
+				dbStatus.Error = fmt.Sprintf("%v", fail)
 			}
 		}()
-		tmpl := template.Must(template.ParseFiles(templatesDir + "/health.html"))
 
-		logger.Info("Canonical log line for application health check.",
+		healthCheckCtr.Add(ctx, 1, metric.WithAttributes(
+			attribute.Bool("healthy", status.Healthy),
+			attribute.Bool("dbHealthy", status.DBHealth.Healthy),
+			attribute.Int64("dbOpenConnections", int64(status.DBHealth.OpenConnections)),
+			attribute.Int64("dbConnectionsInUse", int64(status.DBHealth.ConnectionsInUse)),
+			attribute.Int64("dbIdleConnections", int64(status.DBHealth.IdleConnections)),
+			attribute.Int64("dbWaitDuration", int64(status.DBHealth.WaitDuration)),
+			attribute.Bool("observHealthy", status.ObservHealth.Healthy),
+		))
+
+		span.SetAttributes(
+			attribute.Bool("healthy", status.Healthy),
+			attribute.Bool("dbHealthy", status.DBHealth.Healthy),
+			attribute.String("dbMessage", status.DBHealth.Message),
+			attribute.String("dbError", status.DBHealth.Error),
+			attribute.String("dbStatus", status.DBHealth.Status),
+			attribute.Int64("dbOpenConnections", int64(status.DBHealth.OpenConnections)),
+			attribute.Int64("dbConnectionsInUse", int64(status.DBHealth.ConnectionsInUse)),
+			attribute.Int64("dbIdleConnections", int64(status.DBHealth.IdleConnections)),
+			attribute.Int64("dbWaitDuration", int64(status.DBHealth.WaitDuration)),
+			attribute.Int64("dbMaxIdleConnClosed", int64(status.DBHealth.MaxIdleConnClosed)),
+			attribute.Int64("dbMaxLifetimeClosed", int64(status.DBHealth.MaxLifetimeClosed)),
+			attribute.Bool("observHealthy", status.ObservHealth.Healthy),
+			attribute.String("observStatus", status.ObservHealth.Status),
+		)
+
+		tmpl := template.Must(template.ParseFiles(getenv("TEMPLATES_DIR") + "/health.html"))
+
+		logger.InfoContext(ctx, fmt.Sprintf("Finished the %s operation", req.URL.Path),
 			slog.Bool("healthy", status.Healthy),
-			slog.Any("details", status))
+			slog.Bool("dbHealthy", status.DBHealth.Healthy),
+			slog.Bool("observHealthy", status.ObservHealth.Healthy),
+			slog.String("dbMessage", status.DBHealth.Message),
+			slog.String("dbError", status.DBHealth.Error),
+			slog.String("dbStatus", status.DBHealth.Status),
+		)
 		res.WriteHeader(responseStatus)
 		tmpl.Execute(res, status)
 
@@ -132,5 +208,31 @@ func dbHealth(db *sql.DB) (dbHealthInfo, error) {
 	}
 
 	return stats, nil
+
+}
+
+func observHealth(getenv func(string) string) (observHealthInfo, error) {
+
+	observHealth := observHealthInfo{
+		Healthy: false,
+		Status:  "unhealthy",
+	}
+
+	res, err := http.Get(getenv("OTEL_HC"))
+	if err != nil {
+		return observHealth, err
+	}
+	defer res.Body.Close()
+
+	jsonData := make(map[string]any)
+	err = json.NewDecoder(res.Body).Decode(&jsonData)
+	if err != nil {
+		return observHealth, err
+	}
+
+	observHealth.Status = jsonData["database"].(string)
+	observHealth.Healthy = strings.ToLower(observHealth.Status) == "ok"
+
+	return observHealth, nil
 
 }

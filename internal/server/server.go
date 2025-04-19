@@ -8,9 +8,8 @@ import (
 )
 
 type server struct {
-	logger      *slog.Logger
-	port        int
-	templateDir string
+	port   int
+	getenv func(string) string
 }
 
 // Builds a new HTTP handler for the application. This will be used for testing and running the server
@@ -23,12 +22,11 @@ func NewServer(getenv func(string) string, db *sql.DB, logger *slog.Logger) (htt
 	}
 
 	appSrv := &server{
-		logger:      logger,
-		port:        port,
-		templateDir: getenv("TEMPLATES_DIR"),
+		port:   port,
+		getenv: getenv,
 	}
 
-	handler, err := appSrv.RegisterRoutes(db, logger)
+	handler, err := appSrv.registerRoutes(db, logger)
 	if err != nil {
 		logger.Error("Server failed to start", slog.String("errorMessage", err.Error()))
 		return nil, err
