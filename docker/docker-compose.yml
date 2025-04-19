@@ -2,40 +2,50 @@ name: gift-registry
 
 services:
   
-  openobserve:
-    image: public.ecr.aws/zinclabs/openobserve:v0.14.2
+  observability:
+    container_name: gift-registry-observability
+    image: grafana/otel-lgtm:0.11.0
     pull_policy: missing
     volumes:
       - type: bind
-        source: ./open_observe_data
+        source: ./grafana_data
         target: /data
     ports: 
-      - 5880:5080 # TODO: REMOVE THIS WHEN I INTEGRATE TRAEFICK
-    # You'll need to include the following environment variables to pre-populate OpenObserve with an initial user the first time the container is run: ZO_ROOT_USER_EMAIL and ZO_ROOT_USER_PASSWORD. 
-    # Once you start OpenObserve for the first time, create your own account and remove the environment variables
-    environment:
-      ZO_ROOT_USER_EMAIL: ${ZO_ROOT_USER_EMAIL} 
-      ZO_ROOT_USER_PASSWORD: ${ZO_ROOT_USER_PASSWORD}
+      - 3000:3000 
+    networks:
+      - gift-registry-network
 
   postgres: 
+    container_name: gift-registry-postgres
     image: postgres:17.2
     pull_policy: missing
     volumes:
       - ./postgres_data:/var/lib/postgres/data
       - ./postgres_scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
     # Set up your DB credentials in environment variables
+    healthcheck:
+      test: ["CMD-SHELL", "sh -c 'pg_isready -U ${DB_USER} -d ${DB_NAME}'"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_USER: ${DB_USER}
+    networks:
+      - gift-registry-network
+
   app: 
+    container_name: gift-registry-app
     image: gift-registry
     pull_policy: missing
     depends_on: 
-      - postgres
-      - openobserve
+      postgres:
+          condition: service_healthy
+      observability:
+          condition: service_started
     ports: 
-      - "8080:8080" # TODO: REMOVE THIS WHEN I INTEGRATE TRAEFICK
+      - "8080:8080" 
     environment:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS}
       DB_USER: ${DB_USER}
@@ -43,5 +53,13 @@ services:
       DB_PORT: ${DB_PORT}
       DB_HOST: ${DB_HOST}
       DB_NAME: ${DB_NAME}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://gift-registry-observability:4318 
+      OTEL_HC: http://gift-registry-observability:3000/api/health 
+      OTEL_METRIC_EXPORT_INTERVAL: "5000" # so we don't have to wait 60s for metrics
       PORT: ${PORT}
       TEMPLATES_DIR: "templates"
+    networks:
+      - gift-registry-network
+
+networks:
+  gift-registry-network:

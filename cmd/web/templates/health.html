@@ -13,7 +13,7 @@
     <div class="center-text content shadowed" id="page-header">
         <h1 class="centered">
             Gift Registry Health Status:
-            <span class="{{if .Healthy}}healthy{{else}}unhealthy{{end}}">
+            <span id="overall-health" class="{{if .Healthy}}healthy{{else}}unhealthy{{end}}">
                 {{if .Healthy}}Healthy{{else}}Unhealthy{{end}}
             </span>
 
@@ -24,12 +24,13 @@
         <h2 class="center-text">Database Health</h2>
         <p>
 
-            <label>Status:</label> <span
-                class="{{if .DBHealth.Healthy}}healthy{{else}}unhealthy{{end}}">{{.DBHealth.Status}}</span>
+            <label>Status:</label> <span id="db-health-status"
+                class="{{if .DBHealth.Healthy}}healthy{{else}}unhealthy{{end}}"><strong>{{.DBHealth.Status}}</strong></span>
             <em>({{if .DBHealth.Healthy}}{{.DBHealth.Message}}{{else}}{{.DBHealth.Error}}{{end}})</em>
 
         </p>
 
+        {{if .DBHealth.Healthy}}
         <label>Stats:</label>
         <ul>
             <li>
@@ -57,7 +58,16 @@
                 <span class="db-health-item">{{.DBHealth.WaitDuration}}</span>
             </li>
         </ul>
+        {{end}}
 
+    </div>
+
+    <div class="centered content shadowed">
+        <h2 class="center-text">Obersvability Health</h2>
+        <p>
+            <label>Status:</label> <span id="observ-health-status"
+                class="{{if .ObservHealth.Healthy}}healthy{{else}}unhealthy{{end}}"><strong>{{.ObservHealth.Status}}</strong></span>
+        </p>
     </div>
 
 </body>

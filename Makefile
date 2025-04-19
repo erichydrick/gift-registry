@@ -10,6 +10,7 @@ docker-build: test
 docker-down:
 	clear
 	docker compose -f docker/docker-compose.yml down
+	docker system prune --volumes -f
 
 docker-up: docker-build
 	docker compose -f docker/docker-compose.yml up -d
