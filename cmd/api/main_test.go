@@ -132,7 +132,7 @@ func TestMain(m *testing.M) {
 	obsUrl := fmt.Sprintf("http://%s/api/health", obsHostPort)
 
 	/* Tell docker to hard kill the container in 120 seconds */
-	obsResource.Expire(30)
+	obsResource.Expire(120)
 
 	/*
 		Exponential backoff-retry, because the application in the container might not

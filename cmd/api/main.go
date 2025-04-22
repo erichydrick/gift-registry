@@ -48,7 +48,7 @@ func Run(ctx context.Context, getenv func(string) string, logger *slog.Logger) e
 	otelShutdown, err := setupOTelSDK(ctx, getenv)
 	if err != nil {
 		logger.Error("Error setting up OpenTelemetry", slog.String("errorMessage", err.Error()))
-		return err
+		return fmt.Errorf("error setting up opentelemetry integration: %s", err.Error())
 	}
 	defer func() {
 		err = errors.Join(err, otelShutdown(ctx))
@@ -57,14 +57,14 @@ func Run(ctx context.Context, getenv func(string) string, logger *slog.Logger) e
 	/* Get a database connection to pass to our handlers */
 	db, err := database.Connection(getenv)
 	if err != nil {
-		logger.Error("Error connecting to the database", slog.String("errorMessage", err.Error()))
-		return err
+		logger.Error("Error getting the database connection", slog.String("errorMessage", err.Error()))
+		return fmt.Errorf("error getting the database connection: %s", err.Error())
 	}
 
 	/* Set up the routing and middleware, we'll start the server in a sec */
 	appHandler, err := server.NewServer(getenv, db, logger)
 	if err != nil {
-		return err
+		return fmt.Errorf("error getting the application server: %s", err.Error())
 	}
 
 	appServer := &http.Server{
@@ -86,7 +86,7 @@ func Run(ctx context.Context, getenv func(string) string, logger *slog.Logger) e
 	err = appServer.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
 		logger.Error("Error starting server", slog.String("errorMessage", err.Error()))
-		return err
+		return fmt.Errorf("error starting server: %s", err.Error())
 	}
 
 	/* Wait for the graceful shutdown to complete */
@@ -150,7 +150,7 @@ func newLoggerProvider(ctx context.Context) (*log.LoggerProvider, error) {
 
 	logExporter, err := otlploghttp.New(ctx, otlploghttp.WithInsecure())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error setting up logging provider: %s", err.Error())
 	}
 
 	logProvider := log.NewLoggerProvider(log.WithProcessor(log.NewBatchProcessor(logExporter)))
@@ -163,7 +163,7 @@ func newMeterProvider(ctx context.Context) (*metric.MeterProvider, error) {
 
 	metricExporter, err := otlpmetrichttp.New(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error setting up metrics provider: %s", err.Error())
 	}
 
 	metricProvider := metric.NewMeterProvider(metric.WithReader(metric.NewPeriodicReader(metricExporter)))
@@ -186,7 +186,7 @@ func newTracerProvider(ctx context.Context) (*trace.TracerProvider, error) {
 
 	traceExporter, err := otlptrace.New(ctx, otlptracehttp.NewClient())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error setting up tracing provider: %s", err.Error())
 	}
 
 	tracerProvider := trace.NewTracerProvider(trace.WithBatcher(traceExporter))
