@@ -2,6 +2,7 @@ package server
 
 import (
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -29,7 +30,7 @@ func NewServer(getenv func(string) string, db *sql.DB, logger *slog.Logger) (htt
 	handler, err := appSrv.registerRoutes(db, logger)
 	if err != nil {
 		logger.Error("Server failed to start", slog.String("errorMessage", err.Error()))
-		return nil, err
+		return nil, fmt.Errorf("error starting the server: %s", err.Error())
 	}
 
 	return handler, nil

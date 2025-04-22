@@ -172,7 +172,7 @@ func dbHealth(db *sql.DB) (dbHealthInfo, error) {
 		stats.Status = "down"
 		stats.Healthy = false
 		stats.Error = fmt.Sprintf("db down: %v", err)
-		return stats, err
+		return stats, fmt.Errorf("error pinging the database to confirm it's up: %s", err.Error())
 	}
 
 	// Database is up, add more statistics
@@ -220,14 +220,14 @@ func observHealth(getenv func(string) string) (observHealthInfo, error) {
 
 	res, err := http.Get(getenv("OTEL_HC"))
 	if err != nil {
-		return observHealth, err
+		return observHealth, fmt.Errorf("error reading the observability health check endpoint: %s", err.Error())
 	}
 	defer res.Body.Close()
 
 	jsonData := make(map[string]any)
 	err = json.NewDecoder(res.Body).Decode(&jsonData)
 	if err != nil {
-		return observHealth, err
+		return observHealth, fmt.Errorf("error reading the observability health status: %s", err.Error())
 	}
 
 	observHealth.Status = jsonData["database"].(string)
