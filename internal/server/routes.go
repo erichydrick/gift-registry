@@ -45,7 +45,7 @@ func cors(next http.Handler, logger *slog.Logger) http.Handler {
 		res.Header().Set("Access-Control-Allow-Origin", os.Getenv("ALLOWED_HOSTS"))
 		res.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
 		res.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token")
-		/* TODO: CHANGE TO TRUE WHEN CREDENTIALS ARE FIGURED OUT */
+		/* TODO: DOES THIS CHANGE IF I HANDLE SESSION MANAGEMENT */
 		res.Header().Set("Access-Control-Allow-Credentials", "false")
 
 		if req.Method == http.MethodOptions {

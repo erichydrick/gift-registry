@@ -105,13 +105,12 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 			}
 		}()
 
+		tmpl := template.Must(template.ParseFiles(getenv("TEMPLATES_DIR") + "/health.html"))
+		res.WriteHeader(responseStatus)
+
 		healthCheckCtr.Add(ctx, 1, metric.WithAttributes(
 			attribute.Bool("healthy", status.Healthy),
 			attribute.Bool("dbHealthy", status.DBHealth.Healthy),
-			attribute.Int64("dbOpenConnections", int64(status.DBHealth.OpenConnections)),
-			attribute.Int64("dbConnectionsInUse", int64(status.DBHealth.ConnectionsInUse)),
-			attribute.Int64("dbIdleConnections", int64(status.DBHealth.IdleConnections)),
-			attribute.Int64("dbWaitDuration", int64(status.DBHealth.WaitDuration)),
 			attribute.Bool("observHealthy", status.ObservHealth.Healthy),
 		))
 
@@ -131,8 +130,6 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 			attribute.String("observStatus", status.ObservHealth.Status),
 		)
 
-		tmpl := template.Must(template.ParseFiles(getenv("TEMPLATES_DIR") + "/health.html"))
-
 		logger.InfoContext(ctx, fmt.Sprintf("Finished the %s operation", req.URL.Path),
 			slog.Bool("healthy", status.Healthy),
 			slog.Bool("dbHealthy", status.DBHealth.Healthy),
@@ -141,7 +138,7 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 			slog.String("dbError", status.DBHealth.Error),
 			slog.String("dbStatus", status.DBHealth.Status),
 		)
-		res.WriteHeader(responseStatus)
+
 		tmpl.Execute(res, status)
 
 	})
@@ -166,7 +163,7 @@ func dbHealth(db *sql.DB) (dbHealthInfo, error) {
 		WaitDuration:      0,
 	}
 
-	// Ping the database
+	/* Ping the database */
 	err := db.PingContext(ctx)
 	if err != nil {
 		stats.Status = "down"
@@ -175,12 +172,12 @@ func dbHealth(db *sql.DB) (dbHealthInfo, error) {
 		return stats, fmt.Errorf("error pinging the database to confirm it's up: %s", err.Error())
 	}
 
-	// Database is up, add more statistics
+	/* Database is up, add more statistics */
 	stats.Status = "Up"
 	stats.Healthy = true
 	stats.Message = "Database healthy"
 
-	// Get database stats (like open connections, in use, idle, etc.)
+	/* Get database stats (like open connections, in use, idle, etc.) */
 	dbStats := db.Stats()
 	stats.OpenConnections = dbStats.OpenConnections
 	stats.ConnectionsInUse = dbStats.InUse
@@ -190,7 +187,7 @@ func dbHealth(db *sql.DB) (dbHealthInfo, error) {
 	stats.MaxIdleConnClosed = dbStats.MaxIdleClosed
 	stats.MaxLifetimeClosed = dbStats.MaxLifetimeClosed
 
-	// Evaluate stats to provide a health message
+	/* Evaluate stats to provide a health message */
 	if dbStats.OpenConnections > 40 { // Assuming 50 is the max for this example
 		stats.Message = "The database is experiencing heavy load."
 	}
@@ -211,6 +208,8 @@ func dbHealth(db *sql.DB) (dbHealthInfo, error) {
 
 }
 
+// Hits the health check endpoint of my obersvability tool and confirms it's up
+// Returns a struct with the status and any other details I want to include
 func observHealth(getenv func(string) string) (observHealthInfo, error) {
 
 	observHealth := observHealthInfo{
@@ -230,6 +229,10 @@ func observHealth(getenv func(string) string) (observHealthInfo, error) {
 		return observHealth, fmt.Errorf("error reading the observability health status: %s", err.Error())
 	}
 
+	/*
+		The response appears to be just a field indicating if the observability tool
+		can connect to its datastore, so we'll look that up and use it.
+	*/
 	observHealth.Status = jsonData["database"].(string)
 	observHealth.Healthy = strings.ToLower(observHealth.Status) == "ok"
 

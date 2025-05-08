@@ -12,6 +12,11 @@ services:
         target: /data
     ports: 
       - 3000:3000 
+    healthcheck:
+      test: ["CMD-SHELL", "curl http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     networks:
       - gift-registry-network
 
@@ -19,16 +24,18 @@ services:
     container_name: gift-registry-postgres
     image: postgres:17.2
     pull_policy: missing
+    ports: 
+      - 5432:5432
     volumes:
-      - ./postgres_data:/var/lib/postgres/data
+      - ./postgres_data:/var/lib/postgresql/data/
       - ./postgres_scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
-    # Set up your DB credentials in environment variables
     healthcheck:
       test: ["CMD-SHELL", "sh -c 'pg_isready -U ${DB_USER} -d ${DB_NAME}'"]
       interval: 10s
       timeout: 3s
       retries: 3
     environment:
+      # Set up your DB credentials in environment variables
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_USER: ${DB_USER}
@@ -53,6 +60,7 @@ services:
       DB_PORT: ${DB_PORT}
       DB_HOST: ${DB_HOST}
       DB_NAME: ${DB_NAME}
+      MIGRATIONS_DIR: "migrations"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://gift-registry-observability:4318 
       OTEL_HC: http://gift-registry-observability:3000/api/health 
       OTEL_METRIC_EXPORT_INTERVAL: "5000" # so we don't have to wait 60s for metrics
