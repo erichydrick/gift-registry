@@ -52,6 +52,11 @@ func TestMain(m *testing.M) {
 		log.Fatal("could not connect to docker ", err)
 	}
 
+	/*
+		TODO:
+		MOUNT A VOLUME WITH A TEST INIT SCRIPT TO CREATE A DB AND MIGRATIONS TABLE
+		ON STARTUP
+	*/
 	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "postgres",
 		Tag:        "17.2",
@@ -109,7 +114,6 @@ func TestMain(m *testing.M) {
 // should that ever change
 func TestClose(t *testing.T) {
 
-	// TODO: FIGURE OUT THE TEST DATA HERE
 	testData := []struct {
 		testName string
 	}{
@@ -246,7 +250,8 @@ func TestRunMigrations(t *testing.T) {
 
 			t.Parallel()
 
-			ctx := context.TODO()
+			/* Just want a do-nothing context placeholder */
+			ctx := context.Background()
 			db, err := database.Connection(getenv)
 			if err != nil {
 				t.Fatal("Error setting up test database connection! ", err)

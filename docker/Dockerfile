@@ -15,5 +15,4 @@ WORKDIR /app
 COPY --from=build /app/main /app/main
 ADD cmd/web/templates/ templates/
 ADD cmd/web/css/ css/
-# TODO: EXPOSE PORTS WHEN WE SET UP THE WEB SERVER
 CMD ["./main"]

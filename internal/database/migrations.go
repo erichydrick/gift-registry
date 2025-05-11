@@ -106,8 +106,6 @@ func RunMigrations(
 
 	}
 
-	// TODO:
-	// 6. POPULATE THE TOTAL METRICS, SPAN DETAILS, AND FILE-LEVEL METRICS AND SEND TO OTEL
 	attributes := make([]attribute.KeyValue, len(fileToRowsAffected))
 	for key, value := range fileToRowsAffected {
 
