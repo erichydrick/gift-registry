@@ -58,6 +58,7 @@ services:
       DB_PORT: ${DB_PORT}
       DB_HOST: ${DB_HOST}
       DB_NAME: ${DB_NAME}
+      MIGRATIONS_DIR: "migrations"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://gift-registry-observability:4318 
       OTEL_HC: http://gift-registry-observability:3000/api/health 
       OTEL_METRIC_EXPORT_INTERVAL: "5000" # so we don't have to wait 60s for metrics

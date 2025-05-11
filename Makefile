@@ -5,7 +5,7 @@ build:
 	go build -o main cmd/api/main.go
 
 docker-build: test
-	docker build -t gift-registry -f docker/Dockerfile .
+	docker build -t gift-registry --no-deps -f docker/Dockerfile .
 
 docker-down:
 	clear

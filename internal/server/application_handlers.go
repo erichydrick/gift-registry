@@ -105,13 +105,12 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 			}
 		}()
 
+		tmpl := template.Must(template.ParseFiles(getenv("TEMPLATES_DIR") + "/health.html"))
+		res.WriteHeader(responseStatus)
+
 		healthCheckCtr.Add(ctx, 1, metric.WithAttributes(
 			attribute.Bool("healthy", status.Healthy),
 			attribute.Bool("dbHealthy", status.DBHealth.Healthy),
-			attribute.Int64("dbOpenConnections", int64(status.DBHealth.OpenConnections)),
-			attribute.Int64("dbConnectionsInUse", int64(status.DBHealth.ConnectionsInUse)),
-			attribute.Int64("dbIdleConnections", int64(status.DBHealth.IdleConnections)),
-			attribute.Int64("dbWaitDuration", int64(status.DBHealth.WaitDuration)),
 			attribute.Bool("observHealthy", status.ObservHealth.Healthy),
 		))
 
@@ -131,8 +130,6 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 			attribute.String("observStatus", status.ObservHealth.Status),
 		)
 
-		tmpl := template.Must(template.ParseFiles(getenv("TEMPLATES_DIR") + "/health.html"))
-
 		logger.InfoContext(ctx, fmt.Sprintf("Finished the %s operation", req.URL.Path),
 			slog.Bool("healthy", status.Healthy),
 			slog.Bool("dbHealthy", status.DBHealth.Healthy),
@@ -141,7 +138,6 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 			slog.String("dbError", status.DBHealth.Error),
 			slog.String("dbStatus", status.DBHealth.Status),
 		)
-		res.WriteHeader(responseStatus)
 		tmpl.Execute(res, status)
 
 	})

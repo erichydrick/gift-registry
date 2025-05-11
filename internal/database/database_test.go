@@ -1,10 +1,13 @@
 package database_test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"gift-registry/internal/database"
 	"log"
+	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -23,12 +26,18 @@ const (
 /* hostAndPort gets reset for different tests */
 var (
 	hostAndPort string
+	logger      *slog.Logger
 )
 
 // Sets up the database package tests.
 // Creates a Postgres container for testing, configuring it to automatically clean itself up.
 // Starts the testing database container.
 func TestMain(m *testing.M) {
+
+	/* Sets up a testing logger */
+	options := &slog.HandlerOptions{Level: slog.LevelDebug}
+	handler := slog.NewJSONHandler(os.Stderr, options)
+	logger = slog.New(handler)
 
 	log.Println("Creating the embedded Postgres for database testing")
 
@@ -94,6 +103,60 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
+// Tests the Close() function from the database package
+// This test doesn't do much, as the function is a wrapper around
+// sql.DB.Close(), but this at least leaves us infrastructure in place
+// should that ever change
+func TestClose(t *testing.T) {
+
+	// TODO: FIGURE OUT THE TEST DATA HERE
+	testData := []struct {
+		testName string
+	}{
+		{testName: "Successful close"},
+	}
+
+	for _, data := range testData {
+
+		env := map[string]string{
+			"DB_USER": dbUser,
+			"DB_PASS": dbPass,
+			"DB_HOST": strings.Split(hostAndPort, ":")[0],
+			"DB_PORT": strings.Split(hostAndPort, ":")[1],
+			"DB_NAME": dbName,
+		}
+
+		getenv := func(key string) string { return env[key] }
+
+		t.Run(data.testName, func(t *testing.T) {
+
+			t.Parallel()
+
+			db, err := database.Connection(getenv)
+			if err != nil {
+				t.Fatal("Error connecting to the database for a real Close() call. ", err)
+			}
+
+			err = database.Close()
+			if err != nil {
+				t.Fatal("Error testing a successful Close() ", err)
+			}
+			/*
+				Simple error - back-to-back closes. The second should fail because we're closing a closed DB
+			*/
+
+			/* This SHOULD fail, we just closed the connection */
+			err = db.Ping()
+			if err == nil {
+				t.Fatal("Just pinged a closed database connection!")
+			}
+
+		})
+
+	}
+
+}
+
 // Tests connecting to the database and confirms the function behaves correctly
 // when successful and when connection fails due to a bad config.
 func TestConnect(t *testing.T) {
@@ -147,27 +210,34 @@ func TestConnect(t *testing.T) {
 
 }
 
-// Tests the Close() function from the database package
-// This test doesn't do much, as the function is a wrapper around
-// sql.DB.Close(), but this at least leaves us infrastructure in place
-// should that ever change
-func TestClose(t *testing.T) {
+// Tests the migrations runner and confirms the migrations files are applied
+// correctly and the transaction properly rolls back in case of a problem
+func TestRunMigrations(t *testing.T) {
 
-	// TODO: FIGURE OUT THE TEST DATA HERE
+	/*
+		TODO:
+		1. ADD A TEST THAT VALIDATES RUNNING A MIGRATION ON A DB WITH SOME MIGRATIONS ALREADY APPLIED
+	*/
 	testData := []struct {
-		testName string
+		hostAndPort     string
+		errorExpected   bool
+		expectedRowCnts map[string]int64
+		migrationsDir   string
+		testName        string
 	}{
-		{testName: "Successful close"},
+		{hostAndPort: hostAndPort, errorExpected: false, migrationsDir: "migrations/success", testName: "Successful migration"},
+		{hostAndPort: hostAndPort + "0", errorExpected: true, migrationsDir: "migrations/rollback", testName: "Migration rollback"},
 	}
 
 	for _, data := range testData {
 
 		env := map[string]string{
-			"DB_USER": dbUser,
-			"DB_PASS": dbPass,
-			"DB_HOST": strings.Split(hostAndPort, ":")[0],
-			"DB_PORT": strings.Split(hostAndPort, ":")[1],
-			"DB_NAME": dbName,
+			"DB_USER":        dbUser,
+			"DB_PASS":        dbPass,
+			"DB_HOST":        strings.Split(data.hostAndPort, ":")[0],
+			"DB_PORT":        strings.Split(data.hostAndPort, ":")[1],
+			"DB_NAME":        dbName,
+			"MIGRATIONS_DIR": data.migrationsDir,
 		}
 
 		getenv := func(key string) string { return env[key] }
@@ -176,27 +246,26 @@ func TestClose(t *testing.T) {
 
 			t.Parallel()
 
+			ctx := context.TODO()
 			db, err := database.Connection(getenv)
 			if err != nil {
-				t.Fatal("Error connecting to the database for a real Close() call. ", err)
+				t.Fatal("Error setting up test database connection! ", err)
 			}
 
-			err = database.Close()
-			if err != nil {
-				t.Fatal("Error testing a successful Close() ", err)
-			}
+			fileToRowCnts, err := database.RunMigrations(ctx, db, logger, getenv)
+
 			/*
-				Simple error - back-to-back closes. The second should fail because we're closing a closed DB
+				Confirm the error value I got back is what I expected.
 			*/
-
-			/* This SHOULD fail, we just closed the connection */
-			err = db.Ping()
-			if err == nil {
-				t.Fatal("Just pinged a closed database connection!")
+			if data.errorExpected != (err != nil) {
+				t.Fatal("Error migrations error expected? ", data.errorExpected, " Error returned? ", (err != nil))
 			}
 
-		})
+			// TODO: WRITE A CHECK TO CONFIRM THE ROWS AFFECTED MATCH WHAT I EXPECT
+			log.Println("Files to counts returned", fileToRowCnts)
 
+		},
+		)
 	}
 
 }
