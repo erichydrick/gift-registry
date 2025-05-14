@@ -1,0 +1,1 @@
+INSERT INTO gift_registry.person (personID, firstName, lastName, email, password, salt, createdOn, modifiedOn) VALUES(1, 'Stan', 'Ardman', 'testuser@yopmail.com', 'unittesting123', 'salty', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP;

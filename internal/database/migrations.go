@@ -17,8 +17,10 @@ import (
 )
 
 const (
-	name = "net.hydrick.gift-registry/server"
+	name = "net.hydrick.gift-registry/database"
 )
+
+// TODO: THIS WON'T BE TESTABLE - REPLACE WITH IO/FS
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS

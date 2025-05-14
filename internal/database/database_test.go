@@ -8,6 +8,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -52,11 +53,6 @@ func TestMain(m *testing.M) {
 		log.Fatal("could not connect to docker ", err)
 	}
 
-	/*
-		TODO:
-		MOUNT A VOLUME WITH A TEST INIT SCRIPT TO CREATE A DB AND MIGRATIONS TABLE
-		ON STARTUP
-	*/
 	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "postgres",
 		Tag:        "17.2",
@@ -66,6 +62,8 @@ func TestMain(m *testing.M) {
 			fmt.Sprintf("POSTGRES_DB=%s", dbName),
 			"listen_addresses = '*'",
 		},
+		/* TODO: THIS SHOULD BE ABSOLUTE */
+		Mounts: []string{"../../docker/init.sql"},
 	}, func(config *docker.HostConfig) {
 		/* Autoremove = true ensures stopped containers are removed */
 		config.AutoRemove = true
@@ -218,19 +216,18 @@ func TestConnect(t *testing.T) {
 // correctly and the transaction properly rolls back in case of a problem
 func TestRunMigrations(t *testing.T) {
 
-	/*
-		TODO:
-		1. ADD A TEST THAT VALIDATES RUNNING A MIGRATION ON A DB WITH SOME MIGRATIONS ALREADY APPLIED
-	*/
 	testData := []struct {
-		hostAndPort     string
-		errorExpected   bool
-		expectedRowCnts map[string]int64
-		migrationsDir   string
-		testName        string
+		hostAndPort         string
+		errorExpected       bool
+		expectedRowCnts     map[string]int64
+		migrationsDir       string
+		supplementalDir     string
+		supplementalRowCnts map[string]int64
+		testName            string
 	}{
-		{hostAndPort: hostAndPort, errorExpected: false, migrationsDir: "migrations/success", testName: "Successful migration"},
-		{hostAndPort: hostAndPort + "0", errorExpected: true, migrationsDir: "migrations/rollback", testName: "Migration rollback"},
+		{hostAndPort: hostAndPort, errorExpected: false, expectedRowCnts: map[string]int64{"00_create_tables.sql": 1}, migrationsDir: "migrations_test/success", testName: "Successful migration"},
+		{hostAndPort: hostAndPort + "0", errorExpected: true, expectedRowCnts: map[string]int64{}, migrationsDir: "migrations_test/rollback", testName: "Migration rollback"},
+		{hostAndPort: hostAndPort, errorExpected: false, expectedRowCnts: map[string]int64{"00_create_tables.sql": 1}, migrationsDir: "migrations_test/success", supplementalDir: "migrations_test/second", supplementalRowCnts: map[string]int64{"01_follow_up_migration": 1}, testName: "Update existing migration"},
 	}
 
 	for _, data := range testData {
@@ -266,8 +263,27 @@ func TestRunMigrations(t *testing.T) {
 				t.Fatal("Error migrations error expected? ", data.errorExpected, " Error returned? ", (err != nil))
 			}
 
-			// TODO: WRITE A CHECK TO CONFIRM THE ROWS AFFECTED MATCH WHAT I EXPECT
-			log.Println("Files to counts returned", fileToRowCnts)
+			if !reflect.DeepEqual(data.expectedRowCnts, fileToRowCnts) {
+
+				t.Fatal("File to row count modified mappings didn't match the expected value. Expected ", fmt.Sprintf("%v", data.expectedRowCnts), " but got ", fmt.Sprintf("%v", fileToRowCnts))
+
+			}
+
+			if data.supplementalDir != "" {
+
+				env["MIGRATIONS_DIR"] = data.supplementalDir
+				fileToRowCnts, err := database.RunMigrations(ctx, db, logger, getenv)
+				if err != nil {
+					t.Fatal("Unexpected error doing a follow-up migration: ", err.Error())
+				}
+
+				if !reflect.DeepEqual(data.supplementalRowCnts, fileToRowCnts) {
+
+					t.Fatal("File to row count modified mappings for the supplemental migration didn't match the expected value. Expected ", fmt.Sprintf("%v", data.supplementalRowCnts)+" but got "+fmt.Sprintf("%v", fileToRowCnts))
+
+				}
+
+			}
 
 		},
 		)
