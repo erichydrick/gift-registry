@@ -36,6 +36,7 @@ func Connection(getenv func(string) string) (*sql.DB, error) {
 		Connecting __looks__ successful even if the configs are bad. Confirm it
 		worked by pinging the DB
 	*/
+	fmt.Println("Pinging ", connStr)
 	if err = db.Ping(); err != nil {
 		return nil, err
 	}

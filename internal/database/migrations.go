@@ -33,7 +33,6 @@ var (
 // Checks for any pending database migrations and applies them
 func RunMigrations(
 	ctx context.Context,
-	db *sql.DB,
 	logger *slog.Logger,
 	getenv func(string) string) (map[string]int64, error) {
 
@@ -63,7 +62,7 @@ func RunMigrations(
 		panic("could not initialize the total rows affected metric " + err.Error())
 	}
 
-	migrationsRun, err := migrationsRun(ctx, db)
+	migrationsApplied, err := migrationsRun(ctx)
 	if err != nil {
 		logger.ErrorContext(ctx, "Error reading applied migrations from the database", slog.String("errorMessage", err.Error()))
 		return map[string]int64{}, fmt.Errorf("error reading applied migrations from the database: %s", err.Error())
@@ -75,7 +74,7 @@ func RunMigrations(
 		return map[string]int64{}, fmt.Errorf("error reading applied migrations from the database: %s", err.Error())
 	}
 
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := dbConn.BeginTx(ctx, nil)
 	if err != nil {
 		logger.ErrorContext(ctx, "Error starting transaction", slog.String("errorMessage", err.Error()))
 		return map[string]int64{}, fmt.Errorf("error starting transaction lock on the database migrations: %s", err.Error())
@@ -91,12 +90,12 @@ func RunMigrations(
 			removed but is still "live" in the database. There's nothing we can do about
 			that, just carry on wayward son.
 		*/
-		if migrationsRun[recIndex] <= sqlFile.Name() {
+		if migrationsApplied[recIndex] <= sqlFile.Name() {
 			recIndex++
 			continue
 		}
 
-		rowsAffected, err := applyMigration(ctx, db, logger, migrationsFS, sqlFile)
+		rowsAffected, err := applyMigration(ctx, logger, migrationsFS, sqlFile)
 		if err != nil {
 			rollback(ctx, tx, logger, sqlFile.Name())
 			break
@@ -104,7 +103,7 @@ func RunMigrations(
 
 		fileToRowsAffected[sqlFile.Name()] = rowsAffected
 
-		db.ExecContext(ctx, "INSERT INTO gift_registry.migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))", sqlFile.Name(), time.Now().UTC())
+		dbConn.ExecContext(ctx, "INSERT INTO gift_registry.migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))", sqlFile.Name(), time.Now().UTC())
 
 	}
 
@@ -139,7 +138,7 @@ func RunMigrations(
 
 }
 
-func applyMigration(ctx context.Context, db *sql.DB, logger *slog.Logger, migrations embed.FS, migrationFile fs.DirEntry) (int64, error) {
+func applyMigration(ctx context.Context, logger *slog.Logger, migrations embed.FS, migrationFile fs.DirEntry) (int64, error) {
 
 	sqlBytes, err := fs.ReadFile(migrations, migrationFile.Name())
 	if err != nil {
@@ -150,7 +149,7 @@ func applyMigration(ctx context.Context, db *sql.DB, logger *slog.Logger, migrat
 	}
 
 	statement := string(sqlBytes)
-	result, err := db.ExecContext(ctx, statement)
+	result, err := dbConn.ExecContext(ctx, statement)
 	if err != nil {
 		logger.ErrorContext(ctx, "Error applying migration",
 			slog.String("sqlStatement", statement),
@@ -187,10 +186,10 @@ func listMigrations(migrationsDir embed.FS, root string) ([]fs.DirEntry, error) 
 
 }
 
-func migrationsRun(ctx context.Context, db *sql.DB) ([]string, error) {
+func migrationsRun(ctx context.Context) ([]string, error) {
 
 	var migratedFiles []string
-	rows, err := db.QueryContext(ctx, "SELECT filename "+
+	rows, err := dbConn.QueryContext(ctx, "SELECT filename "+
 		"	FROM gift_registry.migrations "+
 		"	ORDER BY filename ASC")
 	if err != nil {

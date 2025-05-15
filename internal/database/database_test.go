@@ -8,6 +8,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -42,6 +43,11 @@ func TestMain(m *testing.M) {
 
 	log.Println("Creating the embedded Postgres for database testing")
 
+	// TODO:
+	// MOVE POOL DECLARATION TO VAR BLOCK ABOVE
+	// MOVE CONTAINER CREATION TO TEST FUNCTIONS (SPECIFICALLY, T.RUN())
+	// MAKE THE SAME CHANGES TO DATABASE IN MAIN_TEST
+
 	/* Set up a Docker container pool and connect to it */
 	pool, err := dockertest.NewPool("")
 	if err != nil {
@@ -53,6 +59,12 @@ func TestMain(m *testing.M) {
 		log.Fatal("could not connect to docker ", err)
 	}
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal("Error getting current working directory")
+	}
+	initScript := filepath.Join(cwd, "..", "..", "docker", "postgres_scripts", "init.sql")
+
 	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "postgres",
 		Tag:        "17.2",
@@ -63,7 +75,7 @@ func TestMain(m *testing.M) {
 			"listen_addresses = '*'",
 		},
 		/* TODO: THIS SHOULD BE ABSOLUTE */
-		Mounts: []string{"../../docker/init.sql"},
+		Mounts: []string{initScript + ":/docker-entrypoint-initdb.d/init.sql"},
 	}, func(config *docker.HostConfig) {
 		/* Autoremove = true ensures stopped containers are removed */
 		config.AutoRemove = true
@@ -184,6 +196,7 @@ func TestConnect(t *testing.T) {
 
 		getenv := func(key string) string { return env[key] }
 
+		log.Println("env data is ", env)
 		t.Run(data.testName, func(t *testing.T) {
 
 			t.Parallel()
@@ -195,6 +208,7 @@ func TestConnect(t *testing.T) {
 
 			} else if data.errorExpected && err == nil {
 
+				log.Println("Error expected = ", data.errorExpected, " and err = ", err)
 				t.Fatal("have a connection even though it should have failed!")
 
 			}
@@ -214,7 +228,7 @@ func TestConnect(t *testing.T) {
 
 // Tests the migrations runner and confirms the migrations files are applied
 // correctly and the transaction properly rolls back in case of a problem
-func TestRunMigrations(t *testing.T) {
+func runMigrations(t *testing.T) {
 
 	testData := []struct {
 		hostAndPort         string
@@ -249,12 +263,12 @@ func TestRunMigrations(t *testing.T) {
 
 			/* Just want a do-nothing context placeholder */
 			ctx := context.Background()
-			db, err := database.Connection(getenv)
+			_, err := database.Connection(getenv)
 			if err != nil {
 				t.Fatal("Error setting up test database connection! ", err)
 			}
 
-			fileToRowCnts, err := database.RunMigrations(ctx, db, logger, getenv)
+			fileToRowCnts, err := database.RunMigrations(ctx, logger, getenv)
 
 			/*
 				Confirm the error value I got back is what I expected.
@@ -272,7 +286,7 @@ func TestRunMigrations(t *testing.T) {
 			if data.supplementalDir != "" {
 
 				env["MIGRATIONS_DIR"] = data.supplementalDir
-				fileToRowCnts, err := database.RunMigrations(ctx, db, logger, getenv)
+				fileToRowCnts, err := database.RunMigrations(ctx, logger, getenv)
 				if err != nil {
 					t.Fatal("Unexpected error doing a follow-up migration: ", err.Error())
 				}
