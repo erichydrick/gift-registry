@@ -62,15 +62,19 @@ func RunMigrations(
 		panic("could not initialize the total rows affected metric " + err.Error())
 	}
 
-	migrationsApplied, err := migrationsRun(ctx)
+	migrationsApplied, err := readAppliedMigrations(ctx)
 	if err != nil {
 		logger.ErrorContext(ctx, "Error reading applied migrations from the database", slog.String("errorMessage", err.Error()))
 		return map[string]int64{}, fmt.Errorf("error reading applied migrations from the database: %s", err.Error())
 	}
 
+	logger.Debug("Listing the migrations files", slog.String("migrationsDirectory", getenv("MIGRATIONS_DIR")))
+	/*
+		TODO: CONVERT ENV[MIGRATIONS_DIR] TO AN FS, AND THEN CALL LISTMIGRATIONS FROM THERE
+	*/
 	sqlFiles, err := listMigrations(migrationsFS, getenv("MIGRATIONS_DIR"))
 	if err != nil {
-		logger.ErrorContext(ctx, "Error reading applied migrations from the database", slog.String("errorMessage", err.Error()))
+		logger.ErrorContext(ctx, "Error listing database migration files", slog.String("errorMessage", err.Error()))
 		return map[string]int64{}, fmt.Errorf("error reading applied migrations from the database: %s", err.Error())
 	}
 
@@ -186,11 +190,11 @@ func listMigrations(migrationsDir embed.FS, root string) ([]fs.DirEntry, error) 
 
 }
 
-func migrationsRun(ctx context.Context) ([]string, error) {
+func readAppliedMigrations(ctx context.Context) ([]string, error) {
 
 	var migratedFiles []string
 	rows, err := dbConn.QueryContext(ctx, "SELECT filename "+
-		"	FROM gift_registry.migrations "+
+		"	FROM migrations "+
 		"	ORDER BY filename ASC")
 	if err != nil {
 		return migratedFiles, fmt.Errorf("error querying previous migrations from the database: %s", err.Error())

@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 
 	_ "github.com/lib/pq"
 )
@@ -13,7 +14,7 @@ var (
 )
 
 // Returns a singleton database connection, creating a new one if it's not already initialized. getenv() will use the container environment variables when running, but can be mocked for testing.
-func Connection(getenv func(string) string) (*sql.DB, error) {
+func Connection(logger *slog.Logger, getenv func(string) string) (*sql.DB, error) {
 
 	/* Re-use the existing connection once established */
 	if dbConn != nil {
@@ -36,7 +37,7 @@ func Connection(getenv func(string) string) (*sql.DB, error) {
 		Connecting __looks__ successful even if the configs are bad. Confirm it
 		worked by pinging the DB
 	*/
-	fmt.Println("Pinging ", connStr)
+	logger.Debug("Pinging database to confirm connectivity", slog.String("connectionString", connStr))
 	if err = db.Ping(); err != nil {
 		return nil, err
 	}
@@ -47,8 +48,21 @@ func Connection(getenv func(string) string) (*sql.DB, error) {
 }
 
 // Closes the database connection
-func Close() error {
+func Close() (err error) {
 
-	return dbConn.Close()
+	if dbConn != nil {
+
+		err = dbConn.Close()
+		/*
+			Clear the database connection reference so future calls to Connect()
+			create a fresh connection
+		*/
+		if err == nil {
+			dbConn = nil
+		}
+
+	}
+
+	return
 
 }
