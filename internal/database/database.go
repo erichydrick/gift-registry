@@ -37,7 +37,6 @@ func Connection(logger *slog.Logger, getenv func(string) string) (*sql.DB, error
 		Connecting __looks__ successful even if the configs are bad. Confirm it
 		worked by pinging the DB
 	*/
-	logger.Debug("Pinging database to confirm connectivity", slog.String("connectionString", connStr))
 	if err = db.Ping(); err != nil {
 		return nil, err
 	}

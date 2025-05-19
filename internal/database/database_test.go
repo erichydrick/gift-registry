@@ -36,16 +36,11 @@ var (
 func TestMain(m *testing.M) {
 
 	/* Sets up a testing logger */
-	options := &slog.HandlerOptions{Level: slog.LevelDebug}
+	options := &slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true}
 	handler := slog.NewJSONHandler(os.Stderr, options)
 	logger = slog.New(handler)
 
 	log.Println("Creating the embedded Postgres for database testing")
-
-	// TODO:
-	// MOVE POOL DECLARATION TO VAR BLOCK ABOVE
-	// MOVE CONTAINER CREATION TO TEST FUNCTIONS (SPECIFICALLY, T.RUN())
-	// MAKE THE SAME CHANGES TO DATABASE IN MAIN_TEST
 
 	/* Set up a Docker container pool and connect to it */
 	var err error
@@ -135,8 +130,13 @@ func TestRunMigrations(t *testing.T) {
 		testName            string
 	}{
 		{errorExpected: false, expectedRowCnts: map[string]int64{"00_create_tables.sql": 1}, migrationsDir: "migrations_test/success", testName: "Successful migration"},
-		// {errorExpected: true, expectedRowCnts: map[string]int64{}, migrationsDir: "migrations_test/rollback", testName: "Migration rollback"},
-		// {errorExpected: false, expectedRowCnts: map[string]int64{"00_create_tables.sql": 1}, migrationsDir: "migrations_test/success", supplementalDir: "migrations_test/second", supplementalRowCnts: map[string]int64{"01_follow_up_migration": 1}, testName: "Update existing migration"},
+		{errorExpected: true, expectedRowCnts: map[string]int64{}, migrationsDir: "migrations_test/rollback", testName: "Migration rollback"},
+		{errorExpected: false, expectedRowCnts: map[string]int64{"00_create_tables.sql": 1}, migrationsDir: "migrations_test/success", supplementalDir: "migrations_test/second", supplementalRowCnts: map[string]int64{"01_follow_up_migration": 1}, testName: "Update existing migration"},
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal("Error getting the current working directory ", err.Error())
 	}
 
 	for _, data := range testData {
@@ -144,7 +144,7 @@ func TestRunMigrations(t *testing.T) {
 		env := map[string]string{
 			"DB_USER":        dbUser,
 			"DB_PASS":        dbPass,
-			"MIGRATIONS_DIR": data.migrationsDir,
+			"MIGRATIONS_DIR": filepath.Join(cwd, data.migrationsDir),
 		}
 
 		getenv := func(key string) string { return env[key] }
@@ -162,6 +162,7 @@ func TestRunMigrations(t *testing.T) {
 
 			/* Just want a do-nothing context placeholder */
 			ctx := context.Background()
+			/* TODO: GET THIS REFERENCE SO WE CAN CHECK DB STATE LATER */
 			_, err := database.Connection(logger, getenv)
 			if err != nil {
 				t.Fatal("Error setting up test database connection! ", err)
@@ -183,6 +184,8 @@ func TestRunMigrations(t *testing.T) {
 
 			}
 
+			/* TODO: ADD QUERY TO VERIFY SUCCESSFUL MIGRATION FILES WERE ADDED TO THE DATABASE */
+
 			if data.supplementalDir != "" {
 
 				env["MIGRATIONS_DIR"] = data.supplementalDir
@@ -198,6 +201,8 @@ func TestRunMigrations(t *testing.T) {
 				}
 
 			}
+
+			/* TODO: ADD QUERY TO VERIFY SUCCESSFUL MIGRATION FILES WERE ADDED TO THE DATABASE */
 
 		},
 		)

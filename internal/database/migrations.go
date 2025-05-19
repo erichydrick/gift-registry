@@ -3,10 +3,10 @@ package database
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -21,9 +21,6 @@ const (
 )
 
 // TODO: THIS WON'T BE TESTABLE - REPLACE WITH IO/FS
-
-//go:embed migrations/*.sql
-var migrationsFS embed.FS
 
 var (
 	meter  = otel.Meter(name)
@@ -69,13 +66,16 @@ func RunMigrations(
 	}
 
 	logger.Debug("Listing the migrations files", slog.String("migrationsDirectory", getenv("MIGRATIONS_DIR")))
-	/*
-		TODO: CONVERT ENV[MIGRATIONS_DIR] TO AN FS, AND THEN CALL LISTMIGRATIONS FROM THERE
-	*/
-	sqlFiles, err := listMigrations(migrationsFS, getenv("MIGRATIONS_DIR"))
+	migrationsFS := os.DirFS(getenv("MIGRATIONS_DIR"))
+	sqlFiles, err := listMigrations(migrationsFS, ".")
 	if err != nil {
 		logger.ErrorContext(ctx, "Error listing database migration files", slog.String("errorMessage", err.Error()))
 		return map[string]int64{}, fmt.Errorf("error reading applied migrations from the database: %s", err.Error())
+	}
+
+	if len(sqlFiles) < 1 {
+		logger.InfoContext(ctx, "No SQL migrations to apply.", slog.String("migrationsDir", getenv("MIGRATIONS_DIR")))
+		return map[string]int64{}, nil
 	}
 
 	tx, err := dbConn.BeginTx(ctx, nil)
@@ -88,17 +88,28 @@ func RunMigrations(
 	recIndex := 0
 	for _, sqlFile := range sqlFiles {
 
+		if sqlFile.IsDir() {
+
+			logger.DebugContext(ctx, "Skipping directory", slog.String("dirName", sqlFile.Name()))
+			continue
+
+		}
+
 		/*
+			The length of migrationsApplied is 0 when no migrations have been run yet,
+			so we obviously need to apply anything we have in that case.
+
 			Technically, if migrationsRun[recIndex] (where we are in the list of applied
 			migrations per the DB) is < the file, it implies that a migration file was
 			removed but is still "live" in the database. There's nothing we can do about
 			that, just carry on wayward son.
 		*/
-		if migrationsApplied[recIndex] <= sqlFile.Name() {
+		if len(migrationsApplied) > 0 && migrationsApplied[recIndex] <= sqlFile.Name() {
 			recIndex++
 			continue
 		}
 
+		logger.DebugContext(ctx, "Applying migration file", slog.String("filename", sqlFile.Name()))
 		rowsAffected, err := applyMigration(ctx, logger, migrationsFS, sqlFile)
 		if err != nil {
 			rollback(ctx, tx, logger, sqlFile.Name())
@@ -106,9 +117,17 @@ func RunMigrations(
 		}
 
 		fileToRowsAffected[sqlFile.Name()] = rowsAffected
+		logger.DebugContext(ctx, "Rows affected map now", slog.String("filesToRowsAffected", fmt.Sprintf("%v", fileToRowsAffected)))
 
 		dbConn.ExecContext(ctx, "INSERT INTO gift_registry.migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))", sqlFile.Name(), time.Now().UTC())
 
+	}
+
+	/* Flush everything to the database */
+	err = tx.Commit()
+	if err != nil {
+		logger.ErrorContext(ctx, "Error committing the database migration!", slog.String("errorMessage", err.Error()))
+		return map[string]int64{}, fmt.Errorf("error committing the database migration: %s", err.Error())
 	}
 
 	attributes := make([]attribute.KeyValue, len(fileToRowsAffected))
@@ -136,13 +155,11 @@ func RunMigrations(
 
 	span.SetAttributes(attributes...)
 
-	/* TODO: REMOVE THIS WHEN WE HAVE TESTS */
-	return nil, nil
-	// return fileToRowsAffected, nil
+	return fileToRowsAffected, nil
 
 }
 
-func applyMigration(ctx context.Context, logger *slog.Logger, migrations embed.FS, migrationFile fs.DirEntry) (int64, error) {
+func applyMigration(ctx context.Context, logger *slog.Logger, migrations fs.FS, migrationFile fs.DirEntry) (int64, error) {
 
 	sqlBytes, err := fs.ReadFile(migrations, migrationFile.Name())
 	if err != nil {
@@ -153,6 +170,7 @@ func applyMigration(ctx context.Context, logger *slog.Logger, migrations embed.F
 	}
 
 	statement := string(sqlBytes)
+	logger.DebugContext(ctx, "Applying SQL", slog.String("statement", statement))
 	result, err := dbConn.ExecContext(ctx, statement)
 	if err != nil {
 		logger.ErrorContext(ctx, "Error applying migration",
@@ -167,12 +185,13 @@ func applyMigration(ctx context.Context, logger *slog.Logger, migrations embed.F
 			slog.String("errorMessage", err.Error()))
 		return 0, fmt.Errorf("error getting the number of rows impacted by sql statement \"%s\": %s", statement, err.Error())
 	}
+	logger.DebugContext(ctx, "Rows affected", slog.Int64("rowsAffected", rowsAffected), slog.String("filename", migrationFile.Name()), slog.String("statement", statement))
 
 	return rowsAffected, nil
 
 }
 
-func listMigrations(migrationsDir embed.FS, root string) ([]fs.DirEntry, error) {
+func listMigrations(migrationsDir fs.FS, root string) ([]fs.DirEntry, error) {
 
 	migrationFiles, err := fs.ReadDir(migrationsDir, root)
 	if err != nil {

@@ -104,7 +104,8 @@ func main() {
 	/*
 	   Configure logging
 	*/
-	logger := otelslog.NewLogger(name, otelslog.WithSource(true))
+	handler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true})
+	logger := otelslog.Logger.New(handler)
 
 	ctx := context.Background()
 
