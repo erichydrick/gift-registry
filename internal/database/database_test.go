@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -90,9 +91,7 @@ func TestConnect(t *testing.T) {
 			env["DB_PORT"] = strings.Split(hostAndPort, ":")[1] + data.portModifier
 			env["DB_NAME"] = dbName
 
-			log.Println("Environment variables for ", t.Name(), ", ", env)
-			log.Println("Container for test ", t.Name(), ": ", hostAndPort)
-			db, err := database.Connection(logger, getenv)
+			db, err := database.Connection(getenv)
 			if !data.errorExpected && err != nil {
 
 				t.Fatal("successful connection attempt failed! ", err)
@@ -129,9 +128,9 @@ func TestRunMigrations(t *testing.T) {
 		supplementalRowCnts map[string]int64
 		testName            string
 	}{
-		{errorExpected: false, expectedRowCnts: map[string]int64{"00_create_tables.sql": 1}, migrationsDir: "migrations_test/success", testName: "Successful migration"},
+		{errorExpected: false, expectedRowCnts: map[string]int64{"00_create_tables.sql": 0}, migrationsDir: "migrations_test/success", testName: "Successful migration"},
 		{errorExpected: true, expectedRowCnts: map[string]int64{}, migrationsDir: "migrations_test/rollback", testName: "Migration rollback"},
-		{errorExpected: false, expectedRowCnts: map[string]int64{"00_create_tables.sql": 1}, migrationsDir: "migrations_test/success", supplementalDir: "migrations_test/second", supplementalRowCnts: map[string]int64{"01_follow_up_migration": 1}, testName: "Update existing migration"},
+		{errorExpected: false, expectedRowCnts: map[string]int64{"00_create_tables.sql": 0}, migrationsDir: "migrations_test/success", supplementalDir: "migrations_test/second", supplementalRowCnts: map[string]int64{"01_follow_up_migration.sql": 1}, testName: "Update existing migration"},
 	}
 
 	cwd, err := os.Getwd()
@@ -162,8 +161,7 @@ func TestRunMigrations(t *testing.T) {
 
 			/* Just want a do-nothing context placeholder */
 			ctx := context.Background()
-			/* TODO: GET THIS REFERENCE SO WE CAN CHECK DB STATE LATER */
-			_, err := database.Connection(logger, getenv)
+			db, err := database.Connection(getenv)
 			if err != nil {
 				t.Fatal("Error setting up test database connection! ", err)
 			}
@@ -184,11 +182,16 @@ func TestRunMigrations(t *testing.T) {
 
 			}
 
-			/* TODO: ADD QUERY TO VERIFY SUCCESSFUL MIGRATION FILES WERE ADDED TO THE DATABASE */
+			if !migratedFileInDB(db, fileToRowCnts) {
+
+				t.Fatal("Migration file(s) run not in migrations table!")
+
+			}
 
 			if data.supplementalDir != "" {
 
-				env["MIGRATIONS_DIR"] = data.supplementalDir
+				env["MIGRATIONS_DIR"] = filepath.Join(cwd, data.supplementalDir)
+				log.Printf("Calling RunMigrations with migrations dir changed to %s (raw %s)\n", getenv("MIGRATIONS_DIR"), env["MIGRATIONS_DIR"])
 				fileToRowCnts, err := database.RunMigrations(ctx, logger, getenv)
 				if err != nil {
 					t.Fatal("Unexpected error doing a follow-up migration: ", err.Error())
@@ -202,10 +205,14 @@ func TestRunMigrations(t *testing.T) {
 
 			}
 
-			/* TODO: ADD QUERY TO VERIFY SUCCESSFUL MIGRATION FILES WERE ADDED TO THE DATABASE */
+			if !migratedFileInDB(db, fileToRowCnts) {
 
-		},
-		)
+				t.Fatal("Migration file(s) run not in migrations table!")
+
+			}
+
+		})
+
 	}
 
 }
@@ -251,7 +258,6 @@ func buildTestContainer(testName string) (string, string, func()) {
 	pool.MaxWait = 10 * time.Second
 	if err = pool.Retry(func() error {
 		db, err := sql.Open("postgres", databaseUrl)
-		defer db.Close()
 		if err != nil {
 			return err
 		}
@@ -269,5 +275,43 @@ func buildTestContainer(testName string) (string, string, func()) {
 			log.Fatalf("Could not purge resource: %s", err)
 		}
 	}
+
+}
+
+func migratedFileInDB(db *sql.DB, fileToRowCnts map[string]int64) bool {
+
+	var appliedFiles []string
+	rows, err := db.Query("SELECT filename FROM migrations ORDER BY filename ASC")
+	if err != nil {
+		log.Println("Error checking the migrations table to confirm the file(s) were applied: ", err)
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+
+		var filename string
+		if err := rows.Scan(&filename); err != nil {
+			log.Println("Error reading applied filename ", err)
+			return false
+		}
+
+		appliedFiles = append(appliedFiles, filename)
+
+	}
+	log.Printf("I have %d applied files: %v\n", len(appliedFiles), appliedFiles)
+
+	for migratedFile := range fileToRowCnts {
+
+		if !slices.Contains(appliedFiles, migratedFile) {
+
+			log.Printf("Expected %s to be in the list of migration files run in the database\n", migratedFile)
+			return false
+
+		}
+
+	}
+
+	return true
 
 }

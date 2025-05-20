@@ -3,7 +3,6 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	"log/slog"
 
 	_ "github.com/lib/pq"
 )
@@ -14,7 +13,7 @@ var (
 )
 
 // Returns a singleton database connection, creating a new one if it's not already initialized. getenv() will use the container environment variables when running, but can be mocked for testing.
-func Connection(logger *slog.Logger, getenv func(string) string) (*sql.DB, error) {
+func Connection(getenv func(string) string) (*sql.DB, error) {
 
 	/* Re-use the existing connection once established */
 	if dbConn != nil {

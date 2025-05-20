@@ -9,7 +9,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -64,6 +63,7 @@ func RunMigrations(
 		logger.ErrorContext(ctx, "Error reading applied migrations from the database", slog.String("errorMessage", err.Error()))
 		return map[string]int64{}, fmt.Errorf("error reading applied migrations from the database: %s", err.Error())
 	}
+	logger.DebugContext(ctx, "Have the list of migrations applied", slog.Any("migrationsApplied", migrationsApplied))
 
 	logger.Debug("Listing the migrations files", slog.String("migrationsDirectory", getenv("MIGRATIONS_DIR")))
 	migrationsFS := os.DirFS(getenv("MIGRATIONS_DIR"))
@@ -85,7 +85,6 @@ func RunMigrations(
 	}
 
 	fileToRowsAffected := make(map[string]int64)
-	recIndex := 0
 	for _, sqlFile := range sqlFiles {
 
 		if sqlFile.IsDir() {
@@ -104,9 +103,11 @@ func RunMigrations(
 			removed but is still "live" in the database. There's nothing we can do about
 			that, just carry on wayward son.
 		*/
-		if len(migrationsApplied) > 0 && migrationsApplied[recIndex] <= sqlFile.Name() {
-			recIndex++
+		if slices.Contains(migrationsApplied, sqlFile.Name()) {
+
+			logger.DebugContext(ctx, "Already applied migration, skipping...", slog.String("filename", sqlFile.Name()))
 			continue
+
 		}
 
 		logger.DebugContext(ctx, "Applying migration file", slog.String("filename", sqlFile.Name()))
@@ -119,7 +120,22 @@ func RunMigrations(
 		fileToRowsAffected[sqlFile.Name()] = rowsAffected
 		logger.DebugContext(ctx, "Rows affected map now", slog.String("filesToRowsAffected", fmt.Sprintf("%v", fileToRowsAffected)))
 
-		dbConn.ExecContext(ctx, "INSERT INTO gift_registry.migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))", sqlFile.Name(), time.Now().UTC())
+		logger.DebugContext(ctx, fmt.Sprintf("Adding %s to the database", sqlFile.Name()))
+		insRes, err := dbConn.ExecContext(ctx, "INSERT INTO migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))", sqlFile.Name())
+		if err != nil {
+			logger.ErrorContext(ctx, "Error adding migration file to migrations table!", slog.String("filenam", sqlFile.Name()), slog.String("errorMessage", err.Error()))
+			rollback(ctx, tx, logger, sqlFile.Name())
+			return map[string]int64{}, fmt.Errorf("error writing filename into migrations table: %s", err.Error())
+		}
+		/* TODO: REMOVE THESE DEBUGGING LINES AND _ OUT THE RESULTS FROM THE INSERT ONCE THE TESTS PASS */
+		rowsInserted, err := insRes.RowsAffected()
+		if err != nil {
+			logger.ErrorContext(ctx, "Error getting the rows affected from inserting the migration file!", slog.String("errorMessage", err.Error()))
+			return map[string]int64{}, fmt.Errorf("error getting files written count: %s", err.Error())
+
+		}
+		logger.DebugContext(ctx, "Added migration file to the migrations table", slog.Int64("rowsAffected", rowsInserted))
+		/* TODO: END DEBUGGING BLOCK */
 
 	}
 
