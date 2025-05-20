@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -187,18 +188,24 @@ func TestHealthCheck(t *testing.T) {
 		{dbError: true, dbPort: dbHostPort, expectedDBHealthEntries: 0, expectedDBStatusClass: "unhealthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "unhealthy", healthy: "Healthy", observError: true, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Nothing healthy"},
 	}
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal("Error getting the current working directory ", err.Error())
+	}
+
 	for _, data := range testData {
 
 		port := freePort()
 
 		env := map[string]string{
-			"DB_USER": dbUser,
-			"DB_PASS": dbPass,
-			"DB_HOST": strings.Split(dbHostPort, ":")[0],
-			"DB_PORT": strings.Split(dbHostPort, ":")[1],
-			"DB_NAME": dbName,
-			"OTEL_HC": fmt.Sprintf("http://%s/api/health", obsHostPort),
-			"PORT":    strconv.Itoa(port),
+			"DB_USER":        dbUser,
+			"DB_PASS":        dbPass,
+			"DB_HOST":        strings.Split(dbHostPort, ":")[0],
+			"DB_PORT":        strings.Split(dbHostPort, ":")[1],
+			"DB_NAME":        dbName,
+			"OTEL_HC":        fmt.Sprintf("http://%s/api/health", obsHostPort),
+			"PORT":           strconv.Itoa(port),
+			"MIGRATIONS_DIR": filepath.Join(cwd, "migrations_test/success"),
 		}
 
 		if data.testName == "Invalid templates dir" {
@@ -219,6 +226,12 @@ func TestHealthCheck(t *testing.T) {
 			db, err := database.Connection(getenv)
 			if err != nil {
 				t.Fatal("database connection failure! ", err)
+			}
+
+			/* Just get the database schema caught up, the results of the migration are tested in the database package */
+			_, err = database.RunMigrations(ctx, logger, getenv)
+			if err != nil {
+				t.Fatal("error applying current database migrations")
 			}
 
 			appHandler, err := server.NewServer(getenv, db, logger)
