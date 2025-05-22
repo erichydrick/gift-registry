@@ -73,13 +73,6 @@ func TestConnect(t *testing.T) {
 
 	for _, data := range testData {
 
-		env := map[string]string{
-			"DB_USER": dbUser,
-			"DB_PASS": dbPass,
-		}
-
-		getenv := func(key string) string { return env[key] }
-
 		t.Run(data.testName, func(t *testing.T) {
 
 			t.Parallel()
@@ -87,9 +80,15 @@ func TestConnect(t *testing.T) {
 			hostAndPort, dbName, cleanup := buildTestContainer(t.Name())
 			defer cleanup()
 
-			env["DB_HOST"] = strings.Split(hostAndPort, ":")[0]
-			env["DB_PORT"] = strings.Split(hostAndPort, ":")[1] + data.portModifier
-			env["DB_NAME"] = dbName
+			env := map[string]string{
+				"DB_USER": dbUser,
+				"DB_PASS": dbPass,
+				"DB_HOST": strings.Split(hostAndPort, ":")[0],
+				"DB_PORT": strings.Split(hostAndPort, ":")[1] + data.portModifier,
+				"DB_NAME": dbName,
+			}
+
+			getenv := func(key string) string { return env[key] }
 
 			db, err := database.Connection(getenv)
 			if !data.errorExpected && err != nil {

@@ -37,10 +37,15 @@ const (
 )
 
 var (
-	dbHostPort  string
-	logger      *slog.Logger
-	obsHostPort string
+	logger *slog.Logger
+	pool   *dockertest.Pool
 )
+
+type testContainer struct {
+	hostAndPort string
+	name        string
+	cleanup     func()
+}
 
 // Sets up the application tests.
 // Creates a Postrgres database container to use for testing.
@@ -53,7 +58,8 @@ func TestMain(m *testing.M) {
 	logger = slog.New(handler)
 
 	/* Set up a Docker container pool and connect to it */
-	pool, err := dockertest.NewPool("")
+	var err error
+	pool, err = dockertest.NewPool("")
 	if err != nil {
 		log.Fatal("could not set up docker pool ", err)
 	}
@@ -62,100 +68,6 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatal("could not connect to docker ", err)
 	}
-
-	dbResource, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "postgres",
-		Tag:        "17.2",
-		Env: []string{
-			fmt.Sprintf("POSTGRES_PASSWORD=%s", dbPass),
-			fmt.Sprintf("POSTGRES_USER=%s", dbUser),
-			fmt.Sprintf("POSTGRES_DB=%s", dbName),
-			"listen_addresses = '*'",
-		},
-	}, func(config *docker.HostConfig) {
-		/* Autoremove = true ensures stopped containers are removed */
-		config.AutoRemove = true
-		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
-	})
-	if err != nil {
-		log.Fatal("could not start docker ", err)
-	}
-
-	dbHostPort = dbResource.GetHostPort("5432/tcp")
-	dbUrl := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", dbUser, dbPass, dbHostPort, dbName)
-
-	/* Tell docker to hard kill the container in 120 seconds */
-	dbResource.Expire(30)
-
-	/*
-		Exponential backoff-retry, because the application in the container might not
-		be ready to accept connections yet
-	*/
-	pool.MaxWait = 10 * time.Second
-	if err = pool.Retry(func() error {
-		db, err := sql.Open("postgres", dbUrl)
-		if err != nil {
-			return err
-		}
-		return db.Ping()
-	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
-	}
-
-	/* Clean up container resources when the testing is done */
-	defer func() {
-		if err := pool.Purge(dbResource); err != nil {
-			log.Fatalf("Could not purge database resource: %s", err)
-		}
-	}()
-
-	/*
-		Create a test container with the observability endpoints (checked as part of
-		the health check)
-	*/
-	obsResource, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "grafana/otel-lgtm",
-		Tag:          "0.11.0",
-		ExposedPorts: []string{"3000/tcp"},
-		Env: []string{
-			"listen_addresses = '*'",
-		},
-	}, func(config *docker.HostConfig) {
-		/* Autoremove = true ensures stopped containers are removed */
-		config.AutoRemove = true
-		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
-	})
-	if err != nil {
-		log.Fatal("could not start docker ", err)
-	}
-
-	obsHostPort = obsResource.GetHostPort("3000/tcp")
-	obsUrl := fmt.Sprintf("http://%s/api/health", obsHostPort)
-
-	/* Tell docker to hard kill the container in 120 seconds */
-	obsResource.Expire(120)
-
-	/*
-		Exponential backoff-retry, because the application in the container might not
-		be ready to accept connections yet
-	*/
-	pool.MaxWait = 30 * time.Second
-	if err = pool.Retry(func() error {
-		_, err := http.Get(obsUrl)
-		if err != nil && err != io.EOF {
-			return err
-		}
-		return nil
-	}); err != nil {
-		log.Fatalf("Could not connect to observability docker: %s", err)
-	}
-
-	/* Clean up container obsResources when the testing is done */
-	defer func() {
-		if err := pool.Purge(obsResource); err != nil {
-			log.Fatalf("Could not purge obsResource: %s", err)
-		}
-	}()
 
 	m.Run()
 
@@ -171,7 +83,6 @@ func TestHealthCheck(t *testing.T) {
 
 	testData := []struct {
 		dbError                   bool
-		dbPort                    string
 		expectedDBStatusClass     string
 		expectedDBHealthEntries   int
 		expectedHttpStatus        int
@@ -181,11 +92,11 @@ func TestHealthCheck(t *testing.T) {
 		statusMismatchErrMsg      string
 		testName                  string
 	}{
-		{dbError: false, dbPort: dbHostPort, expectedDBHealthEntries: 6, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Successful health check"},
-		{dbError: false, dbPort: dbHostPort, expectedDBHealthEntries: 0, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusInternalServerError, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, statusMismatchErrMsg: "Expected an HTTP 500 response", testName: "Invalid templates dir"},
-		{dbError: true, dbPort: dbHostPort, expectedDBHealthEntries: 0, expectedDBStatusClass: "unhealthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Database error"},
-		{dbError: false, dbPort: dbHostPort, expectedDBHealthEntries: 6, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "unhealthy", healthy: "Healthy", observError: true, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Observability error"},
-		{dbError: true, dbPort: dbHostPort, expectedDBHealthEntries: 0, expectedDBStatusClass: "unhealthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "unhealthy", healthy: "Healthy", observError: true, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Nothing healthy"},
+		{dbError: false, expectedDBHealthEntries: 6, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Successful health check"},
+		{dbError: false, expectedDBHealthEntries: 0, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusInternalServerError, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, statusMismatchErrMsg: "Expected an HTTP 500 response", testName: "Invalid templates dir"},
+		{dbError: true, expectedDBHealthEntries: 0, expectedDBStatusClass: "unhealthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Database error"},
+		{dbError: false, expectedDBHealthEntries: 6, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "unhealthy", healthy: "Healthy", observError: true, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Observability error"},
+		{dbError: true, expectedDBHealthEntries: 0, expectedDBStatusClass: "unhealthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "unhealthy", healthy: "Healthy", observError: true, statusMismatchErrMsg: "Expected an HTTP 200 response", testName: "Nothing healthy"},
 	}
 
 	cwd, err := os.Getwd()
@@ -195,34 +106,51 @@ func TestHealthCheck(t *testing.T) {
 
 	for _, data := range testData {
 
-		port := freePort()
-
-		env := map[string]string{
-			"DB_USER":        dbUser,
-			"DB_PASS":        dbPass,
-			"DB_HOST":        strings.Split(dbHostPort, ":")[0],
-			"DB_PORT":        strings.Split(dbHostPort, ":")[1],
-			"DB_NAME":        dbName,
-			"OTEL_HC":        fmt.Sprintf("http://%s/api/health", obsHostPort),
-			"PORT":           strconv.Itoa(port),
-			"MIGRATIONS_DIR": filepath.Join(cwd, "migrations_test/success"),
-		}
-
-		if data.testName == "Invalid templates dir" {
-
-			env["TEMPLATES_DIR"] = "templates"
-
-		} else {
-
-			env["TEMPLATES_DIR"] = "../../cmd/web/templates"
-
-		}
-
-		getenv := func(key string) string { return env[key] }
-
 		t.Run(data.testName, func(t *testing.T) {
 
 			t.Parallel()
+
+			port := freePort()
+
+			/*
+				TODO:
+				1.MAKE A WAIT GROUP
+				2. CALL THE BUILDXXXCONTAINER FUNCTIONS AS GOROUTINES AND ADD THEM TO THE WAIT GROUP
+				3. ONCE THE WAIT GROUP COMPLETES, WRITE A DEFERRED FUNCTION THAT CREATES A WAIT GROUP AND CALLS THE RESPECTIVE CLOSES AS GOROUTINES
+			*/
+			var dbCont testContainer
+			dbContChan := make(chan testContainer, 1)
+			dbHostAndPort, dbName, dbCleanup := buildDatabaseContainer(t.Name()+"_database", dbContChan)
+			defer dbCont.cleanup()
+
+			var obCont testContainer
+			obContChan := make(chan testContainer, 1)
+			obsHostAndPort, obsCleanup := buildObservabilityContainer(t.Name() + "_observability")
+			defer obsCleanup()
+
+			env := map[string]string{
+				"DB_USER":        dbUser,
+				"DB_PASS":        dbPass,
+				"DB_HOST":        strings.Split(dbHostAndPort, ":")[0],
+				"DB_PORT":        strings.Split(dbHostAndPort, ":")[1],
+				"DB_NAME":        dbName,
+				"OTEL_HC":        fmt.Sprintf("http://%s/api/health", obsHostAndPort),
+				"PORT":           strconv.Itoa(port),
+				"MIGRATIONS_DIR": filepath.Join(cwd, "..", "..", "internal", "database", "migrations_test/success"),
+			}
+
+			if data.testName == "Invalid templates dir" {
+
+				env["TEMPLATES_DIR"] = "templates"
+
+			} else {
+
+				env["TEMPLATES_DIR"] = "../../cmd/web/templates"
+
+			}
+
+			getenv := func(key string) string { return env[key] }
+
 			db, err := database.Connection(getenv)
 			if err != nil {
 				t.Fatal("database connection failure! ", err)
@@ -231,7 +159,7 @@ func TestHealthCheck(t *testing.T) {
 			/* Just get the database schema caught up, the results of the migration are tested in the database package */
 			_, err = database.RunMigrations(ctx, logger, getenv)
 			if err != nil {
-				t.Fatal("error applying current database migrations")
+				t.Fatal("error applying current database migrations ", err)
 			}
 
 			appHandler, err := server.NewServer(getenv, db, logger)
@@ -396,6 +324,130 @@ func TestShutdown(t *testing.T) {
 		})
 
 	}
+}
+
+func buildDatabaseContainer(testName string, out chan<- testContainer) {
+
+	testName = strings.ReplaceAll(testName, "/", "__")
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal("Error getting current working directory")
+	}
+	initScript := filepath.Join(cwd, "..", "..", "docker", "postgres_scripts", "init.sql")
+	log.Println("Init script at ", initScript)
+
+	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "postgres",
+		Tag:        "17.2",
+		Env: []string{
+			fmt.Sprintf("POSTGRES_PASSWORD=%s", dbPass),
+			fmt.Sprintf("POSTGRES_USER=%s", dbUser),
+			fmt.Sprintf("POSTGRES_DB=%s", testName),
+			"listen_addresses = '*'",
+		},
+		Mounts: []string{initScript + ":/docker-entrypoint-initdb.d/init.sql"},
+	}, func(config *docker.HostConfig) {
+		/* Autoremove = true ensures stopped containers are removed */
+		config.AutoRemove = true
+		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+	})
+	if err != nil {
+		log.Fatal("could not start docker ", err)
+	}
+
+	hostAndPort := resource.GetHostPort("5432/tcp")
+	databaseUrl := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", dbUser, dbPass, hostAndPort, testName)
+
+	/* Tell docker to hard kill the container in 120 seconds */
+	resource.Expire(120)
+
+	/*
+		Exponential backoff-retry, because the application in the container might not
+		be ready to accept connections yet
+	*/
+	pool.MaxWait = 10 * time.Second
+	if err = pool.Retry(func() error {
+		db, err := sql.Open("postgres", databaseUrl)
+		if err != nil {
+			return err
+		}
+		return db.Ping()
+	}); err != nil {
+		log.Fatalf("Could not connect to docker: %s", err)
+	}
+
+	cleanup := func() {
+		if err := pool.Purge(resource); err != nil {
+			log.Fatalf("Could not purge resource: %s", err)
+		}
+	}
+
+	/*
+		Send the clean-up function so we can remove the container resources when
+		the testing is done
+	*/
+	out <- testContainer{
+		hostAndPort: hostAndPort,
+		name:        testName,
+		cleanup:     cleanup,
+	}
+
+}
+
+func buildObservabilityContainer(testName string, out chan<- testContainer) {
+
+	/*
+		Create a test container with the observability endpoints (checked as part of
+		the health check)
+	*/
+	obsResource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository:   "grafana/otel-lgtm",
+		Tag:          "0.11.0",
+		ExposedPorts: []string{"3000/tcp"},
+		Env: []string{
+			"listen_addresses = '*'",
+		},
+	}, func(config *docker.HostConfig) {
+		/* Autoremove = true ensures stopped containers are removed */
+		config.AutoRemove = true
+		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+	})
+	if err != nil {
+		log.Fatal("could not start docker ", err)
+	}
+
+	obsHostPort := obsResource.GetHostPort("3000/tcp")
+	obsUrl := fmt.Sprintf("http://%s/api/health", obsHostPort)
+
+	/* Tell docker to hard kill the container in 120 seconds */
+	obsResource.Expire(120)
+
+	/*
+		Exponential backoff-retry, because the application in the container might not
+		be ready to accept connections yet
+	*/
+	pool.MaxWait = 60 * time.Second
+	if err = pool.Retry(func() error {
+		_, err := http.Get(obsUrl)
+		if err != nil && err != io.EOF {
+			return err
+		}
+		return nil
+	}); err != nil {
+		log.Fatalf("Could not connect to observability docker: %s", err)
+	}
+
+	cleanup := func() {
+		if err := pool.Purge(obsResource); err != nil {
+			log.Fatalf("Could not purge observability container: %s", err)
+		}
+	}
+
+	out <- testContainer{
+		hostAndPort: obsHostPort,
+		cleanup:     cleanup,
+	}
+
 }
 
 /*
