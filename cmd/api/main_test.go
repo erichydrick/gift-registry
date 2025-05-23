@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,7 +32,6 @@ import (
 
 /* Connection details for the test database */
 const (
-	dbName = "main_test"
 	dbUser = "main_user"
 	dbPass = "main_pass"
 )
@@ -113,28 +113,49 @@ func TestHealthCheck(t *testing.T) {
 			port := freePort()
 
 			/*
-				TODO:
-				1.MAKE A WAIT GROUP
-				2. CALL THE BUILDXXXCONTAINER FUNCTIONS AS GOROUTINES AND ADD THEM TO THE WAIT GROUP
-				3. ONCE THE WAIT GROUP COMPLETES, WRITE A DEFERRED FUNCTION THAT CREATES A WAIT GROUP AND CALLS THE RESPECTIVE CLOSES AS GOROUTINES
+				Initialize the test containers in goroutines to try to speed up automated testing.
 			*/
-			var dbCont testContainer
-			dbContChan := make(chan testContainer, 1)
-			dbHostAndPort, dbName, dbCleanup := buildDatabaseContainer(t.Name()+"_database", dbContChan)
-			defer dbCont.cleanup()
+			var waitGroup sync.WaitGroup
+			waitGroup.Add(2)
 
-			var obCont testContainer
-			obContChan := make(chan testContainer, 1)
-			obsHostAndPort, obsCleanup := buildObservabilityContainer(t.Name() + "_observability")
-			defer obsCleanup()
+			dbContChan := make(chan testContainer, 1)
+			go func() {
+
+				defer waitGroup.Done()
+				dbContChan <- buildDatabaseContainer(t.Name() + "_database")
+
+			}()
+
+			obsContChan := make(chan testContainer, 1)
+			go func() {
+
+				defer waitGroup.Done()
+				obsContChan <- buildObservabilityContainer(t.Name() + "_observability")
+
+			}()
+
+			/*
+				Wait for the initializations to complete, read the data, and close the goroutine channels.
+			*/
+			waitGroup.Wait()
+			dbCont := <-dbContChan
+			obsCont := <-obsContChan
+			close(dbContChan)
+			close(obsContChan)
+
+			/* TODO: SHOULD THIS BE GO ROUTINES TOO? */
+			defer dbCont.cleanup()
+			defer obsCont.cleanup()
+
+			log.Println("DB host and port is ", dbCont.hostAndPort)
 
 			env := map[string]string{
 				"DB_USER":        dbUser,
 				"DB_PASS":        dbPass,
-				"DB_HOST":        strings.Split(dbHostAndPort, ":")[0],
-				"DB_PORT":        strings.Split(dbHostAndPort, ":")[1],
-				"DB_NAME":        dbName,
-				"OTEL_HC":        fmt.Sprintf("http://%s/api/health", obsHostAndPort),
+				"DB_HOST":        strings.Split(dbCont.hostAndPort, ":")[0],
+				"DB_PORT":        strings.Split(dbCont.hostAndPort, ":")[1],
+				"DB_NAME":        dbCont.name,
+				"OTEL_HC":        fmt.Sprintf("http://%s/api/health", obsCont.hostAndPort),
 				"PORT":           strconv.Itoa(port),
 				"MIGRATIONS_DIR": filepath.Join(cwd, "..", "..", "internal", "database", "migrations_test/success"),
 			}
@@ -326,7 +347,7 @@ func TestShutdown(t *testing.T) {
 	}
 }
 
-func buildDatabaseContainer(testName string, out chan<- testContainer) {
+func buildDatabaseContainer(testName string) testContainer {
 
 	testName = strings.ReplaceAll(testName, "/", "__")
 	cwd, err := os.Getwd()
@@ -334,9 +355,9 @@ func buildDatabaseContainer(testName string, out chan<- testContainer) {
 		log.Fatal("Error getting current working directory")
 	}
 	initScript := filepath.Join(cwd, "..", "..", "docker", "postgres_scripts", "init.sql")
-	log.Println("Init script at ", initScript)
 
 	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Name:       strings.ReplaceAll(testName, "/", "__"),
 		Repository: "postgres",
 		Tag:        "17.2",
 		Env: []string{
@@ -365,7 +386,7 @@ func buildDatabaseContainer(testName string, out chan<- testContainer) {
 		Exponential backoff-retry, because the application in the container might not
 		be ready to accept connections yet
 	*/
-	pool.MaxWait = 10 * time.Second
+	pool.MaxWait = 20 * time.Second
 	if err = pool.Retry(func() error {
 		db, err := sql.Open("postgres", databaseUrl)
 		if err != nil {
@@ -373,7 +394,7 @@ func buildDatabaseContainer(testName string, out chan<- testContainer) {
 		}
 		return db.Ping()
 	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Fatalf("Could not connect to %s docker: %s", testName, err)
 	}
 
 	cleanup := func() {
@@ -386,21 +407,24 @@ func buildDatabaseContainer(testName string, out chan<- testContainer) {
 		Send the clean-up function so we can remove the container resources when
 		the testing is done
 	*/
-	out <- testContainer{
+	retData := testContainer{
 		hostAndPort: hostAndPort,
 		name:        testName,
 		cleanup:     cleanup,
 	}
+	log.Printf("Returning %v", retData)
+	return retData
 
 }
 
-func buildObservabilityContainer(testName string, out chan<- testContainer) {
+func buildObservabilityContainer(testName string) testContainer {
 
 	/*
 		Create a test container with the observability endpoints (checked as part of
 		the health check)
 	*/
 	obsResource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Name:         strings.ReplaceAll(testName, "/", "__"),
 		Repository:   "grafana/otel-lgtm",
 		Tag:          "0.11.0",
 		ExposedPorts: []string{"3000/tcp"},
@@ -434,7 +458,7 @@ func buildObservabilityContainer(testName string, out chan<- testContainer) {
 		}
 		return nil
 	}); err != nil {
-		log.Fatalf("Could not connect to observability docker: %s", err)
+		log.Fatalf("Could not connect to %s docker: %s", testName, err)
 	}
 
 	cleanup := func() {
@@ -443,8 +467,9 @@ func buildObservabilityContainer(testName string, out chan<- testContainer) {
 		}
 	}
 
-	out <- testContainer{
+	return testContainer{
 		hostAndPort: obsHostPort,
+		name:        testName,
 		cleanup:     cleanup,
 	}
 
