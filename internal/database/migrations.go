@@ -19,8 +19,6 @@ const (
 	name = "net.hydrick.gift-registry/database"
 )
 
-// TODO: THIS WON'T BE TESTABLE - REPLACE WITH IO/FS
-
 var (
 	meter  = otel.Meter(name)
 	tracer = otel.Tracer(name)
@@ -121,21 +119,12 @@ func RunMigrations(
 		logger.DebugContext(ctx, "Rows affected map now", slog.String("filesToRowsAffected", fmt.Sprintf("%v", fileToRowsAffected)))
 
 		logger.DebugContext(ctx, fmt.Sprintf("Adding %s to the database", sqlFile.Name()))
-		insRes, err := dbConn.ExecContext(ctx, "INSERT INTO migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))", sqlFile.Name())
+		_, err = dbConn.ExecContext(ctx, "INSERT INTO migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))", sqlFile.Name())
 		if err != nil {
 			logger.ErrorContext(ctx, "Error adding migration file to migrations table!", slog.String("filenam", sqlFile.Name()), slog.String("errorMessage", err.Error()))
 			rollback(ctx, tx, logger, sqlFile.Name())
 			return map[string]int64{}, fmt.Errorf("error writing filename into migrations table: %s", err.Error())
 		}
-		/* TODO: REMOVE THESE DEBUGGING LINES AND _ OUT THE RESULTS FROM THE INSERT ONCE THE TESTS PASS */
-		rowsInserted, err := insRes.RowsAffected()
-		if err != nil {
-			logger.ErrorContext(ctx, "Error getting the rows affected from inserting the migration file!", slog.String("errorMessage", err.Error()))
-			return map[string]int64{}, fmt.Errorf("error getting files written count: %s", err.Error())
-
-		}
-		logger.DebugContext(ctx, "Added migration file to the migrations table", slog.Int64("rowsAffected", rowsInserted))
-		/* TODO: END DEBUGGING BLOCK */
 
 	}
 
