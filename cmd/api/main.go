@@ -35,7 +35,7 @@ const (
 )
 
 /* Launches and runs the application. Returns an error indicating a failure so the application can exit with a non-0 status */
-func Run(ctx context.Context, getenv func(string) string, logger *slog.Logger) error {
+func Run(ctx context.Context, logger *slog.Logger, getenv func(string) string) error {
 
 	/* Create context that listens for the interrupt signal from the OS. */
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
@@ -55,14 +55,14 @@ func Run(ctx context.Context, getenv func(string) string, logger *slog.Logger) e
 	}()
 
 	/* Get a database connection to pass to our handlers */
-	db, err := database.Connection(getenv)
+	db, err := database.Connection(ctx, logger, getenv)
 	if err != nil {
 		logger.Error("Error getting the database connection", slog.String("errorMessage", err.Error()))
 		return fmt.Errorf("error getting the database connection: %s", err.Error())
 	}
 
 	/* Set up the routing and middleware, we'll start the server in a sec */
-	appHandler, err := server.NewServer(getenv, db, logger)
+	appHandler, err := server.NewServer(getenv, db.DB, logger)
 	if err != nil {
 		return fmt.Errorf("error getting the application server: %s", err.Error())
 	}
