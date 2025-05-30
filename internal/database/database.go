@@ -20,6 +20,13 @@ type DBConn struct {
 	Name     string
 	Port     int
 	Username string
+
+	/*
+		Not exposing this since I just want it for internal database operations,
+		the server will have a reference that it passes to handlers so items no need
+		for 2 copies to be exposed outside this package.
+	*/
+	logger *slog.Logger
 	/* Not exposing outside the package, because it's a password... */
 	password string
 }
@@ -43,25 +50,38 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 		Port:     port,
 		Name:     getenv("DB_NAME"),
 		Username: getenv("DB_USER"),
+		logger:   logger,
 		password: getenv("DB_PASSWORD"),
 	}
 
 	connStr := dbConn.url()
-	db, err := sql.Open("postgres", connStr)
+
+	/* Re-use this specific connection if we have it */
+	if db, ok := openConnections[connStr]; ok {
+
+		/* Make sure there's an sql.DB pointer is "live" */
+		if db.DB == nil {
+
+			sql, err := dbConn.open(ctx, connStr)
+			if err != nil {
+				return DBConn{}, err
+			}
+			db.DB = sql
+
+		}
+
+		return openConnections[connStr], nil
+
+	}
+
+	db, err := dbConn.open(ctx, connStr)
 	/* We can't run the application if we can't connect to the database, so go ahead and exit */
 	if err != nil {
 		return DBConn{}, err
 	}
 
-	/*
-		Connecting __looks__ successful even if the configs are bad. Confirm it
-		worked by pinging the DB
-	*/
-	if err = db.Ping(); err != nil {
-		return DBConn{}, err
-	}
-
 	dbConn.DB = db
+	openConnections[connStr] = dbConn
 	return dbConn, nil
 
 }
@@ -118,6 +138,26 @@ func (dbConn DBConn) String() string {
 		dbConn.Port,
 		dbConn.Name,
 	)
+
+}
+
+func (dbConn DBConn) open(ctx context.Context, url string) (*sql.DB, error) {
+
+	db, err := sql.Open("postgres", url)
+	if err != nil {
+		dbConn.logger.ErrorContext(ctx, "Error connecting to the database", slog.String("errorMessage", err.Error()))
+		return nil, fmt.Errorf("could not connect to database: %v", err)
+	}
+
+	/*
+		Connecting __looks__ successful even if the configs are bad. Confirm it
+		worked by pinging the DB
+	*/
+	if err = db.Ping(); err != nil {
+		return nil, fmt.Errorf("could not successfully ping database connection: %v", err)
+	}
+
+	return db, nil
 
 }
 
