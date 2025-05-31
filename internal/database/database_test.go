@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"errors"
 	"gift-registry/internal/database"
 	"log"
 	"log/slog"
@@ -24,7 +25,6 @@ const (
 	dbPass = "database_pass"
 )
 
-/* hostAndPort gets reset for different tests */
 var (
 	ctx    context.Context
 	logger *slog.Logger
@@ -49,13 +49,19 @@ func TestMain(m *testing.M) {
 // when successful and when connection fails due to a bad config.
 func TestConnect(t *testing.T) {
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal("Error getting the current working directory ", err.Error())
+	}
+
 	testData := []struct {
 		errorExpected bool
+		migrationsDir string
 		portModifier  string
 		testName      string
 	}{
-		{errorExpected: false, testName: "Successful connection"},
-		{errorExpected: true, portModifier: "0", testName: "Failed connection"},
+		{errorExpected: false, migrationsDir: "migrations", testName: "Successful connection"},
+		{errorExpected: true, migrationsDir: "migrations", portModifier: "0", testName: "Failed connection"},
 	}
 
 	for _, data := range testData {
@@ -68,11 +74,12 @@ func TestConnect(t *testing.T) {
 			defer cleanup()
 
 			env := map[string]string{
-				"DB_USER": dbUser,
-				"DB_PASS": dbPass,
-				"DB_HOST": strings.Split(hostAndPort, ":")[0],
-				"DB_PORT": strings.Split(hostAndPort, ":")[1] + data.portModifier,
-				"DB_NAME": dbName,
+				"DB_USER":        dbUser,
+				"DB_PASS":        dbPass,
+				"DB_HOST":        strings.Split(hostAndPort, ":")[0],
+				"DB_PORT":        strings.Split(hostAndPort, ":")[1] + data.portModifier,
+				"DB_NAME":        dbName,
+				"MIGRATIONS_DIR": filepath.Join(cwd, data.migrationsDir),
 			}
 
 			getenv := func(key string) string { return env[key] }
@@ -106,26 +113,17 @@ func TestConnect(t *testing.T) {
 // correctly and the transaction properly rolls back in case of a problem
 func TestRunMigrations(t *testing.T) {
 
-	type person struct {
-		firstName string
-		lastName  string
-		email     string
-		password  string
-		salt      string
-	}
-
 	testData := []struct {
 		errorExpected        bool
 		expectedFilesApplied []string
 		migrationsDir        string
 		testName             string
 		validationQuery      string
-		validationData       any
+		validationResCnt     int
 	}{
-		{errorExpected: false, expectedFilesApplied: []string{"00_create_tables.sql", "01_insert_person.sql"}, migrationsDir: "migrations_test/success", testName: "Successful migration", validationQuery: "SELECT * FROM person WHERE email = 'test.user@yopmail.com'", validationData: &person{firstName: "Test", lastName: "User", email: "test.user@yopmail.com", password: "", salt: "abc099"}},
-		/* TODO ADD VALIDATION QUERY/OUTPUT TO THESE TEST CASES */
-		// {errorExpected: true, expectedFilesApplied: []string{}, migrationsDir: "migrations_test/rollback", testName: "Migration rollback"},
-		// {errorExpected: false, expectedFilesApplied: []string{"00_create_tables.sql"}, migrationsDir: "migrations_test/success", testName: "Update existing migration"},
+		{errorExpected: false, expectedFilesApplied: []string{"00_create_tables.sql", "01_insert_person.sql"}, migrationsDir: "migrations_test/success", testName: "Successful migration", validationQuery: "SELECT * FROM person WHERE email = 'test.user@yopmail.com'", validationResCnt: 1},
+		{errorExpected: true, expectedFilesApplied: []string{}, migrationsDir: "migrations_test/rollback", testName: "Migration rollback", validationQuery: "SELECT filename FROM migrations", validationResCnt: 1},
+		{errorExpected: false, expectedFilesApplied: []string{"00_create_tables.sql"}, migrationsDir: "migrations_test/alter_table", testName: "Update existing table", validationQuery: "SELECT * FROM information_schema.columns WHERE table_name = 'person' ", validationResCnt: 9},
 	}
 
 	cwd, err := os.Getwd()
@@ -157,7 +155,13 @@ func TestRunMigrations(t *testing.T) {
 			/* Just want a do-nothing context placeholder */
 			db, err := database.Connection(ctx, logger, getenv)
 			if err != nil {
-				t.Fatal("Error setting up test database connection! ", err)
+				/*
+					It's only a failure if we expected the migration to succeed (or didn't get
+					a migration error)
+				*/
+				if !data.errorExpected || !errors.Is(err, database.ErrMigration) {
+					t.Fatal("Error setting up test database connection! ", err)
+				}
 			}
 			defer db.Close()
 
@@ -168,7 +172,7 @@ func TestRunMigrations(t *testing.T) {
 				t.Fatal("Error migrations error expected? ", data.errorExpected, " Error returned? ", (err != nil))
 			}
 
-			actFilesApp := []string{}
+			migrationsApplied := []string{}
 			rows, err := db.DB.QueryContext(ctx, "SELECT filename FROM migrations")
 			if err != nil {
 				t.Fatal("Error getting the updated list of migrations run")
@@ -179,13 +183,13 @@ func TestRunMigrations(t *testing.T) {
 				if err := rows.Scan(&filename); err != nil {
 					t.Fatal("Error mapping result to filename")
 				}
-				actFilesApp = append(actFilesApp, filename)
+				migrationsApplied = append(migrationsApplied, filename)
 
 			}
 
 			for _, expectedFile := range data.expectedFilesApplied {
 
-				if !slices.Contains(actFilesApp, expectedFile) {
+				if !slices.Contains(migrationsApplied, expectedFile) {
 					t.Fatal("Expected list of applied migrations to include ", expectedFile)
 				}
 
@@ -197,11 +201,16 @@ func TestRunMigrations(t *testing.T) {
 			}
 			defer rows.Close()
 
-			/*
-				TODO:
-				THE TEST HERE IS THAT THE CHANGES ARE LIVE IN THE DATABASE, AND I HAVE A LIVE CONNECTION TO QUERY
-			*/
-			t.Fatal("TODO: RE-DEFINE THE VALIDATION HERE!")
+			rowsReturned := 0
+			for rows.Next() {
+
+				rowsReturned++
+
+			}
+
+			if rowsReturned != data.validationResCnt {
+				t.Fatalf("Expected %d results to be returned, but got %d", data.validationResCnt, rowsReturned)
+			}
 
 		})
 
@@ -231,6 +240,10 @@ func buildTestContainer(ctx context.Context, t *testing.T) (string, func()) {
 		the testing is done
 	*/
 	dbURL, err := dbCont.Endpoint(ctx, "")
+	if err != nil {
+		t.Fatal("Did not get a connection endpoint to the Postgres container ", err)
+	}
+
 	connStr, err := dbCont.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		t.Fatal("Error getting the connection string! ", err)

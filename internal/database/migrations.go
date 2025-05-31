@@ -20,6 +20,8 @@ const (
 )
 
 var (
+	ErrMigration = fmt.Errorf("could not apply database migration")
+
 	meter  = otel.Meter(name)
 	tracer = otel.Tracer(name)
 )
@@ -76,13 +78,8 @@ func (dbConn DBConn) runMigrations(
 		return nil
 	}
 
-	tx, err := dbConn.DB.BeginTx(ctx, nil)
-	if err != nil {
-		logger.ErrorContext(ctx, "Error starting transaction", slog.String("errorMessage", err.Error()))
-		return fmt.Errorf("error starting transaction lock on the database migrations: %s", err.Error())
-	}
-
 	fileToRowsAffected := make(map[string]int64)
+	var returnedErr error
 	for _, sqlFile := range sqlFiles {
 
 		if sqlFile.IsDir() {
@@ -108,10 +105,17 @@ func (dbConn DBConn) runMigrations(
 
 		}
 
+		tx, err := dbConn.DB.BeginTx(ctx, nil)
+		if err != nil {
+			logger.ErrorContext(ctx, "Error starting transaction", slog.String("errorMessage", err.Error()))
+			return fmt.Errorf("error starting transaction lock on the database migrations: %s", err.Error())
+		}
+
 		logger.DebugContext(ctx, "Applying migration file", slog.String("filename", sqlFile.Name()))
 		rowsAffected, err := dbConn.applyMigration(ctx, migrationsFS, sqlFile)
 		if err != nil {
 			rollback(ctx, tx, logger, sqlFile.Name())
+			returnedErr = ErrMigration
 			break
 		}
 
@@ -122,16 +126,17 @@ func (dbConn DBConn) runMigrations(
 		if err != nil {
 			logger.ErrorContext(ctx, "Error adding migration file to migrations table!", slog.String("filenam", sqlFile.Name()), slog.String("errorMessage", err.Error()))
 			rollback(ctx, tx, logger, sqlFile.Name())
-			return fmt.Errorf("error writing filename into migrations table: %s", err.Error())
+			returnedErr = ErrMigration
+			break
 		}
 
-	}
+		/* Flush everything to the database */
+		err = tx.Commit()
+		if err != nil {
+			logger.ErrorContext(ctx, "Error committing the database migration!", slog.String("errorMessage", err.Error()))
+			returnedErr = ErrMigration
+		}
 
-	/* Flush everything to the database */
-	err = tx.Commit()
-	if err != nil {
-		logger.ErrorContext(ctx, "Error committing the database migration!", slog.String("errorMessage", err.Error()))
-		return fmt.Errorf("error committing the database migration: %s", err.Error())
 	}
 
 	attributes := make([]attribute.KeyValue, len(fileToRowsAffected))
@@ -146,7 +151,6 @@ func (dbConn DBConn) runMigrations(
 			logger.ErrorContext(ctx, "Error building metric on the rows updated by migration script",
 				slog.String("migrationFile", key),
 				slog.String("errorMessage", err.Error()))
-			rollback(ctx, tx, logger, key)
 		}
 
 		fileMetric.Add(ctx, value)
@@ -159,7 +163,7 @@ func (dbConn DBConn) runMigrations(
 
 	span.SetAttributes(attributes...)
 
-	return nil
+	return returnedErr
 
 }
 

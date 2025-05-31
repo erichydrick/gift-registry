@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -59,9 +60,15 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 	/* Re-use this specific connection if we have it */
 	if db, ok := openConnections[connStr]; ok {
 
+		logger.InfoContext(
+			ctx,
+			"Have a connection reference, just need to make sure the DB reference is active",
+			slog.String("dbURL", connStr),
+		)
 		/* Make sure there's an sql.DB pointer is "live" */
 		if db.DB == nil {
 
+			logger.InfoContext(ctx, "DB reference closed, reopening...", slog.String("dbURL", connStr))
 			sql, err := dbConn.open(ctx)
 			if err != nil {
 				return DBConn{}, err
@@ -74,11 +81,13 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 
 	}
 
+	logger.DebugContext(ctx, "Need to create a new connection with the connection URL", slog.String("dbURL", connStr))
 	db, err := dbConn.open(ctx)
 	/* We can't run the application if we can't connect to the database, so go ahead and exit */
 	if err != nil {
 		return DBConn{}, err
 	}
+	logger.DebugContext(ctx, "Call to open() completed, do I have a reference?", slog.Bool("dbRef", db != nil))
 
 	dbConn.DB = db
 	err = dbConn.runMigrations(ctx, logger, getenv)
@@ -86,20 +95,32 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 		logger.ErrorContext(ctx, "Error applying migrations to database connection",
 			slog.String("connectionURL", dbConn.url()),
 			slog.String("errorMessage", err.Error()))
-		return DBConn{}, nil
+		/*
+			I'm going to allow a connection to be returned (with the error) if the
+			migration fails in the assumption that I'm in a degraded, but not
+			unusable, state
+		*/
+		if !errors.Is(err, ErrMigration) {
+			return DBConn{}, err
+		}
 	}
 	logger.InfoContext(ctx, "Applied migrations to database connection",
 		slog.String("connectionURL", connStr))
 
 	openConnections[connStr] = dbConn
-	return dbConn, nil
+
+	/*
+		err is the error from running the migration, send that back in case it
+		failed, but at this point it's a MigrationError so we can confirm it's
+		migration-related
+	*/
+	return dbConn, err
 
 }
 
 // Closes the database connection
 func (dbConn *DBConn) Close() (err error) {
 
-	fmt.Println("Closing ", dbConn)
 	if dbConn.DB != nil {
 
 		err = dbConn.DB.Close()
