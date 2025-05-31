@@ -146,11 +146,6 @@ func TestHealthCheck(t *testing.T) {
 
 			port := freePort()
 
-			/*
-				TODO:
-				REFACTOR THE TESTS TO LAUNCH TEST CONTAINERS IN PARALLEL
-				REFACTORING THE RETURN FROM CONNECTION() PROBABLY NEEDED TOO, BUT MAYBE NOT HERE
-			*/
 			env := map[string]string{
 				"DB_USER":        dbUser,
 				"DB_PASS":        dbPass,
@@ -172,38 +167,14 @@ func TestHealthCheck(t *testing.T) {
 
 			}
 
-			log.Println("Envs are: ", env)
-
 			getenv := func(key string) string { return env[key] }
 
-			/*
-				TODO:
-				* THIS STILL REPRESENTS A PROBLEM BECAUSE IT'S A PACKAGE-LEVEL FUNCTION SO
-				FIRST CONNECTION URL GETS USED.
-				* RATHER THAN MESS WITH SCHEMAS (AS FUN AN IDEA AS THAT SEEMED, SHOULD I
-				ALLOW MULTIPLE CONNECTIONS?
-				* I DON'T LIKE THE FACT THAT IT'S ENABLING DIFFERENT BEHAVIOR FOR TESTING
-				THAN RUNNING LOCALLY ALTERNATIVE IS TO TAKE SCHEMA NAME AND CREATE
-				MIGRATIONS TABLE MANUALLY, BUT STILL BACK TO DOING STRING REPLACES IN SQL
-				FILES, WHICH I DON'T LIKE EITHER
-				* OR DOES DB CONNECTION MOVE OUT OF THE DATABASE PACKAGE AND INTO THE
-				SERVER PACKAGE, AND DATABASE JUST HAS RUNMIGRATIONS()?
-				* MAYBE DON'T RE-USE CONNECTIONS AND HAVE THE SERVER CALL INTO THE
-				DATABASE FOR THE CONNECTION ON STARTUP? WOULD LET ME PASS LOGGER INTO
-				CONNECTION() <---- DO THIS
-			*/
-			db, err := database.Connection(getenv)
+			db, err := database.Connection(ctx, logger, getenv)
 			if err != nil {
 				t.Fatal("database connection failure! ", err)
 			}
 
-			/* Just get the database schema caught up, the results of the migration are tested in the database package */
-			_, err = database.RunMigrations(ctx, logger, getenv)
-			if err != nil {
-				t.Fatal("error applying current database migrations ", err)
-			}
-
-			appHandler, err := server.NewServer(getenv, db, logger)
+			appHandler, err := server.NewServer(getenv, db.DB, logger)
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}

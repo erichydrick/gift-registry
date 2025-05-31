@@ -33,7 +33,7 @@ type DBConn struct {
 
 // The database is configured through environment variables that should be set in the container
 var (
-	openConnections map[string]DBConn
+	openConnections map[string]DBConn = map[string]DBConn{}
 )
 
 // Returns a singleton database connection, creating a new one if it's not already initialized. getenv() will use the container environment variables when running, but can be mocked for testing.
@@ -51,7 +51,7 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 		Name:     getenv("DB_NAME"),
 		Username: getenv("DB_USER"),
 		logger:   logger,
-		password: getenv("DB_PASSWORD"),
+		password: getenv("DB_PASS"),
 	}
 
 	connStr := dbConn.url()
@@ -62,7 +62,7 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 		/* Make sure there's an sql.DB pointer is "live" */
 		if db.DB == nil {
 
-			sql, err := dbConn.open(ctx, connStr)
+			sql, err := dbConn.open(ctx)
 			if err != nil {
 				return DBConn{}, err
 			}
@@ -74,21 +74,32 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 
 	}
 
-	db, err := dbConn.open(ctx, connStr)
+	db, err := dbConn.open(ctx)
 	/* We can't run the application if we can't connect to the database, so go ahead and exit */
 	if err != nil {
 		return DBConn{}, err
 	}
 
 	dbConn.DB = db
+	err = dbConn.runMigrations(ctx, logger, getenv)
+	if err != nil {
+		logger.ErrorContext(ctx, "Error applying migrations to database connection",
+			slog.String("connectionURL", dbConn.url()),
+			slog.String("errorMessage", err.Error()))
+		return DBConn{}, nil
+	}
+	logger.InfoContext(ctx, "Applied migrations to database connection",
+		slog.String("connectionURL", connStr))
+
 	openConnections[connStr] = dbConn
 	return dbConn, nil
 
 }
 
 // Closes the database connection
-func (dbConn DBConn) Close() (err error) {
+func (dbConn *DBConn) Close() (err error) {
 
+	fmt.Println("Closing ", dbConn)
 	if dbConn.DB != nil {
 
 		err = dbConn.DB.Close()
@@ -97,7 +108,8 @@ func (dbConn DBConn) Close() (err error) {
 			create a fresh connection
 		*/
 		if err == nil {
-			dbConn.DB = nil
+			var nilDB *sql.DB
+			dbConn.DB = nilDB
 		}
 
 	}
@@ -141,9 +153,9 @@ func (dbConn DBConn) String() string {
 
 }
 
-func (dbConn DBConn) open(ctx context.Context, url string) (*sql.DB, error) {
+func (dbConn DBConn) open(ctx context.Context) (*sql.DB, error) {
 
-	db, err := sql.Open("postgres", url)
+	db, err := sql.Open("postgres", dbConn.url())
 	if err != nil {
 		dbConn.logger.ErrorContext(ctx, "Error connecting to the database", slog.String("errorMessage", err.Error()))
 		return nil, fmt.Errorf("could not connect to database: %v", err)
@@ -154,7 +166,7 @@ func (dbConn DBConn) open(ctx context.Context, url string) (*sql.DB, error) {
 		worked by pinging the DB
 	*/
 	if err = db.Ping(); err != nil {
-		return nil, fmt.Errorf("could not successfully ping database connection: %v", err)
+		return nil, fmt.Errorf("could not successfully ping database connection %s: %v", dbConn.url(), err)
 	}
 
 	return db, nil
@@ -164,7 +176,7 @@ func (dbConn DBConn) open(ctx context.Context, url string) (*sql.DB, error) {
 func (dbConn DBConn) url() string {
 
 	return fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		"postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		dbConn.Username,
 		dbConn.password,
 		dbConn.Hostname,

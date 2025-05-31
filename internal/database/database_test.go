@@ -2,33 +2,32 @@ package database_test
 
 import (
 	"context"
-	"database/sql"
-	"fmt"
 	"gift-registry/internal/database"
 	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/ory/dockertest/v3"
-	"github.com/ory/dockertest/v3/docker"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 /* Connection details for the test database */
 const (
+	dbName = "main_test"
 	dbUser = "database_user"
 	dbPass = "database_pass"
 )
 
 /* hostAndPort gets reset for different tests */
 var (
+	ctx    context.Context
 	logger *slog.Logger
-	pool   *dockertest.Pool
 )
 
 // Sets up the database package tests.
@@ -36,24 +35,12 @@ var (
 // Starts the testing database container.
 func TestMain(m *testing.M) {
 
+	ctx = context.Background()
+
 	/* Sets up a testing logger */
 	options := &slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true}
 	handler := slog.NewJSONHandler(os.Stderr, options)
 	logger = slog.New(handler)
-
-	log.Println("Creating the embedded Postgres for database testing")
-
-	/* Set up a Docker container pool and connect to it */
-	var err error
-	pool, err = dockertest.NewPool("")
-	if err != nil {
-		log.Fatal("could not set up docker pool ", err)
-	}
-
-	err = pool.Client.Ping()
-	if err != nil {
-		log.Fatal("could not connect to docker ", err)
-	}
 
 	m.Run()
 }
@@ -77,7 +64,7 @@ func TestConnect(t *testing.T) {
 
 			t.Parallel()
 
-			hostAndPort, dbName, cleanup := buildTestContainer(t.Name())
+			hostAndPort, cleanup := buildTestContainer(ctx, t)
 			defer cleanup()
 
 			env := map[string]string{
@@ -90,7 +77,7 @@ func TestConnect(t *testing.T) {
 
 			getenv := func(key string) string { return env[key] }
 
-			db, err := database.Connection(getenv)
+			db, err := database.Connection(ctx, logger, getenv)
 			if !data.errorExpected && err != nil {
 
 				t.Fatal("successful connection attempt failed! ", err)
@@ -102,10 +89,10 @@ func TestConnect(t *testing.T) {
 
 			}
 
-			if db != nil {
+			if db.DB != nil {
 
 				/* I'll test this separately later */
-				database.Close()
+				db.Close()
 
 			}
 
@@ -119,17 +106,26 @@ func TestConnect(t *testing.T) {
 // correctly and the transaction properly rolls back in case of a problem
 func TestRunMigrations(t *testing.T) {
 
+	type person struct {
+		firstName string
+		lastName  string
+		email     string
+		password  string
+		salt      string
+	}
+
 	testData := []struct {
-		errorExpected       bool
-		expectedRowCnts     map[string]int64
-		migrationsDir       string
-		supplementalDir     string
-		supplementalRowCnts map[string]int64
-		testName            string
+		errorExpected        bool
+		expectedFilesApplied []string
+		migrationsDir        string
+		testName             string
+		validationQuery      string
+		validationData       any
 	}{
-		{errorExpected: false, expectedRowCnts: map[string]int64{"00_create_tables.sql": 0}, migrationsDir: "migrations_test/success", testName: "Successful migration"},
-		{errorExpected: true, expectedRowCnts: map[string]int64{}, migrationsDir: "migrations_test/rollback", testName: "Migration rollback"},
-		{errorExpected: false, expectedRowCnts: map[string]int64{"00_create_tables.sql": 0}, migrationsDir: "migrations_test/success", supplementalDir: "migrations_test/second", supplementalRowCnts: map[string]int64{"01_follow_up_migration.sql": 1}, testName: "Update existing migration"},
+		{errorExpected: false, expectedFilesApplied: []string{"00_create_tables.sql", "01_insert_person.sql"}, migrationsDir: "migrations_test/success", testName: "Successful migration", validationQuery: "SELECT * FROM person WHERE email = 'test.user@yopmail.com'", validationData: &person{firstName: "Test", lastName: "User", email: "test.user@yopmail.com", password: "", salt: "abc099"}},
+		/* TODO ADD VALIDATION QUERY/OUTPUT TO THESE TEST CASES */
+		// {errorExpected: true, expectedFilesApplied: []string{}, migrationsDir: "migrations_test/rollback", testName: "Migration rollback"},
+		// {errorExpected: false, expectedFilesApplied: []string{"00_create_tables.sql"}, migrationsDir: "migrations_test/success", testName: "Update existing migration"},
 	}
 
 	cwd, err := os.Getwd()
@@ -151,7 +147,7 @@ func TestRunMigrations(t *testing.T) {
 
 			t.Parallel()
 
-			hostAndPort, dbName, cleanup := buildTestContainer(t.Name())
+			hostAndPort, cleanup := buildTestContainer(ctx, t)
 			defer cleanup()
 
 			env["DB_HOST"] = strings.Split(hostAndPort, ":")[0]
@@ -159,14 +155,11 @@ func TestRunMigrations(t *testing.T) {
 			env["DB_NAME"] = dbName
 
 			/* Just want a do-nothing context placeholder */
-			ctx := context.Background()
-			db, err := database.Connection(getenv)
+			db, err := database.Connection(ctx, logger, getenv)
 			if err != nil {
 				t.Fatal("Error setting up test database connection! ", err)
 			}
-			defer database.Close()
-
-			fileToRowCnts, err := database.RunMigrations(ctx, logger, getenv)
+			defer db.Close()
 
 			/*
 				Confirm the error value I got back is what I expected.
@@ -175,40 +168,40 @@ func TestRunMigrations(t *testing.T) {
 				t.Fatal("Error migrations error expected? ", data.errorExpected, " Error returned? ", (err != nil))
 			}
 
-			if !reflect.DeepEqual(data.expectedRowCnts, fileToRowCnts) {
-
-				t.Fatal("File to row count modified mappings didn't match the expected value. Expected ", fmt.Sprintf("%v", data.expectedRowCnts), " but got ", fmt.Sprintf("%v", fileToRowCnts))
-
+			actFilesApp := []string{}
+			rows, err := db.DB.QueryContext(ctx, "SELECT filename FROM migrations")
+			if err != nil {
+				t.Fatal("Error getting the updated list of migrations run")
 			}
-
-			if !migratedFileInDB(db, fileToRowCnts) {
-
-				t.Fatal("Migration file(s) run not in migrations table!")
-
-			}
-
-			if data.supplementalDir != "" {
-
-				env["MIGRATIONS_DIR"] = filepath.Join(cwd, data.supplementalDir)
-				log.Printf("Calling RunMigrations with migrations dir changed to %s (raw %s)\n", getenv("MIGRATIONS_DIR"), env["MIGRATIONS_DIR"])
-				fileToRowCnts, err := database.RunMigrations(ctx, logger, getenv)
-				if err != nil {
-					t.Fatal("Unexpected error doing a follow-up migration: ", err.Error())
+			defer rows.Close()
+			for rows.Next() {
+				var filename string
+				if err := rows.Scan(&filename); err != nil {
+					t.Fatal("Error mapping result to filename")
 				}
+				actFilesApp = append(actFilesApp, filename)
 
-				if !reflect.DeepEqual(data.supplementalRowCnts, fileToRowCnts) {
+			}
 
-					t.Fatal("File to row count modified mappings for the supplemental migration didn't match the expected value. Expected ", fmt.Sprintf("%v", data.supplementalRowCnts)+" but got "+fmt.Sprintf("%v", fileToRowCnts))
+			for _, expectedFile := range data.expectedFilesApplied {
 
+				if !slices.Contains(actFilesApp, expectedFile) {
+					t.Fatal("Expected list of applied migrations to include ", expectedFile)
 				}
 
 			}
 
-			if !migratedFileInDB(db, fileToRowCnts) {
-
-				t.Fatal("Migration file(s) run not in migrations table!")
-
+			rows, err = db.DB.QueryContext(ctx, data.validationQuery)
+			if err != nil {
+				t.Fatal("Could not run independent validation query")
 			}
+			defer rows.Close()
+
+			/*
+				TODO:
+				THE TEST HERE IS THAT THE CHANGES ARE LIVE IN THE DATABASE, AND I HAVE A LIVE CONNECTION TO QUERY
+			*/
+			t.Fatal("TODO: RE-DEFINE THE VALIDATION HERE!")
 
 		})
 
@@ -216,101 +209,41 @@ func TestRunMigrations(t *testing.T) {
 
 }
 
-func buildTestContainer(testName string) (string, string, func()) {
+func buildTestContainer(ctx context.Context, t *testing.T) (string, func()) {
 
-	testName = strings.ReplaceAll(testName, "/", "__")
-	cwd, err := os.Getwd()
+	dbCont, err := postgres.Run(
+		ctx,
+		"postgres:17.2",
+		postgres.WithDatabase(dbName),
+		postgres.WithUsername(dbUser),
+		postgres.WithPassword(dbPass),
+		postgres.WithInitScripts(filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql")),
+		testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").
+			WithOccurrence(2).
+			WithStartupTimeout(5*time.Second)),
+	)
 	if err != nil {
-		log.Fatal("Error getting current working directory")
-	}
-	initScript := filepath.Join(cwd, "..", "..", "docker", "postgres_scripts", "init.sql")
-
-	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "postgres",
-		Tag:        "17.2",
-		Env: []string{
-			fmt.Sprintf("POSTGRES_PASSWORD=%s", dbPass),
-			fmt.Sprintf("POSTGRES_USER=%s", dbUser),
-			fmt.Sprintf("POSTGRES_DB=%s", testName),
-			"listen_addresses = '*'",
-		},
-		Mounts: []string{initScript + ":/docker-entrypoint-initdb.d/init.sql"},
-	}, func(config *docker.HostConfig) {
-		/* Autoremove = true ensures stopped containers are removed */
-		config.AutoRemove = true
-		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
-	})
-	if err != nil {
-		log.Fatal("could not start docker ", err)
-	}
-
-	hostAndPort := resource.GetHostPort("5432/tcp")
-	databaseUrl := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", dbUser, dbPass, hostAndPort, testName)
-
-	/* Tell docker to hard kill the container in 10 seconds */
-	resource.Expire(10)
-
-	/*
-		Exponential backoff-retry, because the application in the container might not
-		be ready to accept connections yet
-	*/
-	pool.MaxWait = 10 * time.Second
-	if err = pool.Retry(func() error {
-		db, err := sql.Open("postgres", databaseUrl)
-		if err != nil {
-			return err
-		}
-		return db.Ping()
-	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Fatal("Failed to launch the database test container! ", err)
 	}
 
 	/*
 		Return a clean-up function so we can remove the container resources when
 		the testing is done
 	*/
-	return hostAndPort, testName, func() {
-		if err := pool.Purge(resource); err != nil {
-			log.Fatalf("Could not purge resource: %s", err)
-		}
-	}
-
-}
-
-func migratedFileInDB(db *sql.DB, fileToRowCnts map[string]int64) bool {
-
-	var appliedFiles []string
-	rows, err := db.Query("SELECT filename FROM migrations ORDER BY filename ASC")
+	dbURL, err := dbCont.Endpoint(ctx, "")
+	connStr, err := dbCont.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		log.Println("Error checking the migrations table to confirm the file(s) were applied: ", err)
-		return false
+		t.Fatal("Error getting the connection string! ", err)
 	}
-	defer rows.Close()
 
-	for rows.Next() {
-
-		var filename string
-		if err := rows.Scan(&filename); err != nil {
-			log.Println("Error reading applied filename ", err)
-			return false
+	log.Println("Container connection string is ", connStr)
+	if err != nil {
+		t.Fatal("Error getting the connection URL to the database container")
+	}
+	return dbURL, func() {
+		if err := testcontainers.TerminateContainer(dbCont); err != nil {
+			log.Fatal("Failed to terminate the database test container ", err)
 		}
-
-		appliedFiles = append(appliedFiles, filename)
-
 	}
-	log.Printf("I have %d applied files: %v\n", len(appliedFiles), appliedFiles)
-
-	for migratedFile := range fileToRowCnts {
-
-		if !slices.Contains(appliedFiles, migratedFile) {
-
-			log.Printf("Expected %s to be in the list of migration files run in the database\n", migratedFile)
-			return false
-
-		}
-
-	}
-
-	return true
 
 }

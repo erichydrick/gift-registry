@@ -108,7 +108,7 @@ func main() {
 
 	ctx := context.Background()
 
-	err := Run(ctx, os.Getenv, logger)
+	err := Run(ctx, logger, os.Getenv)
 	if err != nil {
 		logger.Error("error launching the application", slog.String("errorMessage", err.Error()))
 		os.Exit(-1)
