@@ -13,7 +13,7 @@ FROM alpine:3.21.3 AS executor
 WORKDIR /app
 
 COPY --from=build /app/main /app/main
+ADD internal/database/migrations migrations/
 ADD cmd/web/templates/ templates/
 ADD cmd/web/css/ css/
-# TODO: EXPOSE PORTS WHEN WE SET UP THE WEB SERVER
 CMD ["./main"]
