@@ -14,9 +14,10 @@ import (
 func (svr *server) registerRoutes(db *sql.DB, logger *slog.Logger) (http.Handler, error) {
 
 	/*
-	   I'm using a vertical slice architecture, so the handler logic will be
-	   split amongst several different packages. They'll all need to be
-	   initialized before registering, so do that here.
+		I'm taking a vertical slice approach, so the handler logic will be
+		split amongst several different packages. My understanding is 1 big
+		route file is idiomatic Go so the routes will be defined here, even if the
+		logic isn't.
 	*/
 	mux := http.NewServeMux()
 
@@ -27,8 +28,14 @@ func (svr *server) registerRoutes(db *sql.DB, logger *slog.Logger) (http.Handler
 
 	}
 
+	/* Static files */
 	handleFunc("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
+
+	/* People handlers */
+
+	/* Base handlers */
 	handleFunc("GET /health", HealthCheckHandler(svr.getenv, db, logger))
+	handleFunc("GET /{$}", IndexHandler(svr.getenv, db, logger))
 
 	handler := otelhttp.NewHandler(cors(mux, logger), "/")
 	logger.Info("Registered all routes")

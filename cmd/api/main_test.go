@@ -112,6 +112,11 @@ func TestHealthCheck(t *testing.T) {
 
 			port := freePort()
 
+			/*
+				TODO:
+				MOVE OUT OF THE TEST RUN AND JUST TAKE THE TEMPLATE DIR AS A TEST STRUCT
+				FIELD
+			*/
 			env := map[string]string{
 				"DB_USER":        dbUser,
 				"DB_PASS":        dbPass,
@@ -258,6 +263,122 @@ func TestHealthCheck(t *testing.T) {
 				t.Fatal("Expected", data.expectedDBHealthEntries,
 					" database health items in the application health report, but got",
 					dbHealthItems, "instead")
+
+			}
+
+		})
+
+	}
+
+}
+
+// Tests the handler for getting the index page.
+// Covers the success case and failure case.
+func TestIndexHandler(t *testing.T) {
+
+	testData := []struct {
+		expectedDivs       []string
+		expectedHTTPStatus int
+		templateDir        string
+		testName           string
+	}{
+		{expectedDivs: []string{"redirect-tag", "application-header", "summary-content"}, expectedHTTPStatus: 200, templateDir: "../../cmd/web/templates", testName: "Success"},
+		{expectedDivs: []string{}, expectedHTTPStatus: 500, templateDir: "templates", testName: "Failure"},
+	}
+
+	env := map[string]string{
+		"DB_USER":        dbUser,
+		"DB_PASS":        dbPass,
+		"DB_NAME":        dbName,
+		"OTEL_HC":        fmt.Sprintf("%s/api/health", obsUrl),
+		"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations_test/success"),
+	}
+
+	for _, data := range testData {
+
+		t.Run(data.testName, func(t *testing.T) {
+
+			t.Parallel()
+
+			testContainers, err := buildTestContainers(ctx)
+			defer func() {
+				if err := testcontainers.TerminateContainer(testContainers.obsCont); err != nil {
+					log.Fatal("Failed to terminate the observability test container ", err)
+				}
+			}()
+			defer func() {
+				if err := testcontainers.TerminateContainer(testContainers.dbCont); err != nil {
+					log.Fatal("Failed to terminate the database test container ", err)
+				}
+			}()
+			if err != nil {
+				t.Fatal("Error setting up test containers! ", err)
+			}
+
+			port := freePort()
+
+			env["DB_HOST"] = strings.Split(dbUrl, ":")[0]
+			env["DB_PORT"] = strings.Split(dbUrl, ":")[1]
+			env["PORT"] = strconv.Itoa(port)
+			env["TEMPLATES_DIR"] = data.templateDir
+			getenv := func(name string) string { return env[name] }
+
+			db, err := database.Connection(ctx, logger, getenv)
+			if err != nil {
+				t.Fatal("database connection failure! ", err)
+			}
+
+			appHandler, err := server.NewServer(getenv, db.DB, logger)
+			if err != nil {
+				t.Fatal("error setting up the test handler", err)
+			}
+
+			testServer := httptest.NewServer(appHandler)
+			defer testServer.Close()
+
+			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL, nil)
+			if err != nil {
+				t.Fatal("error building home page request", err)
+			}
+
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal("server call failed", err)
+			}
+			defer res.Body.Close()
+
+			if res.StatusCode != data.expectedHTTPStatus {
+
+				t.Fatal("Expected an HTTP status of ", data.expectedHTTPStatus, " but got a status of ", res.StatusCode)
+
+			}
+
+			doc, err := html.Parse(res.Body)
+			if err != nil {
+				t.Fatal("error parsing the HTML content from the response", err)
+			}
+
+			/* Check for expected elements on the page */
+			for _, divId := range data.expectedDivs {
+
+				divFound := false
+
+				for node := range doc.Descendants() {
+
+					if node.Attr != nil && slices.Contains(node.Attr, html.Attribute{Key: "id", Val: divId}) && node.Data != "" {
+
+						divFound = true
+						break
+
+					}
+
+				}
+
+				if !divFound {
+
+					t.Fatal("Did not find expected element ", divId, " on the page!")
+
+				}
 
 			}
 

@@ -50,14 +50,29 @@ var (
 	meter          = otel.Meter(name)
 	tracer         = otel.Tracer(name)
 	healthCheckCtr metric.Int64Counter
+	indexCtr       metric.Int64Counter
 )
 
 func init() {
 
+	/*
+		TODO: Collect the errors and have 1 check/panic since a failure on 1 page
+		shouldn't impact the others
+	*/
 	var err error
+
 	healthCheckCtr, err = meter.Int64Counter(
 		"health.check.counter",
 		metric.WithDescription("Number of calls to the /health endpoint"),
+		metric.WithUnit("{call}"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	indexCtr, err = meter.Int64Counter(
+		"index.counter",
+		metric.WithDescription("Number of calls to the home page"),
 		metric.WithUnit("{call}"),
 	)
 	if err != nil {
@@ -105,7 +120,12 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 			}
 		}()
 
-		tmpl := template.Must(template.ParseFiles(getenv("TEMPLATES_DIR") + "/health.html"))
+		tmpl, err := template.ParseFiles(getenv("TEMPLATES_DIR") + "/health.html")
+		if err != nil {
+			res.WriteHeader(500)
+			res.Write([]byte("Error loading status page"))
+		}
+
 		res.WriteHeader(responseStatus)
 
 		healthCheckCtr.Add(ctx, 1, metric.WithAttributes(
@@ -130,7 +150,7 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 			attribute.String("observStatus", status.ObservHealth.Status),
 		)
 
-		logger.InfoContext(ctx, fmt.Sprintf("Finished the %s operation", req.URL.Path),
+		logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s", req.URL.Path),
 			slog.Bool("healthy", status.Healthy),
 			slog.Bool("dbHealthy", status.DBHealth.Healthy),
 			slog.Bool("observHealthy", status.ObservHealth.Healthy),
@@ -140,6 +160,35 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 		)
 
 		tmpl.Execute(res, status)
+
+	})
+
+}
+
+// Handler to return the application home page
+func IndexHandler(getenv func(string) string, db *sql.DB, logger *slog.Logger) http.Handler {
+
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
+		ctx, span := tracer.Start(req.Context(), "index")
+		defer span.End()
+		logger.DebugContext(ctx, "Loading the application home page")
+
+		tmpl, err := template.ParseFiles(getenv("TEMPLATES_DIR") + "/index.html")
+		if err != nil {
+			logger.ErrorContext(ctx, "Error loading the index template", slog.String("errorMessage", err.Error()))
+			res.WriteHeader(500)
+			res.Write([]byte("Error loading home page"))
+			return
+		}
+		logger.DebugContext(ctx, "Parsed the template file")
+
+		indexCtr.Add(ctx, 1)
+
+		logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s", req.URL.Path))
+
+		res.WriteHeader(200)
+		tmpl.Execute(res, nil)
 
 	})
 

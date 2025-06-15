@@ -12,7 +12,7 @@ docker-down:
 	docker compose -f docker/docker-compose.yml down
 
 docker-up: docker-build
-	docker compose -f docker/docker-compose.yml up -d --no-deps
+	docker compose -f docker/docker-compose.yml up -d 
 	docker ps -a
 
 fmt:
