@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS verification (email VARCHAR(255) PRIMARY KEY REFERENCES person (email), token VARCHAR(255), token_expiration TIMESTAMP WITH TIME ZONE, attempts SMALLINT DEFAULT 0);

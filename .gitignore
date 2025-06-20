@@ -25,6 +25,9 @@ go.work.sum
 # env file
 .env
 
+# Postgres data
+**/postgres_data/
+
 # Observability data
 **/open_observe_data/
 **/grafana_data/

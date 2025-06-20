@@ -1,4 +1,4 @@
-{{define "index"}}
+{{define "login-page"}}
 <!DOCTYPE html>
 <html>
 
@@ -6,7 +6,7 @@
 
     <title>Family gift registry</title>
     <link rel="stylesheet" href="css/styles.css" />
-    <script src="js/htmx.js" type="text/javascript"></script>
+    <script src="js/htmx.js"></script>
 
 </head>
 
@@ -18,13 +18,10 @@
         </h1>
     </div>
 
-    <div id="page-content" class="centered content shadowed">
-        <h2>Redirecting you to the login page</h2>
-        <div id="redirector">
-            <meta http-equiv="refresh" content="3; URL=/login">
-        </div>
+    <div id="page-content" class="centered content overflow-y shadowed">
+        <h3 class="center-text mb-3">Login to view your registry</h3>
+        {{template "login-form"}}
     </div>
-
 
 </body>
 
