@@ -30,13 +30,6 @@ import (
 	"golang.org/x/net/html"
 )
 
-type containers struct {
-	dbCont  *postgres.PostgresContainer
-	dbUrl   string
-	obsCont *grafanalgtm.GrafanaLGTMContainer
-	obsUrl  string
-}
-
 /* Connection details for the test database */
 const (
 	dbName = "main_test"
@@ -71,6 +64,28 @@ func TestMain(m *testing.M) {
 // health check endpoint, and validating the output
 func TestHealthCheck(t *testing.T) {
 
+	/*
+		Spin up a Grafana container to use for the observability part of the health
+		check. Doing it here because we don't need a separate copy per test case.
+	*/
+	obsCont, err := grafanalgtm.Run(
+		ctx,
+		"grafana/otel-lgtm:0.11.0",
+	)
+	defer func() {
+		if err := testcontainers.TerminateContainer(obsCont); err != nil {
+			log.Fatal("Failed to terminate the observability test container ", err)
+		}
+	}()
+	if err != nil {
+		log.Fatalf("Failed to launch the observability test container! %v", err)
+	}
+
+	obsUrl, err = obsCont.Endpoint(ctx, "http")
+	if err != nil {
+		log.Fatalf("Error getting the observability endpoint %v", err)
+	}
+
 	testData := []struct {
 		dbError                   bool
 		expectedDBStatusClass     string
@@ -95,14 +110,9 @@ func TestHealthCheck(t *testing.T) {
 
 			t.Parallel()
 
-			testContainers, err := buildTestContainers(ctx)
+			dbCont, dbUrl, err := buildDBContainer(ctx)
 			defer func() {
-				if err := testcontainers.TerminateContainer(testContainers.obsCont); err != nil {
-					log.Fatal("Failed to terminate the observability test container ", err)
-				}
-			}()
-			defer func() {
-				if err := testcontainers.TerminateContainer(testContainers.dbCont); err != nil {
+				if err := testcontainers.TerminateContainer(dbCont); err != nil {
 					log.Fatal("Failed to terminate the database test container ", err)
 				}
 			}()
@@ -161,10 +171,14 @@ func TestHealthCheck(t *testing.T) {
 			}
 
 			res, err := http.DefaultClient.Do(req)
+			defer func() {
+				if res != nil && res.Body != nil {
+					res.Body.Close()
+				}
+			}()
 			if err != nil {
-				t.Fatal("server call failed", err)
+				logger.Error(fmt.Sprintf("Server call failed %v", err))
 			}
-			defer res.Body.Close()
 
 			if res.StatusCode != data.expectedHttpStatus {
 
@@ -267,6 +281,119 @@ func TestHealthCheck(t *testing.T) {
 
 }
 
+func TestIndexHandler(t *testing.T) {
+
+	testData := []struct {
+		expectedElements []string
+		expectedStatus   int
+		templatesDir     string
+		testName         string
+	}{
+		{expectedElements: []string{"application-header", "form-data"}, expectedStatus: 200, templatesDir: "../../cmd/web/templates", testName: "Success"},
+		{expectedElements: []string{}, expectedStatus: 500, templatesDir: "", testName: "Bad Templates"},
+	}
+
+	env := map[string]string{
+		"DB_USER":        dbUser,
+		"DB_PASS":        dbPass,
+		"DB_NAME":        dbName,
+		"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations_test/success"),
+	}
+
+	for _, data := range testData {
+
+		t.Run(data.testName, func(t *testing.T) {
+
+			t.Parallel()
+
+			dbCont, dbUrl, err := buildDBContainer(ctx)
+			defer func() {
+				if err := testcontainers.TerminateContainer(dbCont); err != nil {
+					log.Fatal("Failed to terminate the database test container ", err)
+				}
+			}()
+
+			if err != nil {
+				log.Fatal("Error making database container", err)
+			}
+
+			env["DB_HOST"] = strings.Split(dbUrl, ":")[0]
+			env["DB_PORT"] = strings.Split(dbUrl, ":")[1]
+			env["PORT"] = strconv.Itoa(freePort())
+			env["TEMPLATES_DIR"] = data.templatesDir
+
+			getenv := func(name string) string { return env[name] }
+
+			db, err := database.Connection(ctx, logger, getenv)
+			if err != nil {
+				t.Fatal("database connection failure! ", err)
+			}
+
+			appHandler, err := server.NewServer(getenv, db.DB, logger)
+			if err != nil {
+				t.Fatal("error setting up the test handler", err)
+			}
+
+			testServer := httptest.NewServer(appHandler)
+			defer testServer.Close()
+
+			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/", nil)
+			if err != nil {
+				t.Fatal("error building landing page request", err)
+			}
+
+			res, err := http.DefaultClient.Do(req)
+			defer func() {
+				if res != nil && res.Body != nil {
+					res.Body.Close()
+				}
+			}()
+			if err != nil {
+				t.Fatal("server call failed", err)
+			}
+
+			if res.StatusCode != data.expectedStatus {
+
+				t.Fatal("Expected a status code of ", data.expectedStatus, " but got ", res.StatusCode)
+
+			}
+
+			doc, err := html.Parse(res.Body)
+			if err != nil {
+				t.Fatal("error parsing the HTML content from the response", err)
+			}
+
+			for _, elemID := range data.expectedElements {
+
+				elementFound := false
+
+				for node := range doc.Descendants() {
+
+					if node.Attr != nil &&
+						slices.Contains(node.Attr, html.Attribute{Key: "id", Val: elemID}) &&
+						node.FirstChild.Data != "" {
+
+						elementFound = true
+						break
+
+					}
+
+				}
+
+				if !elementFound {
+
+					t.Fatal("Did not find expected element ", elemID)
+
+				}
+
+			}
+
+		})
+
+	}
+
+}
+
 // TestShutdown validates the shutdown handler by starting an application server
 // and triggering a shutdown signal to shut the server down
 func TestShutdown(t *testing.T) {
@@ -305,15 +432,7 @@ func TestShutdown(t *testing.T) {
 	}
 }
 
-func buildTestContainers(ctx context.Context) (containers, error) {
-
-	obsCont, err := grafanalgtm.Run(
-		ctx,
-		"grafana/otel-lgtm:0.11.0",
-	)
-	if err != nil {
-		return containers{}, fmt.Errorf("failed to launch the observability test container! %v", err)
-	}
+func buildDBContainer(ctx context.Context) (*postgres.PostgresContainer, string, error) {
 
 	dbCont, err := postgres.Run(
 		ctx,
@@ -327,20 +446,15 @@ func buildTestContainers(ctx context.Context) (containers, error) {
 			WithStartupTimeout(5*time.Second)),
 	)
 	if err != nil {
-		return containers{}, fmt.Errorf("failed to launch the database test container! %v", err)
+		return nil, "", fmt.Errorf("failed to launch the database test container! %v", err)
 	}
 
 	dbUrl, err = dbCont.Endpoint(ctx, "")
 	if err != nil {
-		return containers{}, fmt.Errorf("error getting the database endpoint %v", err)
+		return nil, "", fmt.Errorf("error getting the database endpoint %v", err)
 	}
 
-	obsUrl, err = obsCont.Endpoint(ctx, "http")
-	if err != nil {
-		return containers{}, fmt.Errorf("error getting the observability endpoint %v", err)
-	}
-
-	return containers{dbCont: dbCont, dbUrl: dbUrl, obsCont: obsCont, obsUrl: obsUrl}, nil
+	return dbCont, dbUrl, nil
 
 }
 
