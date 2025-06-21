@@ -289,15 +289,8 @@ func TestIndexHandler(t *testing.T) {
 		templatesDir     string
 		testName         string
 	}{
-		{expectedElements: []string{"application-header", "form-data"}, expectedStatus: 200, templatesDir: "../../cmd/web/templates", testName: "Success"},
-		{expectedElements: []string{}, expectedStatus: 500, templatesDir: "", testName: "Bad Templates"},
-	}
-
-	env := map[string]string{
-		"DB_USER":        dbUser,
-		"DB_PASS":        dbPass,
-		"DB_NAME":        dbName,
-		"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations_test/success"),
+		{expectedElements: []string{"application-header", "form-data", "signup-form", "login-form"}, expectedStatus: 200, templatesDir: "../../cmd/web/templates", testName: "Success"},
+		{expectedElements: []string{}, expectedStatus: 500, templatesDir: "templates", testName: "Bad Templates"},
 	}
 
 	for _, data := range testData {
@@ -317,10 +310,16 @@ func TestIndexHandler(t *testing.T) {
 				log.Fatal("Error making database container", err)
 			}
 
-			env["DB_HOST"] = strings.Split(dbUrl, ":")[0]
-			env["DB_PORT"] = strings.Split(dbUrl, ":")[1]
-			env["PORT"] = strconv.Itoa(freePort())
-			env["TEMPLATES_DIR"] = data.templatesDir
+			env := map[string]string{
+				"DB_USER":        dbUser,
+				"DB_PASS":        dbPass,
+				"DB_HOST":        strings.Split(dbUrl, ":")[0],
+				"DB_PORT":        strings.Split(dbUrl, ":")[1],
+				"DB_NAME":        dbName,
+				"PORT":           strconv.Itoa(freePort()),
+				"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations_test/success"),
+				"TEMPLATES_DIR":  data.templatesDir,
+			}
 
 			getenv := func(name string) string { return env[name] }
 
@@ -337,7 +336,7 @@ func TestIndexHandler(t *testing.T) {
 			testServer := httptest.NewServer(appHandler)
 			defer testServer.Close()
 
-			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/", nil)
+			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL, nil)
 			if err != nil {
 				t.Fatal("error building landing page request", err)
 			}

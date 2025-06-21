@@ -74,8 +74,6 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 		ctx, span := tracer.Start(req.Context(), "health")
 		defer span.End()
 
-		responseStatus := 200
-
 		dbStatus, err := dbHealth(db)
 		logger.DebugContext(ctx, "DB status info obtained", slog.Any("statusObj", dbStatus))
 		if err != nil {
@@ -99,14 +97,11 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 		defer func() {
 			if fail := recover(); fail != nil {
 				logger.ErrorContext(ctx, "Fatal error doing an application health check.", slog.Any("errorMessage", fail))
-				responseStatus = 500
-				res.WriteHeader(responseStatus)
 				dbStatus.Error = fmt.Sprintf("%v", fail)
 			}
 		}()
 
-		tmpl := template.Must(template.ParseFiles(getenv("TEMPLATES_DIR") + "/health.html"))
-		res.WriteHeader(responseStatus)
+		tmpl, tmplErr := template.ParseFiles(getenv("TEMPLATES_DIR") + "/health.html")
 
 		healthCheckCtr.Add(ctx, 1, metric.WithAttributes(
 			attribute.Bool("healthy", status.Healthy),
@@ -130,7 +125,7 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 			attribute.String("observStatus", status.ObservHealth.Status),
 		)
 
-		logger.InfoContext(ctx, fmt.Sprintf("Finished the %s operation", req.URL.Path),
+		logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s", req.URL.Path),
 			slog.Bool("healthy", status.Healthy),
 			slog.Bool("dbHealthy", status.DBHealth.Healthy),
 			slog.Bool("observHealthy", status.ObservHealth.Healthy),
@@ -139,7 +134,45 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 			slog.String("dbStatus", status.DBHealth.Status),
 		)
 
+		if tmplErr != nil {
+			logger.ErrorContext(ctx, "Error loading the health check template", slog.String("errorMessage", tmplErr.Error()))
+			res.WriteHeader(500)
+			res.Write([]byte("Error rendering the health check page"))
+			return
+		}
+		res.WriteHeader(200)
 		tmpl.Execute(res, status)
+
+	})
+
+}
+
+// Returns the landing page for the application
+func IndexHandler(getenv func(string) string, db *sql.DB, logger *slog.Logger) http.Handler {
+
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
+		/*
+			TODO:
+			DO I WANT A COUNTER ON THIS ENDPOINT? (OR THE HEALTH CHECK FOR THAT MATTER?)
+		*/
+		ctx, span := tracer.Start(req.Context(), "health")
+		defer span.End()
+
+		logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s", req.URL.Path))
+
+		tmpl, tmplErr := template.ParseFiles(getenv("TEMPLATES_DIR") + "/index.html")
+
+		if tmplErr != nil {
+			logger.ErrorContext(ctx, "Error loading the index template", slog.String("errorMessage", tmplErr.Error()))
+			res.WriteHeader(500)
+			logger.DebugContext(ctx, "Writing a static error")
+			res.Write([]byte("Error loading gift registry"))
+			logger.DebugContext(ctx, "Shoudn't reeally be here")
+			return
+		}
+		res.WriteHeader(200)
+		tmpl.Execute(res, "")
 
 	})
 

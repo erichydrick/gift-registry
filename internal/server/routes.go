@@ -27,7 +27,11 @@ func (svr *server) registerRoutes(db *sql.DB, logger *slog.Logger) (http.Handler
 
 	}
 
+	/* Static files */
 	handleFunc("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
+
+	/* Base routes */
+	handleFunc("GET /{$}", IndexHandler(svr.getenv, db, logger))
 	handleFunc("GET /health", HealthCheckHandler(svr.getenv, db, logger))
 
 	handler := otelhttp.NewHandler(cors(mux, logger), "/")
