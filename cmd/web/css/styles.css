@@ -26,6 +26,48 @@ body {
     font-size: 1.125rem;
 }
 
+input {
+    border: none;
+    border-bottom: 1px solid #000000;
+    display: block;
+    font-size: 1.10rem;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+input:checked+.slider {
+    background-color: var(--primary-color);
+}
+
+input:checked+.slider:before {
+    transform: translateX(75%);
+    -ms-transform: translateX(75%);
+    -webkit-transform: translateX(75%);
+}
+
+input:focus {
+    border-bottom: 2px solid var(--primary-color);
+    outline: none;
+}
+
+input:focus+.slider {
+    box-shadow: 0 0 1px var(--gray-color-700);
+}
+
+
+/* Firefox */
+input[type=number] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+/* Chrome, Safari, Edge, Opera */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
 label {
     font-weight: 700;
 }
@@ -48,6 +90,42 @@ label {
     padding: 1rem;
 }
 
+.form-input-group {
+    display: block;
+    height: 1.10rem;
+}
+
+.form-input-group label {
+    background-color: var(--white-color);
+    clear: both;
+    float: left;
+    font-weight: 500;
+    line-height: 1.10rem;
+    position: relative;
+}
+
+.form-input-group>.left {
+    display: inline;
+    float: left;
+    width: 40%;
+}
+
+.form-input-group>.right {
+    display: inline;
+    float: right;
+    width: 60%;
+}
+
+.form-input-group>.right>input {
+    float: left;
+    text-align: left;
+    width: 100%;
+}
+
+.form-input-group:focus-within label {
+    color: var(--primary-color);
+}
+
 .healthy {
     color: var(--secondary-color);
 }
@@ -68,6 +146,10 @@ label {
 .unhealthy {
     color: var(--danger-color);
     font-weight: 700;
+}
+
+#landing-form-data {
+    overflow-y: auto;
 }
 
 #page-header {
