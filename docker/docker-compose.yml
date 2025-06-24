@@ -8,7 +8,7 @@ services:
     pull_policy: missing
     volumes:
       - type: bind
-        source: ./grafana_data
+        source: ${GRAFANA_DATA}
         target: /data
     ports: 
       - 3000:3000 
@@ -27,7 +27,7 @@ services:
     ports: 
       - 5432:5432
     volumes:
-      - ./postgres_data:/var/lib/postgresql/data/
+      - ${POSTGRES_DATA}:/var/lib/postgresql/data/ 
       - ./postgres_scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "sh -c 'pg_isready -U ${DB_USER} -d ${DB_NAME}'"]

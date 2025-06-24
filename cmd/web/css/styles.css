@@ -26,10 +26,18 @@ body {
     font-size: 1.125rem;
 }
 
+form button {
+    width: 20%;
+}
+
+form h2 {
+    margin: 1rem;
+}
+
 input {
     border: none;
     border-bottom: 1px solid #000000;
-    display: block;
+    display: inline;
     font-size: 1.10rem;
     margin-left: auto;
     margin-right: auto;
@@ -68,8 +76,106 @@ input::-webkit-inner-spin-button {
     margin: 0;
 }
 
-label {
-    font-weight: 700;
+.btn {
+    background: none;
+    border: none;
+    font-weight: 600;
+    justify-content: center;
+    min-height: 48px;
+    padding: 0px 16px;
+    padding-block: 1px;
+    padding-inline: 6px;
+}
+
+.btn:disabled {
+    opacity: 0.65;
+    pointer-events: none;
+}
+
+.btn:hover {
+    color: var(--black-color-300);
+    cursor: pointer;
+}
+
+.btn>span {
+    vertical-align: middle;
+}
+
+.btn-contained.danger {
+    background-color: var(--danger-color);
+    box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+    color: var(--white-color);
+    -webkit-box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+}
+
+.btn-contained.danger:hover {
+    background-color: var(--danger-color-300);
+    color: var(--white-color) !important;
+}
+
+.btn-contained.primary {
+    background-color: var(--primary-color);
+    box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+    color: var(--white-color);
+    -webkit-box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+}
+
+.btn-contained.primary:hover {
+    background-color: var(--primary-color-300);
+    color: var(--white-color) !important;
+}
+
+.btn-contained.secondary {
+    background-color: var(--secondary-color);
+    box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+    color: var(--white-color);
+    -webkit-box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+}
+
+.btn-contained.secondary:hover {
+    background-color: var(--secondary-color-300);
+    color: var(--white-color) !important;
+}
+
+.btn.danger:hover {
+    color: var(--danger-color-300);
+}
+
+.btn-fab {
+    border-radius: 50%;
+    padding: 15px;
+}
+
+.btn.primary:hover {
+    color: var(--primary-color-300);
+}
+
+.btn.secondary:hover {
+    color: var(--secondary-color-300);
+}
+
+.btn-tonal.primary {
+    background-color: var(--primary-color-300);
+    box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+    color: var(--white-color);
+    -webkit-box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+
+}
+
+.btn-tonal.primary:hover {
+    background-color: var(--primary-color);
+}
+
+.btn-tonal.secondary {
+    background-color: var(--secondary-color-300);
+    box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+    color: var(--white-color);
+    -webkit-box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+
+}
+
+.btn-tonal.secondary:hover {
+    background-color: var(--secondary-color);
 }
 
 .center-text {
@@ -90,16 +196,22 @@ label {
     padding: 1rem;
 }
 
+.danger {
+    color: var(--danger-color);
+}
+
 .form-input-group {
     display: block;
     height: 1.10rem;
+    margin-bottom: 1rem;
 }
 
 .form-input-group label {
     background-color: var(--white-color);
+    bottom: 0;
     clear: both;
     float: left;
-    font-weight: 500;
+    font-weight: 600;
     line-height: 1.10rem;
     position: relative;
 }
@@ -107,13 +219,13 @@ label {
 .form-input-group>.left {
     display: inline;
     float: left;
-    width: 40%;
+    width: 20%;
 }
 
 .form-input-group>.right {
     display: inline;
     float: right;
-    width: 60%;
+    width: 80%;
 }
 
 .form-input-group>.right>input {
@@ -130,12 +242,28 @@ label {
     color: var(--secondary-color);
 }
 
+.left {
+    float: left;
+}
+
 .li-plain {
     list-style-type: none;
 }
 
 .padding-0 {
     padding: 0;
+}
+
+.primary {
+    color: var(--primary-color);
+}
+
+.right {
+    float: right;
+}
+
+.secondary {
+    color: var(--secondary-color);
 }
 
 .shadowed {
@@ -146,6 +274,10 @@ label {
 .unhealthy {
     color: var(--danger-color);
     font-weight: 700;
+}
+
+.w-100 {
+    width: 100%;
 }
 
 #landing-form-data {
