@@ -29,6 +29,7 @@ func (svr *server) registerRoutes(db *sql.DB, logger *slog.Logger) (http.Handler
 
 	/* Static files */
 	handleFunc("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
+	handleFunc("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
 
 	/* Base routes */
 	handleFunc("GET /{$}", IndexHandler(svr.getenv, db, logger))
@@ -46,6 +47,7 @@ func cors(next http.Handler, logger *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		logger.InfoContext(req.Context(), "Processing CORS", slog.String("requestURL", req.URL.String()), slog.String("pattern", req.Pattern))
+		/* TODO: DO I NEED THIS? DOESN'T IT DEFAULT TO SAME HOST? */
 		res.Header().Set("Access-Control-Allow-Origin", os.Getenv("ALLOWED_HOSTS"))
 		res.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
 		res.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token")

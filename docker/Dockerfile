@@ -16,4 +16,5 @@ COPY --from=build /app/main /app/main
 ADD internal/database/migrations migrations/
 ADD cmd/web/templates/ templates/
 ADD cmd/web/css/ css/
+ADD cmd/web/js/ js/
 CMD ["./main"]
