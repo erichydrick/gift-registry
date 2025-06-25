@@ -1,7 +1,6 @@
 package server
 
 import (
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,7 +10,7 @@ import (
 )
 
 // All HTTP routes go here so devs can get an overview of the application
-func (svr *server) registerRoutes(db *sql.DB, logger *slog.Logger) (http.Handler, error) {
+func (svr ServerUtils) registerRoutes() (http.Handler, error) {
 
 	/*
 	   I'm using a vertical slice architecture, so the handler logic will be
@@ -32,21 +31,21 @@ func (svr *server) registerRoutes(db *sql.DB, logger *slog.Logger) (http.Handler
 	handleFunc("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
 
 	/* Base routes */
-	handleFunc("GET /{$}", IndexHandler(svr.getenv, db, logger))
-	handleFunc("GET /health", HealthCheckHandler(svr.getenv, db, logger))
+	handleFunc("GET /{$}", IndexHandler(svr))
+	handleFunc("GET /health", HealthCheckHandler(svr))
 
-	handler := otelhttp.NewHandler(cors(mux, logger), "/")
-	logger.Info("Registered all routes")
+	handler := otelhttp.NewHandler(cors(mux, svr), "/")
+	svr.Logger.Info("Registered all routes")
 	return handler, nil
 
 }
 
 /* Sets the CORS response for all endpoints */
-func cors(next http.Handler, logger *slog.Logger) http.Handler {
+func cors(next http.Handler, svr ServerUtils) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
-		logger.InfoContext(req.Context(), "Processing CORS", slog.String("requestURL", req.URL.String()), slog.String("pattern", req.Pattern))
+		svr.Logger.InfoContext(req.Context(), "Processing CORS", slog.String("requestURL", req.URL.String()), slog.String("pattern", req.Pattern))
 		/* TODO: DO I NEED THIS? DOESN'T IT DEFAULT TO SAME HOST? */
 		res.Header().Set("Access-Control-Allow-Origin", os.Getenv("ALLOWED_HOSTS"))
 		res.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
@@ -61,7 +60,7 @@ func cors(next http.Handler, logger *slog.Logger) http.Handler {
 
 		}
 
-		logger.DebugContext(req.Context(), fmt.Sprintf("Now calling the handler for %s", req.URL.Path))
+		svr.Logger.DebugContext(req.Context(), fmt.Sprintf("Now calling the handler for %s", req.URL.Path))
 		next.ServeHTTP(res, req)
 
 	})

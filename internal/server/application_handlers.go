@@ -67,24 +67,24 @@ func init() {
 }
 
 // Checks the health of the application and returns some relevant statistics
-func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Logger) http.Handler {
+func HealthCheckHandler(svr ServerUtils) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx, span := tracer.Start(req.Context(), "health")
 		defer span.End()
 
-		dbStatus, err := dbHealth(db)
-		logger.DebugContext(ctx, "DB status info obtained", slog.Any("statusObj", dbStatus))
+		dbStatus, err := dbHealth(svr.DB)
+		svr.Logger.DebugContext(ctx, "DB status info obtained", slog.Any("statusObj", dbStatus))
 		if err != nil {
-			logger.ErrorContext(ctx, "Error getting database health data", slog.String("errorMessage", err.Error()))
+			svr.Logger.ErrorContext(ctx, "Error getting database health data", slog.String("errorMessage", err.Error()))
 			dbStatus.Error = err.Error()
 		}
 
-		observStatus, err := observHealth(getenv)
-		logger.DebugContext(ctx, "Observability health info obtained", slog.Any("statusObj", observStatus))
+		observStatus, err := observHealth(svr.Getenv)
+		svr.Logger.DebugContext(ctx, "Observability health info obtained", slog.Any("statusObj", observStatus))
 		if err != nil {
-			logger.ErrorContext(ctx, "Error getting the observability health data", slog.String("errorMessage", err.Error()))
+			svr.Logger.ErrorContext(ctx, "Error getting the observability health data", slog.String("errorMessage", err.Error()))
 			observStatus.Error = err.Error()
 		}
 
@@ -96,12 +96,12 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 
 		defer func() {
 			if fail := recover(); fail != nil {
-				logger.ErrorContext(ctx, "Fatal error doing an application health check.", slog.Any("errorMessage", fail))
+				svr.Logger.ErrorContext(ctx, "Fatal error doing an application health check.", slog.Any("errorMessage", fail))
 				dbStatus.Error = fmt.Sprintf("%v", fail)
 			}
 		}()
 
-		tmpl, tmplErr := template.ParseFiles(getenv("TEMPLATES_DIR") + "/health.html")
+		tmpl, tmplErr := template.ParseFiles(svr.Getenv("TEMPLATES_DIR") + "/health.html")
 
 		healthCheckCtr.Add(ctx, 1, metric.WithAttributes(
 			attribute.Bool("healthy", status.Healthy),
@@ -125,7 +125,7 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 			attribute.String("observStatus", status.ObservHealth.Status),
 		)
 
-		logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s", req.URL.Path),
+		svr.Logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s", req.URL.Path),
 			slog.Bool("healthy", status.Healthy),
 			slog.Bool("dbHealthy", status.DBHealth.Healthy),
 			slog.Bool("observHealthy", status.ObservHealth.Healthy),
@@ -135,7 +135,7 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 		)
 
 		if tmplErr != nil {
-			logger.ErrorContext(ctx, "Error loading the health check template", slog.String("errorMessage", tmplErr.Error()))
+			svr.Logger.ErrorContext(ctx, "Error loading the health check template", slog.String("errorMessage", tmplErr.Error()))
 			res.WriteHeader(500)
 			res.Write([]byte("Error rendering the health check page"))
 			return
@@ -148,7 +148,7 @@ func HealthCheckHandler(getenv func(string) string, db *sql.DB, logger *slog.Log
 }
 
 // Returns the landing page for the application
-func IndexHandler(getenv func(string) string, db *sql.DB, logger *slog.Logger) http.Handler {
+func IndexHandler(svr ServerUtils) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
@@ -159,16 +159,16 @@ func IndexHandler(getenv func(string) string, db *sql.DB, logger *slog.Logger) h
 		ctx, span := tracer.Start(req.Context(), "health")
 		defer span.End()
 
-		logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s", req.URL.Path))
+		svr.Logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s", req.URL.Path))
 
-		tmpl, tmplErr := template.ParseFiles(getenv("TEMPLATES_DIR") + "/index.html")
+		tmpl, tmplErr := template.ParseFiles(svr.Getenv("TEMPLATES_DIR") + "/index.html")
 
 		if tmplErr != nil {
-			logger.ErrorContext(ctx, "Error loading the index template", slog.String("errorMessage", tmplErr.Error()))
+			svr.Logger.ErrorContext(ctx, "Error loading the index template", slog.String("errorMessage", tmplErr.Error()))
 			res.WriteHeader(500)
-			logger.DebugContext(ctx, "Writing a static error")
+			svr.Logger.DebugContext(ctx, "Writing a static error")
 			res.Write([]byte("Error loading gift registry"))
-			logger.DebugContext(ctx, "Shoudn't reeally be here")
+			svr.Logger.DebugContext(ctx, "Shoudn't reeally be here")
 			return
 		}
 		res.WriteHeader(200)
