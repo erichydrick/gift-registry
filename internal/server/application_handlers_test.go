@@ -145,7 +145,7 @@ func TestHealthCheck(t *testing.T) {
 				t.Fatal("database connection failure! ", err)
 			}
 
-			appHandler, err := server.NewServer(getenv, db.DB, logger)
+			appHandler, err := server.NewServer(getenv, db, logger)
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}
@@ -323,7 +323,7 @@ func TestIndexHandler(t *testing.T) {
 				t.Fatal("database connection failure! ", err)
 			}
 
-			appHandler, err := server.NewServer(getenv, db.DB, logger)
+			appHandler, err := server.NewServer(getenv, db, logger)
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}

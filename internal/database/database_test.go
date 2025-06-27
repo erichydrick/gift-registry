@@ -95,7 +95,7 @@ func TestConnect(t *testing.T) {
 
 			}
 
-			if db.DB != nil {
+			if db != nil {
 
 				/* I'll test this separately later */
 				db.Close()
@@ -173,7 +173,7 @@ func TestRunMigrations(t *testing.T) {
 			}
 
 			migrationsApplied := []string{}
-			rows, err := db.DB.QueryContext(ctx, "SELECT filename FROM migrations")
+			rows, err := db.QueryContext(ctx, "SELECT filename FROM migrations")
 			if err != nil {
 				t.Fatal("Error getting the updated list of migrations run")
 			}
@@ -192,7 +192,7 @@ func TestRunMigrations(t *testing.T) {
 				t.Fatal("Expected list of applied migrations to be ", data.expectedFilesApplied, " but was ", migrationsApplied)
 			}
 
-			rows, err = db.DB.QueryContext(ctx, data.validationQuery)
+			rows, err = db.QueryContext(ctx, data.validationQuery)
 			if err != nil {
 				t.Fatal("Could not run independent validation query")
 			}

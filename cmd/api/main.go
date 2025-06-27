@@ -45,7 +45,7 @@ func Run(ctx context.Context, logger *slog.Logger, getenv func(string) string) e
 	done := make(chan bool, 1)
 
 	/* Set up OpenTelemetry integration */
-	otelShutdown, err := setupOTelSDK(ctx, getenv)
+	otelShutdown, err := setupOTelSDK(ctx)
 	if err != nil {
 		logger.Error("Error setting up OpenTelemetry", slog.String("errorMessage", err.Error()))
 		return fmt.Errorf("error setting up opentelemetry integration: %s", err.Error())
@@ -62,7 +62,7 @@ func Run(ctx context.Context, logger *slog.Logger, getenv func(string) string) e
 	}
 
 	/* Set up the routing and middleware, we'll start the server in a sec */
-	appHandler, err := server.NewServer(getenv, db.DB, logger)
+	appHandler, err := server.NewServer(getenv, db, logger)
 	if err != nil {
 		return fmt.Errorf("error getting the application server: %s", err.Error())
 	}
@@ -195,7 +195,7 @@ func newTracerProvider(ctx context.Context) (*trace.TracerProvider, error) {
 }
 
 /* Set up the OTel instrumentation and integration */
-func setupOTelSDK(ctx context.Context, getenv func(string) string) (shutdown func(context.Context) error, err error) {
+func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, err error) {
 
 	var shutdownFuncs []func(context.Context) error
 

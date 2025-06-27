@@ -34,6 +34,15 @@ func (svr ServerUtils) registerRoutes() (http.Handler, error) {
 	handleFunc("GET /{$}", IndexHandler(svr))
 	handleFunc("GET /health", HealthCheckHandler(svr))
 
+	/* Person routes */
+	/*
+		TODO:
+		SIGNUP ROUTE
+		VERIFY EMAIL ROUTE
+		LOGIN ROUTE
+		VERIFY TOKEN ROUTE
+	*/
+
 	handler := otelhttp.NewHandler(cors(mux, svr), "/")
 	svr.Logger.Info("Registered all routes")
 	return handler, nil

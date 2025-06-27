@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS gift_registry.session (session_id UUID PRIMARY KEY, person_id SERIAL REFERENCES gift_registry.person(person_id), expiration TIMESTAMP NOT NULL, ip INET NOT NULL, user_agent BPCHAR, created_on TIMESTAMP NOT NULL, modified_on TIMESTAMP NOT NULL);
