@@ -16,6 +16,12 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
+type signupData struct {
+	Email     string
+	FirstName string
+	LastName  string
+}
+
 type healthStatus struct {
 	DBHealth     dbHealthInfo
 	Healthy      bool
@@ -152,16 +158,13 @@ func IndexHandler(svr ServerUtils) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
-		/*
-			TODO:
-			DO I WANT A COUNTER ON THIS ENDPOINT? (OR THE HEALTH CHECK FOR THAT MATTER?)
-		*/
 		ctx, span := tracer.Start(req.Context(), "health")
 		defer span.End()
 
 		svr.Logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s", req.URL.Path))
 
-		tmpl, tmplErr := template.ParseFiles(svr.Getenv("TEMPLATES_DIR") + "/index.html")
+		dir := svr.Getenv("TEMPLATES_DIR")
+		tmpl, tmplErr := template.ParseFiles(dir+"/index.html", dir+"/signup-form.html", dir+"/login-form.html")
 
 		if tmplErr != nil {
 			svr.Logger.ErrorContext(ctx, "Error loading the index template", slog.String("errorMessage", tmplErr.Error()))
@@ -172,7 +175,7 @@ func IndexHandler(svr ServerUtils) http.Handler {
 			return
 		}
 		res.WriteHeader(200)
-		tmpl.Execute(res, "")
+		tmpl.ExecuteTemplate(res, "index", signupData{})
 
 	})
 

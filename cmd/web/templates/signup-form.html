@@ -1,0 +1,32 @@
+{{define "signup-form"}}
+<form id="signup-form" hx-post="signup">
+    <h2 class="centered center-text">Sign up</h2>
+    <div class="form-input-group">
+        <div class="left">
+            <label for="signup-email">Email address</label>
+        </div>
+        <div class="right">
+            <input type="email" id="signup-email" name="email" value="{{.Email}}" />
+        </div>
+    </div>
+    <div class="form-input-group">
+        <div class="left">
+            <label for="signup-first-name" class="left">First name</label>
+        </div>
+        <div class="right">
+            <input type="text" id="signup-first-name" name="firstName" class="right" value="{{.FirstName}}" />
+        </div>
+    </div>
+    <div class="form-input-group">
+        <div class="left">
+            <label for="signup-last-name" class="left">Last name</label>
+        </div>
+        <div class="right">
+            <input type="text" id="signup-last-name" name="lastName" class="right" value="{{.LastName}}" />
+        </div>
+    </div>
+    <div class="w-100">
+        <button class="btn btn-contained primary right" type="submit">Sign up</button>
+    </div>
+</form>
+{{end}}
