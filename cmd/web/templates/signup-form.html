@@ -6,7 +6,7 @@
             <label for="signup-email">Email address</label>
         </div>
         <div class="right">
-            <input type="email" id="signup-email" name="email" value="{{.Email}}" />
+            <input type="email" id="signup-email" name="email" value='{{or .Email ""}}' />
         </div>
     </div>
     <div class="form-input-group">
@@ -14,7 +14,7 @@
             <label for="signup-first-name" class="left">First name</label>
         </div>
         <div class="right">
-            <input type="text" id="signup-first-name" name="firstName" class="right" value="{{.FirstName}}" />
+            <input type="text" id="signup-first-name" name="firstName" class="right" value='{{or .FirstName ""}}' />
         </div>
     </div>
     <div class="form-input-group">
@@ -22,7 +22,7 @@
             <label for="signup-last-name" class="left">Last name</label>
         </div>
         <div class="right">
-            <input type="text" id="signup-last-name" name="lastName" class="right" value="{{.LastName}}" />
+            <input type="text" id="signup-last-name" name="lastName" class="right" value='{{or .LastName ""}}' />
         </div>
     </div>
     <div class="w-100">

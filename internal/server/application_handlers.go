@@ -16,12 +16,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-type signupData struct {
-	Email     string
-	FirstName string
-	LastName  string
-}
-
 type healthStatus struct {
 	DBHealth     dbHealthInfo
 	Healthy      bool
@@ -174,8 +168,18 @@ func IndexHandler(svr ServerUtils) http.Handler {
 			svr.Logger.DebugContext(ctx, "Shoudn't reeally be here")
 			return
 		}
+
 		res.WriteHeader(200)
-		tmpl.ExecuteTemplate(res, "index", signupData{})
+		/*
+			Populate the form with blank fields (it takes values to leave populated in
+			case of errors during processing.
+		*/
+		blankForms := struct {
+			Email     string
+			FirstName string
+			LastName  string
+		}{}
+		tmpl.ExecuteTemplate(res, "index", blankForms)
 
 	})
 
