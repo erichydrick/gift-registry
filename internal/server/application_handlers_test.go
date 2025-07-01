@@ -1,10 +1,9 @@
-package server_test
+package server
 
 import (
 	"context"
 	"fmt"
 	"gift-registry/internal/database"
-	"gift-registry/internal/server"
 	"log"
 	"log/slog"
 	"net"
@@ -25,18 +24,17 @@ import (
 	"golang.org/x/net/html"
 )
 
-/* Connection details for the test database */
+// Connection details for the test database
 const (
 	dbName = "main_test"
 	dbUser = "main_user"
 	dbPass = "main_pass"
 )
 
+// Test-specific values
 var (
 	ctx    context.Context
-	dbUrl  string
 	logger *slog.Logger
-	obsUrl string
 )
 
 // TestMain sets up the application tests by initializing a logger object to
@@ -76,7 +74,7 @@ func TestHealthCheck(t *testing.T) {
 		log.Fatalf("Failed to launch the observability test container! %v", err)
 	}
 
-	obsUrl, err = obsCont.Endpoint(ctx, "http")
+	obsURL, err := obsCont.Endpoint(ctx, "http")
 	if err != nil {
 		log.Fatalf("Error getting the observability endpoint %v", err)
 	}
@@ -105,7 +103,7 @@ func TestHealthCheck(t *testing.T) {
 
 			t.Parallel()
 
-			dbCont, dbUrl, err := buildDBContainer(ctx)
+			dbCont, dbURL, err := buildDBContainer(ctx)
 			defer func() {
 				if err := testcontainers.TerminateContainer(dbCont); err != nil {
 					log.Fatal("Failed to terminate the database test container ", err)
@@ -120,10 +118,10 @@ func TestHealthCheck(t *testing.T) {
 			env := map[string]string{
 				"DB_USER":        dbUser,
 				"DB_PASS":        dbPass,
-				"DB_HOST":        strings.Split(dbUrl, ":")[0],
-				"DB_PORT":        strings.Split(dbUrl, ":")[1],
+				"DB_HOST":        strings.Split(dbURL, ":")[0],
+				"DB_PORT":        strings.Split(dbURL, ":")[1],
 				"DB_NAME":        dbName,
-				"OTEL_HC":        fmt.Sprintf("%s/api/health", obsUrl),
+				"OTEL_HC":        fmt.Sprintf("%s/api/health", obsURL),
 				"PORT":           strconv.Itoa(port),
 				"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations_test/success"),
 			}
@@ -145,7 +143,7 @@ func TestHealthCheck(t *testing.T) {
 				t.Fatal("database connection failure! ", err)
 			}
 
-			appHandler, err := server.NewServer(getenv, db, logger)
+			appHandler, err := NewServer(getenv, db, logger)
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}
@@ -323,7 +321,7 @@ func TestIndexHandler(t *testing.T) {
 				t.Fatal("database connection failure! ", err)
 			}
 
-			appHandler, err := server.NewServer(getenv, db, logger)
+			appHandler, err := NewServer(getenv, db, logger)
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}
@@ -405,12 +403,12 @@ func buildDBContainer(ctx context.Context) (*postgres.PostgresContainer, string,
 		return nil, "", fmt.Errorf("failed to launch the database test container! %v", err)
 	}
 
-	dbUrl, err = dbCont.Endpoint(ctx, "")
+	dbURL, err := dbCont.Endpoint(ctx, "")
 	if err != nil {
 		return nil, "", fmt.Errorf("error getting the database endpoint %v", err)
 	}
 
-	return dbCont, dbUrl, nil
+	return dbCont, dbURL, nil
 
 }
 
