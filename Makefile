@@ -20,6 +20,7 @@ fmt:
 	go fmt ./...
 
 init: 
+	sudo apt-get install libavif16  
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 
 staticcheck: fmt

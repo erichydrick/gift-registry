@@ -7,16 +7,18 @@ import (
 	"gift-registry/internal/server"
 	"log"
 	"log/slog"
+	"maps"
 	"net"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
-
 	"time"
+
+	"github.com/playwright-community/playwright-go"
 
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -30,10 +32,12 @@ const (
 	dbPass = "iamaperson"
 )
 
-// Test-specific values
+// Non-constant values
 var (
-	ctx    context.Context
-	logger *slog.Logger
+	browsers []playwright.BrowserType
+	ctx      context.Context
+	logger   *slog.Logger
+	pw       *playwright.Playwright
 )
 
 func TestMain(m *testing.M) {
@@ -45,7 +49,28 @@ func TestMain(m *testing.M) {
 
 	ctx = context.Background()
 
-	m.Run()
+	/* Install playwright dependencies */
+	err := playwright.Install()
+	if err != nil {
+		log.Fatal("Error installing Playwright dependencies! ", err)
+	}
+
+	pw, err = playwright.Run()
+	if err != nil {
+		log.Fatal("Error running Playwright!")
+	}
+
+	log.Println("Playwright running")
+	browsers = []playwright.BrowserType{
+		pw.Chromium,
+		pw.Firefox,
+		pw.WebKit,
+	}
+
+	log.Println("Running tests")
+	exitCode := m.Run()
+	log.Println("Finished with exit code ", exitCode)
+	os.Exit(exitCode)
 
 }
 
@@ -56,87 +81,186 @@ func TestSignups(t *testing.T) {
 		PAGE SAYING WAITING ON A RESPONSE CODE
 	*/
 
-	/*
-		TODO:
-		SETUP A TEST SERVER WITH THE TEST DB
-		POPULATE THE FORM AND SUBMIT IT
-	*/
-
-	ctx = context.Background()
-
 	testData := []struct {
-		pageError      bool
-		errorMsgFields []string
-		templatesDir   string
-		testName       string
+		email                 string
+		envOverrides          map[string]string
+		expectedHiddenFields  []string
+		expectedVisibleFields []string
+		expectedStatusCode    int
+		firstName             string
+		lastName              string
+		pageError             bool
+		submitCount           int
+		testName              string
 	}{
-		/* TODO: ADD TEST DATA HERE */
+		{email: "no", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-error", "signup-first-name-error", "signup-last-name-error"}, expectedVisibleFields: []string{"signup-email-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "Test", lastName: "User", pageError: false, submitCount: 1, testName: "Bad Email"},
+		// {email: "no@no.com", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-error", "signup-email-error", "signup-last-name-error"}, expectedVisibleFields: []string{"signup-first-name-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "", lastName: "User", pageError: false, submitCount: 1, testName: "Bad First Name"},
+		// {email: "no@no.com", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-error", "signup-email-error", "signup-first-name-error"}, expectedVisibleFields: []string{"signup-last-name-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "Test", lastName: "", pageError: false, submitCount: 1, testName: "Bad Last Name"},
+		// {email: "no", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-error"}, expectedVisibleFields: []string{"signup-email-error", "signup-first-name-error", "signup-last-name-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "", lastName: "", pageError: false, submitCount: 1, testName: "Bad Data"},
+		// {email: "no@no.com", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-email-error", "signup-first-name-error", "signup-last-name-error"}, expectedVisibleFields: []string{"signup-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "Test", lastName: "User", pageError: true, submitCount: 2, testName: "Duplicate registration"},
 	}
+	log.Println("Built the test cases")
 
 	env := map[string]string{
 		"DB_USER":        dbUser,
 		"DB_PASS":        dbPass,
 		"DB_NAME":        dbName,
-		"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations_test/success"),
+		"MIGRATIONS_DIR": filepath.Join("..", "..", "..", "internal", "database", "migrations"),
+		"TEMPLATES_DIR":  "../../../cmd/web/templates",
 	}
+	log.Println("Built the environment")
 
-	for _, data := range testData {
+	for _, bType := range browsers {
 
-		t.Run(data.testName, func(t *testing.T) {
+		for _, data := range testData {
 
-			port := freePort()
-			dbCont, dbURL, err := buildDBContainer(ctx)
-			if err != nil {
-				t.Fatal("Error setting up a test database", err)
-			}
+			t.Run(data.testName, func(t *testing.T) {
 
-			env["DB_HOST"] = strings.Split(dbURL, ":")[0]
-			env["DB_PORT"] = strings.Split(dbURL, ":")[1]
-			env["PORT"] = strconv.Itoa(port)
-			env["TEMPLATES_DIR"] = data.templatesDir
+				t.Parallel()
 
-			getenv := func(name string) string { return env[name] }
-
-			db, err := database.Connection(ctx, logger, getenv)
-			if err != nil {
-				t.Fatal("database connection failure! ", err)
-			}
-
-			appHandler, err := server.NewServer(getenv, db, logger)
-			if err != nil {
-				t.Fatal("error setting up the test handler", err)
-			}
-
-			testServer := httptest.NewServer(appHandler)
-			defer testServer.Close()
-
-			req, err := server.NewRequestWithContext(ctx, "GET", testServer.URL, nil)
-			if err != nil {
-				t.Fatal("error building landing page request", err)
-			}
-
-			idxPage, err := http.DefaultClient.Do(req)
-			defer func() {
-				if idxPage != nil && idxPage.Body != nil {
-					idxPage.Body.Close()
+				log.Println("Getting port and DB info")
+				port := freePort()
+				dbCont, dbURL, err := buildDBContainer(ctx)
+				defer func() {
+					if err := testcontainers.TerminateContainer(dbCont); err != nil {
+						log.Fatal("Failed to terminate the database test container ", err)
+					}
+				}()
+				if err != nil {
+					t.Fatal("Error setting up a test database", err)
 				}
-			}()
-			if err != nil {
-				t.Fatal("server call failed", err)
-			}
 
-			/*
-				TEST CASES:
-				VALID SUBMISSION => NEW RECORD IN DB
-				INVALID FIELDS => RETURN THE FORM, FIELDS STILL POPULATED, WITH ERROR MESSAGES VISIBLE
-				INVALID FIELD => ONLY BAD FIELD HAS ERROR MESSAGE, ALL FIELDS HAVE ORIGINAL VALUE
-				DB ERROR (INSERT A DUPLICATE) => RETURN FORM WITH DATA, AND PAGE-LEVEL ERROR MESSAGE
-			*/
-			logger.Debug("Test message", slog.Any("context", ctx))
-			logger.Debug("Test message", slog.Any("DB Container", dbCont))
-			logger.Debug("Test message", slog.Any("DBURL", dbURL))
+				env["DB_HOST"] = strings.Split(dbURL, ":")[0]
+				env["DB_PORT"] = strings.Split(dbURL, ":")[1]
+				env["PORT"] = strconv.Itoa(port)
+				log.Println("Environment setup complete")
 
-		})
+				/*
+					Override environment values with test-specific ones if needed
+				*/
+				maps.Copy(env, data.envOverrides)
+				getenv := func(name string) string { return env[name] }
+				log.Println("Environment overrides set")
+
+				db, err := database.Connection(ctx, logger, getenv)
+				if err != nil {
+					t.Fatal("database connection failure! ", err)
+				}
+				log.Println("DB Connected!")
+
+				appHandler, err := server.NewServer(getenv, db, logger)
+				if err != nil {
+					t.Fatal("error setting up the test handler", err)
+				}
+				log.Println("Routes initialized")
+
+				testServer := httptest.NewServer(appHandler)
+				defer testServer.Close()
+				log.Println("Test server running!")
+
+				page, err := getPage(bType)
+				if err != nil {
+					t.Fatalf("Error creating new webpage object %v", err)
+				}
+				log.Println("Got the page!")
+
+				/*
+					Some tests will involve multiple submissions to validate an error scenario
+				*/
+				for range data.submitCount {
+
+					resp, err := page.Goto(testServer.URL)
+					if err != nil {
+						t.Fatalf("Error opening the page %v", err)
+					}
+					log.Println("Got-to the page!")
+
+					body, err := resp.Body()
+					if err != nil {
+						t.Fatal("Error parsing response body! ", err)
+					}
+					log.Println("Response body: ", string(body))
+
+					locator := page.Locator("#signup-email")
+					if locator == nil {
+						t.Fatal("No email field!")
+					}
+					err = locator.Fill(data.email)
+					if err != nil {
+						t.Fatalf("Error populating the email: %v", err)
+					}
+					err = page.Locator("#signup-first-name").Fill(data.firstName)
+					if err != nil {
+						t.Fatalf("Error populating the first name: %v", err)
+					}
+					err = page.Locator("#signup-last-name").Fill(data.lastName)
+					if err != nil {
+						t.Fatalf("Error populating the last name: %v", err)
+					}
+					err = page.Locator("#signup-submit").Click()
+					if err != nil {
+						t.Fatalf("Error 'clicking' the submit button: %v", err)
+					}
+
+				}
+
+				asserts := playwright.NewPlaywrightAssertions(500)
+				log.Println("Got the playwright assertions...")
+				anyText, err := regexp.Compile("...")
+				if err != nil {
+					t.Fatal("Error building regex to check for content")
+				}
+				log.Println("Asssertions set up")
+
+				/*
+					Validate the expected fields are present, have data (we're not going to
+					worry about the specific content in the automated test), and are visible
+				*/
+				for _, id := range data.expectedVisibleFields {
+
+					locator := page.Locator("#" + id)
+					locAsserts := asserts.Locator(locator)
+
+					err := locAsserts.ToBeVisible()
+					if err != nil {
+						t.Fatalf("Expected element #%s to be visible", id)
+					}
+
+					err = locAsserts.ToContainText(anyText)
+					if err != nil {
+						t.Fatalf("Expected element #%s to have content", id)
+					}
+
+				}
+
+				/*
+					Validate the expected fields are have no data and are not visible
+				*/
+				for _, id := range data.expectedHiddenFields {
+
+					locator := page.Locator("#" + id)
+					locAsserts := asserts.Locator(locator)
+
+					err := locAsserts.Not().ToBeVisible()
+					if err != nil {
+						t.Fatalf("Expected element #%s to be hidden", id)
+					}
+
+					err = locAsserts.Not().ToContainText(anyText)
+					if err != nil {
+						t.Fatalf("Expected element #%s to have no content", id)
+					}
+
+				}
+
+				/*
+					TEST CASES:
+					VALID SUBMISSION => NEW RECORD IN DB
+				*/
+
+			})
+
+		}
 
 	}
 
@@ -151,7 +275,7 @@ func buildDBContainer(ctx context.Context) (*postgres.PostgresContainer, string,
 		postgres.WithDatabase(dbName),
 		postgres.WithUsername(dbUser),
 		postgres.WithPassword(dbPass),
-		postgres.WithInitScripts(filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql")),
+		postgres.WithInitScripts(filepath.Join("..", "..", "..", "docker", "postgres_scripts", "init.sql")),
 		testcontainers.WithWaitStrategyAndDeadline(60*time.Second, wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(5*time.Second)),
 	)
 	if err != nil {
@@ -184,5 +308,25 @@ func freePort() (port int) {
 	}
 
 	return
+
+}
+
+func getPage(bType playwright.BrowserType) (playwright.Page, error) {
+
+	browser, err := bType.Launch(playwright.BrowserTypeLaunchOptions{
+		Headless: playwright.Bool(true),
+	})
+	if err != nil {
+		log.Printf("ERROR LAUNCHING BROWSER! %v", err)
+		return nil, fmt.Errorf("error creating the browser: %v", err)
+	}
+
+	browseContext, err := browser.NewContext()
+	if err != nil {
+		log.Printf("ERROR BUILDING BROWSER CONTEXT! %v", err)
+		return nil, fmt.Errorf("error building the browser context: %v", err)
+	}
+
+	return browseContext.NewPage()
 
 }

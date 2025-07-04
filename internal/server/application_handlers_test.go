@@ -33,7 +33,6 @@ const (
 
 // Test-specific values
 var (
-	ctx    context.Context
 	logger *slog.Logger
 )
 
@@ -46,8 +45,6 @@ func TestMain(m *testing.M) {
 	handler := slog.NewTextHandler(os.Stderr, options)
 	logger = slog.New(handler)
 
-	ctx = context.Background()
-
 	m.Run()
 
 }
@@ -56,6 +53,8 @@ func TestMain(m *testing.M) {
 // testing database container, starting an application server, calling the
 // health check endpoint, and validating the output
 func TestHealthCheck(t *testing.T) {
+
+	ctx := context.Background()
 
 	/*
 		Spin up a Grafana container to use for the observability part of the health
@@ -102,6 +101,8 @@ func TestHealthCheck(t *testing.T) {
 		t.Run(data.testName, func(t *testing.T) {
 
 			t.Parallel()
+
+			ctx := context.Background()
 
 			dbCont, dbURL, err := buildDBContainer(ctx)
 			defer func() {
@@ -292,6 +293,8 @@ func TestIndexHandler(t *testing.T) {
 
 			t.Parallel()
 
+			ctx := context.Background()
+
 			dbCont, dbUrl, err := buildDBContainer(ctx)
 			defer func() {
 				if err := testcontainers.TerminateContainer(dbCont); err != nil {
@@ -361,6 +364,8 @@ func TestIndexHandler(t *testing.T) {
 
 				for node := range doc.Descendants() {
 
+					log.Printf("Node attr = %s, id = %v",
+						node.Attr, slices.Contains(node.Attr, html.Attribute{Key: "id", Val: elemID}))
 					if node.Attr != nil &&
 						slices.Contains(node.Attr, html.Attribute{Key: "id", Val: elemID}) &&
 						node.FirstChild.Data != "" {

@@ -163,9 +163,7 @@ func IndexHandler(svr ServerUtils) http.Handler {
 		if tmplErr != nil {
 			svr.Logger.ErrorContext(ctx, "Error loading the index template", slog.String("errorMessage", tmplErr.Error()))
 			res.WriteHeader(500)
-			svr.Logger.DebugContext(ctx, "Writing a static error")
 			res.Write([]byte("Error loading gift registry"))
-			svr.Logger.DebugContext(ctx, "Shoudn't reeally be here")
 			return
 		}
 

@@ -1,4 +1,7 @@
 {{define "signup-form"}}
+<div id="signup-error" class="danger" {{if ne .Errors.Page "" }}hidden{{end}}>
+    {{.ErrorMessage}}
+</div>
 <form id="signup-form" hx-post="signup">
     <h2 class="centered center-text">Sign up</h2>
     <div class="form-input-group">
@@ -7,6 +10,7 @@
         </div>
         <div class="right">
             <input type="email" id="signup-email" name="email" value='{{or .Email ""}}' />
+            <small class="danger" {{if .Errors.Email}}hidden{{end}}>Invalid email address</small>
         </div>
     </div>
     <div class="form-input-group">
@@ -15,6 +19,7 @@
         </div>
         <div class="right">
             <input type="text" id="signup-first-name" name="firstName" class="right" value='{{or .FirstName ""}}' />
+            <small class="danger" {{if .Errors.FirstName}}hidden{{end}}>First name is required</small>
         </div>
     </div>
     <div class="form-input-group">
@@ -23,10 +28,11 @@
         </div>
         <div class="right">
             <input type="text" id="signup-last-name" name="lastName" class="right" value='{{or .LastName ""}}' />
+            <small class="danger" {{if .Errors.LastName}}hidden{{end}}>Last name is required</small>
         </div>
     </div>
     <div class="w-100">
-        <button class="btn btn-contained primary right" type="submit">Sign up</button>
+        <button id="signup-submit" class="btn btn-contained primary right" type="submit">Sign up</button>
     </div>
 </form>
 {{end}}

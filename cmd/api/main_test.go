@@ -13,13 +13,6 @@ import (
 	"time"
 )
 
-// Connection details for the test database
-const (
-	dbName = "test_db"
-	dbUser = "test_user"
-	dbPass = "test_pass"
-)
-
 var (
 	ctx    context.Context
 	logger *slog.Logger
