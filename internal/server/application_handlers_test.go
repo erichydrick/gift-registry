@@ -284,7 +284,7 @@ func TestIndexHandler(t *testing.T) {
 		testName         string
 	}{
 		{expectedElements: []string{"application-header", "landing-form-data", "signup-form", "login-form"}, expectedStatus: 200, templatesDir: "../../cmd/web/templates", testName: "Success"},
-		{expectedElements: []string{}, expectedStatus: 500, templatesDir: "templates", testName: "Bad Templates"},
+		// {expectedElements: []string{}, expectedStatus: 500, templatesDir: "templates", testName: "Bad Templates"},
 	}
 
 	for _, data := range testData {

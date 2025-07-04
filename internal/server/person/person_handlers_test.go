@@ -60,16 +60,13 @@ func TestMain(m *testing.M) {
 		log.Fatal("Error running Playwright!")
 	}
 
-	log.Println("Playwright running")
 	browsers = []playwright.BrowserType{
 		pw.Chromium,
 		pw.Firefox,
 		pw.WebKit,
 	}
 
-	log.Println("Running tests")
 	exitCode := m.Run()
-	log.Println("Finished with exit code ", exitCode)
 	os.Exit(exitCode)
 
 }
@@ -94,12 +91,11 @@ func TestSignups(t *testing.T) {
 		testName              string
 	}{
 		{email: "no", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-error", "signup-first-name-error", "signup-last-name-error"}, expectedVisibleFields: []string{"signup-email-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "Test", lastName: "User", pageError: false, submitCount: 1, testName: "Bad Email"},
-		// {email: "no@no.com", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-error", "signup-email-error", "signup-last-name-error"}, expectedVisibleFields: []string{"signup-first-name-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "", lastName: "User", pageError: false, submitCount: 1, testName: "Bad First Name"},
-		// {email: "no@no.com", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-error", "signup-email-error", "signup-first-name-error"}, expectedVisibleFields: []string{"signup-last-name-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "Test", lastName: "", pageError: false, submitCount: 1, testName: "Bad Last Name"},
-		// {email: "no", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-error"}, expectedVisibleFields: []string{"signup-email-error", "signup-first-name-error", "signup-last-name-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "", lastName: "", pageError: false, submitCount: 1, testName: "Bad Data"},
-		// {email: "no@no.com", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-email-error", "signup-first-name-error", "signup-last-name-error"}, expectedVisibleFields: []string{"signup-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "Test", lastName: "User", pageError: true, submitCount: 2, testName: "Duplicate registration"},
+		{email: "no@no.com", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-error", "signup-email-error", "signup-last-name-error"}, expectedVisibleFields: []string{"signup-first-name-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "", lastName: "User", pageError: false, submitCount: 1, testName: "Bad First Name"},
+		{email: "no@no.com", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-error", "signup-email-error", "signup-first-name-error"}, expectedVisibleFields: []string{"signup-last-name-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "Test", lastName: "", pageError: false, submitCount: 1, testName: "Bad Last Name"},
+		{email: "no", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-error"}, expectedVisibleFields: []string{"signup-email-error", "signup-first-name-error", "signup-last-name-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "", lastName: "", pageError: false, submitCount: 1, testName: "Bad Data"},
+		{email: "no@no.com", envOverrides: map[string]string{}, expectedHiddenFields: []string{"signup-email-error", "signup-first-name-error", "signup-last-name-error"}, expectedVisibleFields: []string{"signup-error", "signup-email", "signup-first-name", "signup-last-name"}, expectedStatusCode: 200, firstName: "Test", lastName: "User", pageError: true, submitCount: 2, testName: "Duplicate registration"},
 	}
-	log.Println("Built the test cases")
 
 	env := map[string]string{
 		"DB_USER":        dbUser,
@@ -108,17 +104,15 @@ func TestSignups(t *testing.T) {
 		"MIGRATIONS_DIR": filepath.Join("..", "..", "..", "internal", "database", "migrations"),
 		"TEMPLATES_DIR":  "../../../cmd/web/templates",
 	}
-	log.Println("Built the environment")
 
 	for _, bType := range browsers {
 
 		for _, data := range testData {
 
-			t.Run(data.testName, func(t *testing.T) {
+			t.Run(data.testName+"_"+bType.Name(), func(t *testing.T) {
 
 				t.Parallel()
 
-				log.Println("Getting port and DB info")
 				port := freePort()
 				dbCont, dbURL, err := buildDBContainer(ctx)
 				defer func() {
@@ -133,36 +127,30 @@ func TestSignups(t *testing.T) {
 				env["DB_HOST"] = strings.Split(dbURL, ":")[0]
 				env["DB_PORT"] = strings.Split(dbURL, ":")[1]
 				env["PORT"] = strconv.Itoa(port)
-				log.Println("Environment setup complete")
 
 				/*
 					Override environment values with test-specific ones if needed
 				*/
 				maps.Copy(env, data.envOverrides)
 				getenv := func(name string) string { return env[name] }
-				log.Println("Environment overrides set")
 
 				db, err := database.Connection(ctx, logger, getenv)
 				if err != nil {
 					t.Fatal("database connection failure! ", err)
 				}
-				log.Println("DB Connected!")
 
 				appHandler, err := server.NewServer(getenv, db, logger)
 				if err != nil {
 					t.Fatal("error setting up the test handler", err)
 				}
-				log.Println("Routes initialized")
 
 				testServer := httptest.NewServer(appHandler)
 				defer testServer.Close()
-				log.Println("Test server running!")
 
 				page, err := getPage(bType)
 				if err != nil {
 					t.Fatalf("Error creating new webpage object %v", err)
 				}
-				log.Println("Got the page!")
 
 				/*
 					Some tests will involve multiple submissions to validate an error scenario
@@ -173,13 +161,11 @@ func TestSignups(t *testing.T) {
 					if err != nil {
 						t.Fatalf("Error opening the page %v", err)
 					}
-					log.Println("Got-to the page!")
 
-					body, err := resp.Body()
+					_, err = resp.Body()
 					if err != nil {
 						t.Fatal("Error parsing response body! ", err)
 					}
-					log.Println("Response body: ", string(body))
 
 					locator := page.Locator("#signup-email")
 					if locator == nil {
@@ -205,12 +191,10 @@ func TestSignups(t *testing.T) {
 				}
 
 				asserts := playwright.NewPlaywrightAssertions(500)
-				log.Println("Got the playwright assertions...")
 				anyText, err := regexp.Compile("...")
 				if err != nil {
 					t.Fatal("Error building regex to check for content")
 				}
-				log.Println("Asssertions set up")
 
 				/*
 					Validate the expected fields are present, have data (we're not going to

@@ -141,7 +141,14 @@ func HealthCheckHandler(svr ServerUtils) http.Handler {
 			return
 		}
 		res.WriteHeader(200)
-		tmpl.Execute(res, status)
+		err = tmpl.ExecuteTemplate(res, "health", status)
+		if err != nil {
+			svr.Logger.ErrorContext(ctx, "Error writing health check template!",
+				slog.String("errorMessage", err.Error()))
+			res.WriteHeader(500)
+			res.Write([]byte("Error loading health dashboard"))
+			return
+		}
 
 	})
 
@@ -172,12 +179,30 @@ func IndexHandler(svr ServerUtils) http.Handler {
 			Populate the form with blank fields (it takes values to leave populated in
 			case of errors during processing.
 		*/
-		blankForms := struct {
+		type formFields struct {
 			Email     string
 			FirstName string
 			LastName  string
+		}
+		type errorFieds struct {
+			Email        bool
+			FirstName    bool
+			LastName     bool
+			Page         bool
+			ErrorMessage string
+		}
+		idxData := struct {
+			Form   formFields
+			Errors errorFieds
 		}{}
-		tmpl.ExecuteTemplate(res, "index", blankForms)
+		err := tmpl.ExecuteTemplate(res, "index", idxData)
+		if err != nil {
+			svr.Logger.ErrorContext(ctx, "Error writing template!",
+				slog.String("errorMessage", err.Error()))
+			res.WriteHeader(500)
+			res.Write([]byte("Error loading gift registry"))
+			return
+		}
 
 	})
 
