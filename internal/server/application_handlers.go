@@ -159,13 +159,13 @@ func IndexHandler(svr ServerUtils) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
-		ctx, span := tracer.Start(req.Context(), "health")
+		ctx, span := tracer.Start(req.Context(), "index")
 		defer span.End()
 
 		svr.Logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s", req.URL.Path))
 
 		dir := svr.Getenv("TEMPLATES_DIR")
-		tmpl, tmplErr := template.ParseFiles(dir+"/index.html", dir+"/signup-form.html", dir+"/login-form.html")
+		tmpl, tmplErr := template.ParseFiles(dir + "/index.html")
 
 		if tmplErr != nil {
 			svr.Logger.ErrorContext(ctx, "Error loading the index template", slog.String("errorMessage", tmplErr.Error()))
@@ -175,24 +175,8 @@ func IndexHandler(svr ServerUtils) http.Handler {
 		}
 
 		res.WriteHeader(200)
-		/*
-			Populate the form with blank fields (it takes values to leave populated in
-			case of errors during processing.
-		*/
 
-		type errorFields struct {
-			Email        string
-			FirstName    string
-			LastName     string
-			ErrorMessage string
-		}
-		type formFields struct {
-			Email     string
-			FirstName string
-			LastName  string
-			Errors    errorFields
-		}
-		err := tmpl.ExecuteTemplate(res, "index", formFields{})
+		err := tmpl.ExecuteTemplate(res, "index", "")
 		if err != nil {
 			svr.Logger.ErrorContext(ctx, "Error writing template!",
 				slog.String("errorMessage", err.Error()))

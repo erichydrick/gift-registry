@@ -1,12 +1,12 @@
-package server
+package server_test
 
 import (
 	"context"
 	"fmt"
 	"gift-registry/internal/database"
+	"gift-registry/internal/server"
 	"log"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,39 +15,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/testcontainers/testcontainers-go"
 	grafanalgtm "github.com/testcontainers/testcontainers-go/modules/grafana-lgtm"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"golang.org/x/net/html"
 )
-
-// Connection details for the test database
-const (
-	dbName = "main_test"
-	dbUser = "main_user"
-	dbPass = "main_pass"
-)
-
-// Test-specific values
-var (
-	logger *slog.Logger
-)
-
-// TestMain sets up the application tests by initializing a logger object to
-// use in the methods and initializing a context.
-func TestMain(m *testing.M) {
-
-	/* Sets up a testing logger */
-	options := &slog.HandlerOptions{Level: slog.LevelDebug}
-	handler := slog.NewTextHandler(os.Stderr, options)
-	logger = slog.New(handler)
-
-	m.Run()
-
-}
 
 // TestHealthCheck validates the health check endpoint by connecting to the
 // testing database container, starting an application server, calling the
@@ -55,6 +27,11 @@ func TestMain(m *testing.M) {
 func TestHealthCheck(t *testing.T) {
 
 	ctx := context.Background()
+
+	/* Sets up a testing logger */
+	options := &slog.HandlerOptions{Level: slog.LevelDebug}
+	handler := slog.NewTextHandler(os.Stderr, options)
+	logger = slog.New(handler)
 
 	/*
 		Spin up a Grafana container to use for the observability part of the health
@@ -144,7 +121,7 @@ func TestHealthCheck(t *testing.T) {
 				t.Fatal("database connection failure! ", err)
 			}
 
-			appHandler, err := NewServer(getenv, db, logger)
+			appHandler, err := server.NewServer(getenv, db, logger)
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}
@@ -283,8 +260,8 @@ func TestIndexHandler(t *testing.T) {
 		templatesDir     string
 		testName         string
 	}{
-		{expectedElements: []string{"application-header", "landing-form-data", "signup-form", "login-form"}, expectedStatus: 200, templatesDir: "../../cmd/web/templates", testName: "Success"},
-		// {expectedElements: []string{}, expectedStatus: 500, templatesDir: "templates", testName: "Bad Templates"},
+		{expectedElements: []string{"application-header", "page-content", "redirector"}, expectedStatus: 200, templatesDir: "../../cmd/web/templates", testName: "Success"},
+		{expectedElements: []string{}, expectedStatus: 500, templatesDir: "templates", testName: "Bad Templates"},
 	}
 
 	for _, data := range testData {
@@ -294,6 +271,11 @@ func TestIndexHandler(t *testing.T) {
 			t.Parallel()
 
 			ctx := context.Background()
+
+			/* Sets up a testing logger */
+			options := &slog.HandlerOptions{Level: slog.LevelDebug}
+			handler := slog.NewTextHandler(os.Stderr, options)
+			logger = slog.New(handler)
 
 			dbCont, dbUrl, err := buildDBContainer(ctx)
 			defer func() {
@@ -324,7 +306,7 @@ func TestIndexHandler(t *testing.T) {
 				t.Fatal("database connection failure! ", err)
 			}
 
-			appHandler, err := NewServer(getenv, db, logger)
+			appHandler, err := server.NewServer(getenv, db, logger)
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}
@@ -360,6 +342,7 @@ func TestIndexHandler(t *testing.T) {
 
 			for _, elemID := range data.expectedElements {
 
+				log.Println("Checking that the document includes", "#"+elemID)
 				elementFound := false
 
 				for node := range doc.Descendants() {
@@ -386,51 +369,5 @@ func TestIndexHandler(t *testing.T) {
 		})
 
 	}
-
-}
-
-func buildDBContainer(ctx context.Context) (*postgres.PostgresContainer, string, error) {
-
-	dbCont, err := postgres.Run(
-		ctx,
-		"postgres:17.2",
-		postgres.WithDatabase(dbName),
-		postgres.WithUsername(dbUser),
-		postgres.WithPassword(dbPass),
-		postgres.WithInitScripts(filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql")),
-		testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").
-			WithOccurrence(2).
-			WithStartupTimeout(7*time.Second)),
-	)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to launch the database test container! %v", err)
-	}
-
-	dbURL, err := dbCont.Endpoint(ctx, "")
-	if err != nil {
-		return nil, "", fmt.Errorf("error getting the database endpoint %v", err)
-	}
-
-	return dbCont, dbURL, nil
-
-}
-
-/*
-Asks the system for an open port I can use for a server or container
-Pulled from https://stackoverflow.com/a/43425461
-*/
-func freePort() (port int) {
-
-	if listener, err := net.Listen("tcp", ":0"); err == nil {
-
-		port = listener.Addr().(*net.TCPAddr).Port
-
-	} else {
-
-		log.Fatal("error getting open port", err)
-
-	}
-
-	return
 
 }

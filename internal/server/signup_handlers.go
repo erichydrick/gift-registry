@@ -121,6 +121,40 @@ func SignupHandler(svr server.ServerUtils) http.Handler {
 
 }
 
+func SignupFormHandler(svr server.ServerUtils) http.Handler {
+
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
+		ctx, span := tracer.Start(req.Context(), "signupForm")
+		defer span.End()
+
+		svr.Logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s", req.URL.Path))
+
+		dir := svr.Getenv("TEMPLATES_DIR")
+		tmpl, tmplErr := template.ParseFiles(dir + "/signup-form.html")
+
+		if tmplErr != nil {
+			svr.Logger.ErrorContext(ctx, "Error loading the signup form template", slog.String("errorMessage", tmplErr.Error()))
+			res.WriteHeader(500)
+			res.Write([]byte("Error loading gift registry signup"))
+			return
+		}
+
+		res.WriteHeader(200)
+
+		err := tmpl.ExecuteTemplate(res, "index", signupForm{})
+		if err != nil {
+			svr.Logger.ErrorContext(ctx, "Error writing template!",
+				slog.String("errorMessage", err.Error()))
+			res.WriteHeader(500)
+			res.Write([]byte("Error loading gift registry"))
+			return
+		}
+
+	})
+
+}
+
 func signupResponse(ctx context.Context,
 	span trace.Span,
 	res http.ResponseWriter,

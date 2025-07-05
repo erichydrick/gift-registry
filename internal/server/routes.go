@@ -33,6 +33,7 @@ func (svr ServerUtils) registerRoutes() (http.Handler, error) {
 	/* Base routes */
 	handleFunc("GET /{$}", IndexHandler(svr))
 	handleFunc("GET /health", HealthCheckHandler(svr))
+	handleFunc("GET /signup", SignupFormHandler(svr))
 
 	/* Person routes */
 	/*
