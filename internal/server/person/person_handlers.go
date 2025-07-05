@@ -17,15 +17,19 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type registration struct {
-	ErrorMessage   string
-	Email          string
-	EmailError     string
-	FirstName      string
-	FirstNameError string
-	LastName       string
-	LastNameError  string
-	successful     bool
+type signupForm struct {
+	Email      string
+	Errors     signupFormErrors
+	FirstName  string
+	LastName   string
+	successful bool
+}
+
+type signupFormErrors struct {
+	Email        string
+	ErrorMessage string
+	FirstName    string
+	LastName     string
 }
 
 const (
@@ -62,7 +66,7 @@ func SignupHandler(svr server.ServerUtils) http.Handler {
 		ctx, span := tracer.Start(req.Context(), "health")
 		defer span.End()
 
-		userData := registration{
+		userData := signupForm{
 			Email:      req.PostFormValue("email"),
 			FirstName:  req.PostFormValue("firstName"),
 			LastName:   req.PostFormValue("lastName"),
@@ -75,9 +79,9 @@ func SignupHandler(svr server.ServerUtils) http.Handler {
 			Send the user details back to leave the form populated, but add error
 			messaging (also capture the associated telemetry)
 		*/
-		if userData.EmailError != "" ||
-			userData.FirstNameError != "" ||
-			userData.LastNameError != "" {
+		if userData.Errors.Email != "" ||
+			userData.Errors.FirstName != "" ||
+			userData.Errors.LastName != "" {
 
 			userData.successful = false
 			signupResponse(ctx, span, res, req, svr, userData)
@@ -100,12 +104,12 @@ func SignupHandler(svr server.ServerUtils) http.Handler {
 			rbErr := tx.Rollback()
 			if rbErr != nil {
 				svr.Logger.ErrorContext(ctx, "Error rolling back the transaction", slog.String("rollbackErrorMsg", rbErr.Error()))
-				userData.ErrorMessage = "Critical database error"
+				userData.Errors.ErrorMessage = "Critical database error"
 				signupResponse(ctx, span, res, req, svr, userData)
 				/* The database may be in an invalid state here, panic to force manual intervention */
 				panic(rbErr)
 			}
-			userData.ErrorMessage = "Database error"
+			userData.Errors.ErrorMessage = "Database error"
 			signupResponse(ctx, span, res, req, svr, userData)
 			return
 		}
@@ -122,7 +126,7 @@ func signupResponse(ctx context.Context,
 	res http.ResponseWriter,
 	req *http.Request,
 	svr server.ServerUtils,
-	userData registration) {
+	userData signupForm) {
 
 	templates := svr.Getenv("TEMPLATES_DIR")
 	signupCtr.Add(ctx, 1, metric.WithAttributes(
@@ -165,36 +169,36 @@ func signupResponse(ctx context.Context,
 
 }
 
-func (reg *registration) validate() {
+func (sf *signupForm) validate() {
 
-	if _, err := mail.ParseAddress(strings.Trim(reg.Email, " ")); err != nil {
+	if _, err := mail.ParseAddress(strings.Trim(sf.Email, " ")); err != nil {
 
-		reg.EmailError = "Invalid email address"
-
-	}
-
-	if strings.Trim(reg.FirstName, " ") == "" {
-
-		reg.FirstNameError = "First name is required"
+		sf.Errors.Email = "Invalid email address"
 
 	}
 
-	if strings.Trim(reg.LastName, " ") == "" {
+	if strings.Trim(sf.FirstName, " ") == "" {
 
-		reg.LastNameError = "Last name is required"
+		sf.Errors.FirstName = "First name is required"
+
+	}
+
+	if strings.Trim(sf.LastName, " ") == "" {
+
+		sf.Errors.LastName = "Last name is required"
 
 	}
 
 }
 
-func (re registration) String() string {
+func (sf signupForm) String() string {
 
-	return fmt.Sprintf("firstName=%s, lastName=%s", re.FirstName, re.LastName)
+	return fmt.Sprintf("firstName=%s, lastName=%s", sf.FirstName, sf.LastName)
 
 }
 
-func (re registration) Error() string {
+func (sf signupForm) Error() string {
 
-	return fmt.Sprintf("email=%s, firstName=%s, lastName=%s", re.EmailError, re.FirstNameError, re.LastNameError)
+	return fmt.Sprintf("email=%s, firstName=%s, lastName=%s", sf.Errors.Email, sf.Errors.FirstName, sf.Errors.LastName)
 
 }

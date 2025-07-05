@@ -1,5 +1,5 @@
 {{define "signup-form"}}
-<div id="signup-error" class="danger" {{if .Errors.Page }}{{else}}hidden{{end}}>
+<div id="signup-error" class="danger" {{if ne .Errors.ErrorMessage "" }}{{else}}hidden{{end}}>
     {{.Errors.ErrorMessage}}
 </div>
 <form id="signup-form" hx-post="signup">
@@ -9,8 +9,9 @@
             <label for="signup-email">Email address</label>
         </div>
         <div class="right">
-            <input type="email" id="signup-email" name="email" value='{{or .Form.Email ""}}' />
-            <small class="danger" {{if .Errors.Email}}{{else}}hidden{{end}}>Invalid email address</small>
+            <input type="email" id="signup-email" name="email" value='{{or .Email ""}}' />
+            <small id="signup-email-error" class="danger" {{if ne .Errors.Email "" }}{{else}}hidden{{end}}>Invalid email
+                address</small>
         </div>
     </div>
     <div class="form-input-group">
@@ -18,9 +19,9 @@
             <label for="signup-first-name" class="left">First name</label>
         </div>
         <div class="right">
-            <input type="text" id="signup-first-name" name="firstName" class="right"
-                value='{{or .Form.FirstName ""}}' />
-            <small class="danger" {{if .Errors.FirstName}}{{else}}hidden{{end}}>First name is required</small>
+            <input type="text" id="signup-first-name" name="firstName" class="right" value='{{or .FirstName ""}}' />
+            <small id="signup-first-name-error" class="danger" {{if ne .Errors.FirstName ""
+                }}{{else}}hidden{{end}}>First name is required</small>
         </div>
     </div>
     <div class="form-input-group">
@@ -28,8 +29,9 @@
             <label for="signup-last-name" class="left">Last name</label>
         </div>
         <div class="right">
-            <input type="text" id="signup-last-name" name="lastName" class="right" value='{{or .Form.LastName ""}}' />
-            <small class="danger" {{if .Errors.LastName}}{{else}}hidden{{end}}>Last name is required</small>
+            <input type="text" id="signup-last-name" name="lastName" class="right" value='{{or .LastName ""}}' />
+            <small id="signup-last-name-error" class="danger" {{if ne .Errors.LastName "" }}{{else}}hidden{{end}}>Last
+                name is required</small>
         </div>
     </div>
     <div class="w-100">

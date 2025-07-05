@@ -122,7 +122,7 @@ func (dbConn dbConn) runMigrations(
 		fileToRowsAffected[sqlFile.Name()] = rowsAffected
 
 		logger.DebugContext(ctx, fmt.Sprintf("Adding %s to the database", sqlFile.Name()))
-		_, err = dbConn.db.ExecContext(ctx, "INSERT INTO gift_registry.migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))", sqlFile.Name())
+		_, err = dbConn.db.ExecContext(ctx, "INSERT INTO migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))", sqlFile.Name())
 		if err != nil {
 			logger.ErrorContext(ctx, "Error adding migration file to migrations table!", slog.String("filenam", sqlFile.Name()), slog.String("errorMessage", err.Error()))
 			rollback(ctx, tx, logger, sqlFile.Name())
@@ -225,7 +225,7 @@ func (dbConn dbConn) readAppliedMigrations(ctx context.Context) ([]string, error
 
 	var migratedFiles []string
 	rows, err := dbConn.db.QueryContext(ctx, "SELECT filename "+
-		"	FROM gift_registry.migrations "+
+		"	FROM migrations "+
 		"	ORDER BY filename ASC")
 	if err != nil {
 		return migratedFiles, fmt.Errorf("error querying previous migrations from the database: %s", err.Error())

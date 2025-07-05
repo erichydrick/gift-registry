@@ -1,2 +1,0 @@
--- TODO: ADD A FLAG FOR CONFIRMED EMAILS
-CREATE TABLE IF NOT EXISTS gift_registry.person (person_id SERIAL PRIMARY KEY, first_name VARCHAR(100) NOT NULL, last_name VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL UNIQUE, emailConfirmed BOOL, token VARCHAR(255), token_expiration TIMESTAMP, created_on TIMESTAMP NOT NULL, modified_on TIMESTAMP NOT NULL);

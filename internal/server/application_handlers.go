@@ -179,23 +179,20 @@ func IndexHandler(svr ServerUtils) http.Handler {
 			Populate the form with blank fields (it takes values to leave populated in
 			case of errors during processing.
 		*/
+
+		type errorFields struct {
+			Email        string
+			FirstName    string
+			LastName     string
+			ErrorMessage string
+		}
 		type formFields struct {
 			Email     string
 			FirstName string
 			LastName  string
+			Errors    errorFields
 		}
-		type errorFieds struct {
-			Email        bool
-			FirstName    bool
-			LastName     bool
-			Page         bool
-			ErrorMessage string
-		}
-		idxData := struct {
-			Form   formFields
-			Errors errorFieds
-		}{}
-		err := tmpl.ExecuteTemplate(res, "index", idxData)
+		err := tmpl.ExecuteTemplate(res, "index", formFields{})
 		if err != nil {
 			svr.Logger.ErrorContext(ctx, "Error writing template!",
 				slog.String("errorMessage", err.Error()))

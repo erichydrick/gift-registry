@@ -22,14 +22,12 @@ require (
 require (
 	github.com/playwright-community/playwright-go v0.5200.0
 	github.com/testcontainers/testcontainers-go/modules/grafana-lgtm v0.37.0
-	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d
 )
 
 require (
 	github.com/deckarep/golang-set/v2 v2.7.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
-	golang.org/x/mod v0.17.0 // indirect
 )
 
 require (
@@ -77,7 +75,7 @@ require (
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
-	go.opentelemetry.io/otel/trace v1.35.0 // indirect
+	go.opentelemetry.io/otel/trace v1.35.0
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect

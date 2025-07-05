@@ -121,9 +121,9 @@ func TestRunMigrations(t *testing.T) {
 		validationQuery      string
 		validationResCnt     int
 	}{
-		{errorExpected: false, expectedFilesApplied: []string{"00_create_tables.sql", "01_insert_person.sql"}, migrationsDir: "migrations_test/success", testName: "Successful migration", validationQuery: "SELECT * FROM person WHERE email = 'test.user@yopmail.com'", validationResCnt: 1},
-		{errorExpected: true, expectedFilesApplied: []string{"00_create_tables.sql"}, migrationsDir: "migrations_test/rollback", testName: "Migration rollback", validationQuery: "SELECT filename FROM migrations", validationResCnt: 1},
-		{errorExpected: false, expectedFilesApplied: []string{"00_create_tables.sql", "01_modify_columns.sql"}, migrationsDir: "migrations_test/alter_table", testName: "Update existing table", validationQuery: "SELECT * FROM information_schema.columns WHERE table_name = 'person' ", validationResCnt: 9},
+		{errorExpected: false, expectedFilesApplied: []string{"20250401_000000_create_tables.sql", "20250401_000100_insert_person.sql"}, migrationsDir: "migrations_test/success", testName: "Successful migration", validationQuery: "SELECT * FROM person WHERE email = 'test.user@yopmail.com'", validationResCnt: 1},
+		{errorExpected: true, expectedFilesApplied: []string{"20250401_000000_create_tables.sql"}, migrationsDir: "migrations_test/rollback", testName: "Migration rollback", validationQuery: "SELECT filename FROM migrations", validationResCnt: 1},
+		{errorExpected: false, expectedFilesApplied: []string{"20250401_000000_create_tables.sql", "20250401_000100_modify_columns.sql"}, migrationsDir: "migrations_test/alter_table", testName: "Update existing table", validationQuery: "SELECT * FROM information_schema.columns WHERE table_name = 'person' ", validationResCnt: 9},
 	}
 
 	cwd, err := os.Getwd()

@@ -364,8 +364,6 @@ func TestIndexHandler(t *testing.T) {
 
 				for node := range doc.Descendants() {
 
-					log.Printf("Node attr = %s, id = %v",
-						node.Attr, slices.Contains(node.Attr, html.Attribute{Key: "id", Val: elemID}))
 					if node.Attr != nil &&
 						slices.Contains(node.Attr, html.Attribute{Key: "id", Val: elemID}) &&
 						node.FirstChild.Data != "" {
@@ -402,7 +400,7 @@ func buildDBContainer(ctx context.Context) (*postgres.PostgresContainer, string,
 		postgres.WithInitScripts(filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql")),
 		testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").
 			WithOccurrence(2).
-			WithStartupTimeout(5*time.Second)),
+			WithStartupTimeout(7*time.Second)),
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to launch the database test container! %v", err)
