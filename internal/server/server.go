@@ -3,31 +3,27 @@ package server
 import (
 	"database/sql"
 	"fmt"
+	"gift-registry/internal/util"
 	"log/slog"
 	"net/http"
-	"strconv"
 )
 
-type server struct {
-	port   int
-	getenv func(string) string
-}
+var (
+	appSrv  *util.ServerUtils
+	emailer Emailer
+)
 
-// Builds a new HTTP handler for the application. This will be used for testing and running the server
-func NewServer(getenv func(string) string, db *sql.DB, logger *slog.Logger) (http.Handler, error) {
+// Builds a new HTTP hankrdler for the application. This will be used for testing and running the server
+func NewServer(getenv func(string) string, db *sql.DB, logger *slog.Logger, emailProvider Emailer) (http.Handler, error) {
 
-	port, err := strconv.Atoi(getenv("PORT"))
-	if err != nil {
-		logger.Error("Invalid server port.", slog.String("port", getenv("PORT")))
-		panic(err)
+	emailer = emailProvider
+	appSrv = &util.ServerUtils{
+		DB:     db,
+		Getenv: getenv,
+		Logger: logger,
 	}
 
-	appSrv := &server{
-		port:   port,
-		getenv: getenv,
-	}
-
-	handler, err := appSrv.registerRoutes(db, logger)
+	handler, err := registerRoutes()
 	if err != nil {
 		logger.Error("Server failed to start", slog.String("errorMessage", err.Error()))
 		return nil, fmt.Errorf("error starting the server: %s", err.Error())

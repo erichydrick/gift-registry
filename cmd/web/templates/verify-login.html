@@ -1,0 +1,22 @@
+{{define "verify-login-form"}}
+<form id="verify-form" hx-post="/verify">
+    <div id="verify-error" class="danger" {{if ne .Errors.ErrorMessage "" }}{{else}}hidden{{end}}>
+        {{.Errors.ErrorMessage}}
+    </div>
+    <div class="form-input-group">
+        <div class="left">
+            <label for="verify-code">Verification code</label>
+        </div>
+        <div class="right">
+            <input type="text" id="verify-code" name="code" />
+            <small id="verify-code-error" class="danger" {{if eq .Errors.Code ""
+                }}hidden{{end}}>{{.Errors.Code}}</small>
+        </div>
+    </div>
+    <input type="hidden" id="verify-email" name="email" value='{{.Email}}' />
+    <div class="w-100">
+        <button id="verify-submit" hx-trigger="keydown[key==='Enter']" class="btn btn-contained primary w-100"
+            type="submit">Verify Email</button>
+    </div>
+</form>
+{{end}}
