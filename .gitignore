@@ -22,12 +22,15 @@ main
 go.work
 go.work.sum
 
-# env file
+# env files (these hold IDs/passwords until I can get them replaced with D
+# ocker secrets)
 .env
+.env_*
 
-# Postgres data
-**/postgres_data/
+# Generated Docker compose files
+docker-compose-local.yml
+docker-compose-test.yml
+docker-compose-prod.yml
 
-# Observability data
-**/open_observe_data/
-**/grafana_data/
+# Person schema changes
+**/private_migrations/*

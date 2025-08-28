@@ -1,0 +1,18 @@
+name: gift-registry
+
+services:
+  
+  collector:
+    container_name: gift-registry-collector
+    image: otel/opentelemetry-collector-contrib:0.136.0
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otel-collector.yaml
+    ports:
+      - 4317:4317
+    networks:
+      - gift-registry-network
+
+  app: 
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://gift-registry-collector:4318 

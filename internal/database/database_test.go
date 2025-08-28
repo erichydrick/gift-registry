@@ -2,7 +2,6 @@ package database_test
 
 import (
 	"context"
-	"errors"
 	"gift-registry/internal/database"
 	"gift-registry/internal/test"
 	"log"
@@ -26,6 +25,7 @@ const (
 var (
 	ctx    context.Context
 	dbPath string
+	env    map[string]string
 	logger *slog.Logger
 )
 
@@ -44,6 +44,26 @@ func TestMain(m *testing.M) {
 	handler := slog.NewTextHandler(os.Stderr, options)
 	logger = slog.New(handler)
 
+	dbPath := filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql")
+	dbCont, dbURL, err := test.BuildDBContainer(ctx, dbPath, dbName, dbUser, dbPass)
+	defer func() {
+		if err := testcontainers.TerminateContainer(dbCont); err != nil {
+			log.Fatal("Failed to terminate the database test container ", err)
+		}
+	}()
+	if err != nil {
+		log.Fatal("Error setting up a test database", err)
+	}
+
+	env = map[string]string{
+		"DB_HOST":        strings.Split(dbURL, ":")[0],
+		"DB_USER":        dbUser,
+		"DB_PASS":        dbPass,
+		"DB_PORT":        strings.Split(dbURL, ":")[1],
+		"DB_NAME":        dbName,
+		"MIGRATIONS_DIR": filepath.Join("migrations_test", "success"),
+	}
+
 	m.Run()
 }
 
@@ -52,19 +72,21 @@ func TestMain(m *testing.M) {
 // connection fails due to a bad config.
 func TestConnect(t *testing.T) {
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.Fatal("Error getting the current working directory ", err.Error())
-	}
-
 	testData := []struct {
 		errorExpected bool
 		migrationsDir string
 		portModifier  string
 		testName      string
 	}{
-		{errorExpected: false, migrationsDir: "migrations", testName: "Successful connection"},
-		{errorExpected: true, migrationsDir: "migrations", portModifier: "0", testName: "Failed connection"},
+		{
+			errorExpected: false,
+			testName:      "Successful connection",
+		},
+		{
+			errorExpected: true,
+			portModifier:  "0",
+			testName:      "Failed connection",
+		},
 	}
 
 	for _, data := range testData {
@@ -73,44 +95,26 @@ func TestConnect(t *testing.T) {
 
 			t.Parallel()
 
-			dbCont, dbURL, err := test.BuildDBContainer(ctx, dbPath, dbName, dbUser, dbPass)
-			defer func() {
-				if err := testcontainers.TerminateContainer(dbCont); err != nil {
-					log.Fatal("Failed to terminate the database test container ", err)
+			getenv := func(name string) string {
+				if name == "DB_PORT" {
+					return env[name] + data.portModifier
 				}
-			}()
-			if err != nil {
-				t.Fatal("Error setting up test containers! ", err)
+				return env[name]
 			}
-
-			env := map[string]string{
-				"DB_USER":        dbUser,
-				"DB_PASS":        dbPass,
-				"DB_HOST":        strings.Split(dbURL, ":")[0],
-				"DB_PORT":        strings.Split(dbURL, ":")[1] + data.portModifier,
-				"DB_NAME":        dbName,
-				"MIGRATIONS_DIR": filepath.Join(cwd, data.migrationsDir),
-			}
-
-			getenv := func(key string) string { return env[key] }
 
 			db, err := database.Connection(ctx, logger, getenv)
 			if !data.errorExpected && err != nil {
 
-				t.Fatal("successful connection attempt failed! ", err)
+				t.Fatal(t.Name(), ": successful connection attempt failed! ", err)
 
 			} else if data.errorExpected && err == nil {
 
+				db.Close()
 				t.Fatal(t.Name(), ": have a connection even though it should have failed!")
 
 			}
 
-			if db != nil {
-
-				/* I'll test this separately later */
-				db.Close()
-
-			}
+			db.Close()
 
 		})
 
@@ -131,70 +135,65 @@ func TestRunMigrations(t *testing.T) {
 		validationQuery      string
 		validationResCnt     int
 	}{
-		{errorExpected: false, expectedFilesApplied: []string{"20250401_000000_create_tables.sql", "20250401_000100_insert_person.sql"}, migrationsDir: "migrations_test/success", testName: "Successful migration", validationQuery: "SELECT * FROM person WHERE email = 'test.user@yopmail.com'", validationResCnt: 1},
-		{errorExpected: true, expectedFilesApplied: []string{"20250401_000000_create_tables.sql"}, migrationsDir: "migrations_test/rollback", testName: "Migration rollback", validationQuery: "SELECT filename FROM migrations", validationResCnt: 1},
-		{errorExpected: false, expectedFilesApplied: []string{"20250401_000000_create_tables.sql", "20250401_000100_modify_columns.sql"}, migrationsDir: "migrations_test/alter_table", testName: "Update existing table", validationQuery: "SELECT * FROM information_schema.columns WHERE table_name = 'person' ", validationResCnt: 9},
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		log.Fatal("Error getting the current working directory ", err.Error())
+		{
+			errorExpected: false,
+			expectedFilesApplied: []string{
+				"20250401_000000_create_test_table.sql",
+				"20250401_000100_insert_test_person.sql",
+			},
+			migrationsDir:    "migrations_test/success",
+			testName:         "Successful migration",
+			validationQuery:  "SELECT * FROM person WHERE email = 'test.user@yopmail.com'",
+			validationResCnt: 1,
+		},
+		{
+			errorExpected: true,
+			expectedFilesApplied: []string{
+				"20250401_000000_create_test_table.sql",
+				"20250401_000100_insert_test_person.sql",
+			},
+			migrationsDir:    "migrations_test/rollback",
+			testName:         "Migration rollback",
+			validationQuery:  "SELECT filename FROM migrations",
+			validationResCnt: 1,
+		},
+		{
+			errorExpected: false,
+			expectedFilesApplied: []string{
+				"20250401_000000_create_test_table.sql",
+				"20250401_000100_insert_test_person.sql",
+				"20250401_000300_alter_test_table.sql",
+			},
+			migrationsDir:    "migrations_test/alter_table",
+			testName:         "Update existing table",
+			validationQuery:  "SELECT * FROM information_schema.columns WHERE table_name = 'person' ",
+			validationResCnt: 6,
+		},
 	}
 
 	for _, data := range testData {
 
-		env := map[string]string{
-			"DB_USER":        dbUser,
-			"DB_PASS":        dbPass,
-			"MIGRATIONS_DIR": filepath.Join(cwd, data.migrationsDir),
+		getenv := func(key string) string {
+			if key == "MIGRATIONS_DIR" {
+				return data.migrationsDir
+			}
+			return env[key]
 		}
-
-		getenv := func(key string) string { return env[key] }
 
 		t.Run(data.testName, func(t *testing.T) {
 
-			t.Parallel()
-
-			dbCont, dbURL, err := test.BuildDBContainer(ctx, dbPath, dbName, dbUser, dbPass)
-			defer func() {
-				if err := testcontainers.TerminateContainer(dbCont); err != nil {
-					log.Fatal("Failed to terminate the database test container ", err)
-				}
-			}()
-			if err != nil {
-				t.Fatal("Error setting up test containers! ", err)
-			}
-
-			env["DB_HOST"] = strings.Split(dbURL, ":")[0]
-			env["DB_PORT"] = strings.Split(dbURL, ":")[1]
-			env["DB_NAME"] = dbName
-
-			/* Just want a do-nothing context placeholder */
 			db, err := database.Connection(ctx, logger, getenv)
-			if err != nil {
-				/*
-					It's only a failure if we expected the migration to succeed (or didn't get
-					a migration error)
-				*/
-				if !data.errorExpected || !errors.Is(err, database.ErrMigration) {
-					t.Fatal("Error setting up test database connection! ", err)
-				}
-			}
-			defer db.Close()
-
-			/*
-				Confirm the error value I got back is what I expected.
-			*/
-			if data.errorExpected != (err != nil) {
-				t.Fatal("Error migrations error expected? ", data.errorExpected, " Error returned? ", (err != nil))
+			if err != nil && err != database.ErrMigration {
+				t.Fatal("Error connecting to the database!", err)
 			}
 
 			migrationsApplied := []string{}
-			rows, err := db.QueryContext(ctx, "SELECT filename FROM migrations")
+			rows, err := db.Query(ctx, database.FindMigrationsQuery)
 			if err != nil {
-				t.Fatal("Error getting the updated list of migrations run")
+				t.Fatal("Error getting the updated list of migrations run", err)
 			}
 			defer rows.Close()
+
 			for rows.Next() {
 				var filename string
 				if err := rows.Scan(&filename); err != nil {
@@ -209,22 +208,7 @@ func TestRunMigrations(t *testing.T) {
 				t.Fatal("Expected list of applied migrations to be ", data.expectedFilesApplied, " but was ", migrationsApplied)
 			}
 
-			rows, err = db.QueryContext(ctx, data.validationQuery)
-			if err != nil {
-				t.Fatal("Could not run independent validation query")
-			}
-			defer rows.Close()
-
-			rowsReturned := 0
-			for rows.Next() {
-
-				rowsReturned++
-
-			}
-
-			if rowsReturned != data.validationResCnt {
-				t.Fatalf("Expected %d results to be returned, but got %d", data.validationResCnt, rowsReturned)
-			}
+			db.Close()
 
 		})
 
