@@ -2,13 +2,17 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/smtp"
 	"text/template"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type Emailer interface {
-	SendVerificationEmail(to []string, code string, getenv func(string) string) error
+	SendVerificationEmail(ctx context.Context, to []string, code string, getenv func(string) string) error
 }
 
 type emailSender struct {
@@ -24,8 +28,13 @@ type loginEmail struct {
 	To   []string
 }
 
+const (
+	name = "net.hydrick.gift-registry"
+)
+
 var (
 	sender Emailer = nil
+	tracer         = otel.Tracer(name)
 )
 
 func SetupEmailer(getenv func(string) string) Emailer {
@@ -56,7 +65,10 @@ func (es emailSender) String() string {
 // Send the login email to the given address used for registering an account
 // to confirm the poerson who tried to log in is the person who owns the
 // address.
-func (es *emailSender) SendVerificationEmail(to []string, code string, getenv func(string) string) error {
+func (es *emailSender) SendVerificationEmail(ctx context.Context, to []string, code string, getenv func(string) string) error {
+
+	_, span := tracer.Start(ctx, "sendVerificationEmail")
+	defer span.End()
 
 	const subject = "Subject: Your login code for the gift registry"
 	const mime = "MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";"
@@ -83,6 +95,14 @@ func (es *emailSender) SendVerificationEmail(to []string, code string, getenv fu
 	}
 
 	auth := smtp.PlainAuth("", es.fromAddress, es.passwd, es.hostname)
-	return smtp.SendMail(es.hostname+":"+es.port, auth, es.fromAddress, to, msg.Bytes())
+
+	err = smtp.SendMail(es.hostname+":"+es.port, auth, es.fromAddress, to, msg.Bytes())
+	span.SetAttributes(attribute.StringSlice("to", to))
+
+	if err != nil {
+		span.SetAttributes(attribute.String("emailError", err.Error()))
+	}
+
+	return err
 
 }

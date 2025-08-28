@@ -1,8 +1,8 @@
 package server
 
 import (
-	"database/sql"
 	"fmt"
+	"gift-registry/internal/database"
 	"gift-registry/internal/util"
 	"log/slog"
 	"net/http"
@@ -14,7 +14,7 @@ var (
 )
 
 // Builds a new HTTP hankrdler for the application. This will be used for testing and running the server
-func NewServer(getenv func(string) string, db *sql.DB, logger *slog.Logger, emailProvider Emailer) (http.Handler, error) {
+func NewServer(getenv func(string) string, db database.Database, logger *slog.Logger, emailProvider Emailer) (http.Handler, error) {
 
 	emailer = emailProvider
 	appSrv = &util.ServerUtils{

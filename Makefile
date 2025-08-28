@@ -7,17 +7,25 @@ build:
 docker-build: test
 	docker build -t gift-registry -f docker/Dockerfile .
 
-docker-down:
+local-down:
 	clear
-	docker compose -f docker/docker-compose.yml down
+	docker compose -f docker/docker-compose-local.yml down
 
-docker-up: docker-build
-	docker compose -f docker/docker-compose.yml up -d --no-deps
+local-up: docker-build
+	docker compose --env-file=docker/.env_local -f docker/docker-compose-local.yml up -d --no-deps
 	docker ps -a
 
 fmt:
 	clear
 	go fmt ./...
+
+prod-down:
+	clear
+	docker compose -f docker/docker-compose-prod.yml down
+
+prod-up: docker-build
+	docker compose --env-file=docker/.env_prod -f docker/docker-compose-prod.yml up -d --no-deps
+	docker ps -a
 
 init: 
 	sudo apt-get install libavif16  
@@ -28,3 +36,11 @@ staticcheck: fmt
 
 test: staticcheck 
 	go test ./...
+
+test-down:
+	clear
+	docker compose -f docker/docker-compose-test.yml down
+
+test-up: docker-build
+	docker compose --env-file=docker/.env_test -f docker/docker-compose-test.yml up -d --no-deps
+	docker ps -a

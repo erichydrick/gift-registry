@@ -8,14 +8,13 @@ RUN go mod download
 COPY . .
 RUN go build -o main cmd/api/main.go
 
-FROM alpine:3.21.3 AS executor
+FROM scratch AS executor
 
 WORKDIR /app
 
 COPY --from=build /app/main /app/main
-ADD internal/database/migrations migrations/
-COPY internal/database/private_migrations/* migrations/
-ADD cmd/web/templates/ templates/
-ADD cmd/web/css/ css/
-ADD cmd/web/js/ js/
+COPY internal/database/migrations migrations/
+COPY cmd/web/templates/ templates/
+COPY cmd/web/css/ css/
+COPY cmd/web/js/ js/
 CMD ["./main"]

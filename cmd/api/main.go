@@ -15,16 +15,20 @@ import (
 	_ "github.com/lib/pq"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
-
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
 
 	"gift-registry/internal/database"
 	"gift-registry/internal/server"
@@ -49,17 +53,21 @@ func Run(
 	done := make(chan bool, 1)
 
 	/* Set up OpenTelemetry integration */
-	otelShutdown, err := setupOTelSDK(ctx)
+	otelShutdown, err := setupOTelSDK(ctx, getenv)
 	if err != nil {
-		logger.Error("Error setting up OpenTelemetry", slog.String("errorMessage", err.Error()))
-		return fmt.Errorf("error setting up opentelemetry integration: %s", err.Error())
+		/* I don't have a logger to output this failure, panic for now*/
+		panic(err)
 	}
 	defer func() {
 		err = errors.Join(err, otelShutdown(ctx))
+		if err != nil {
+			panic(err)
+		}
 	}()
 
 	/* Get a database connection to pass to our handlers */
-	db, err := database.Connection(ctx, logger, getenv)
+	var db database.Database
+	db, err = database.Connection(ctx, logger, getenv)
 	if err != nil {
 		logger.Error("Error getting the database connection", slog.String("errorMessage", err.Error()))
 		return fmt.Errorf("error getting the database connection: %s", err.Error())
@@ -77,7 +85,7 @@ func Run(
 		Handler:      appHandler,
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 
 	/*
@@ -105,12 +113,12 @@ func Run(
 // Application entrypoint. Configures the logger, then runs, exiting with a non-0 status if startup fails.
 func main() {
 
+	ctx := context.Background()
+
 	/*
 	   Configure logging
 	*/
 	logger := otelslog.NewLogger(name, otelslog.WithSource(true))
-
-	ctx := context.Background()
 
 	err := Run(ctx, logger, os.Getenv)
 	if err != nil {
@@ -150,27 +158,61 @@ func gracefulShutdown(ctx context.Context, apiServer *http.Server, done chan boo
 }
 
 /* Sets up the OTel logging provider */
-func newLoggerProvider(ctx context.Context) (*log.LoggerProvider, error) {
+func newLoggerProvider(ctx context.Context, otelResource *resource.Resource, getenv func(string) string) (*log.LoggerProvider, error) {
 
-	logExporter, err := otlploghttp.New(ctx, otlploghttp.WithInsecure())
-	if err != nil {
-		return nil, fmt.Errorf("error setting up logging provider: %s", err.Error())
+	var logExporter log.Exporter
+	var err error
+
+	if getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+
+		logExporter, err = otlploghttp.New(ctx, otlploghttp.WithInsecure())
+		if err != nil {
+			return nil, fmt.Errorf("error setting up logging provider: %s", err.Error())
+		}
+
+	} else {
+
+		logExporter, err = stdoutlog.New()
+		if err != nil {
+			return nil, fmt.Errorf("error setting up logging provider: %s", err.Error())
+		}
+
 	}
 
-	logProvider := log.NewLoggerProvider(log.WithProcessor(log.NewBatchProcessor(logExporter)))
+	logProvider := log.NewLoggerProvider(
+		log.WithProcessor(log.NewBatchProcessor(logExporter)),
+		log.WithResource(otelResource),
+	)
 	return logProvider, nil
 
 }
 
 /* Sets up the OTel meter provider */
-func newMeterProvider(ctx context.Context) (*metric.MeterProvider, error) {
+func newMetricProvider(ctx context.Context, otelResource *resource.Resource, getenv func(string) string) (*metric.MeterProvider, error) {
 
-	metricExporter, err := otlpmetrichttp.New(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error setting up metrics provider: %s", err.Error())
+	var metricExporter metric.Exporter
+	var err error
+	if getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+
+		metricExporter, err = otlpmetrichttp.New(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error initializing the metric provider: %v", err)
+		}
+
+	} else {
+
+		metricExporter, err = stdoutmetric.New()
+		if err != nil {
+			return nil, fmt.Errorf("error initializing the metric provider: %v", err)
+		}
+
 	}
 
-	metricProvider := metric.NewMeterProvider(metric.WithReader(metric.NewPeriodicReader(metricExporter)))
+	metricProvider := metric.NewMeterProvider(
+		metric.WithReader(metric.NewPeriodicReader(metricExporter, metric.WithInterval(1*time.Minute))),
+		metric.WithResource(otelResource),
+	)
+
 	return metricProvider, nil
 
 }
@@ -185,21 +227,48 @@ func newPropagator() propagation.TextMapPropagator {
 
 }
 
-/* Sets up the OTel tracing provider */
-func newTracerProvider(ctx context.Context) (*trace.TracerProvider, error) {
+func newResource() *resource.Resource {
 
-	traceExporter, err := otlptrace.New(ctx, otlptracehttp.NewClient())
-	if err != nil {
-		return nil, fmt.Errorf("error setting up tracing provider: %s", err.Error())
+	return resource.NewWithAttributes(
+		semconv.SchemaURL,
+		semconv.ServiceName("gift-registry"),
+	)
+
+}
+
+/* Sets up the OTel tracing provider */
+func newTracerProvider(ctx context.Context, otelResource *resource.Resource, getenv func(string) string) (*trace.TracerProvider, error) {
+
+	var traceExporter trace.SpanExporter
+	var err error
+
+	/* Choose between exporting traces to a collector or writing to the logs */
+	if getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
+
+		traceExporter, err = otlptrace.New(ctx, otlptracehttp.NewClient())
+		if err != nil {
+			return nil, fmt.Errorf("error setting up tracing provider: %v", err)
+		}
+
+	} else {
+
+		traceExporter, err = stdouttrace.New()
+		if err != nil {
+			return nil, fmt.Errorf("error setting up tracing provider: %v", err)
+		}
+
 	}
 
-	tracerProvider := trace.NewTracerProvider(trace.WithBatcher(traceExporter))
+	tracerProvider := trace.NewTracerProvider(
+		trace.WithBatcher(traceExporter),
+		trace.WithResource(otelResource),
+	)
 	return tracerProvider, nil
 
 }
 
 /* Set up the OTel instrumentation and integration */
-func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, err error) {
+func setupOTelSDK(ctx context.Context, getenv func(string) string) (shutdown func(context.Context) error, err error) {
 
 	var shutdownFuncs []func(context.Context) error
 
@@ -229,7 +298,8 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 
 	otel.SetTextMapPropagator(newPropagator())
 
-	traceProvider, err := newTracerProvider(ctx)
+	otelResource := newResource()
+	traceProvider, err := newTracerProvider(ctx, otelResource, getenv)
 	if err != nil {
 		errReturned(err)
 		return
@@ -237,7 +307,7 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 	shutdownFuncs = append(shutdownFuncs, traceProvider.Shutdown)
 	otel.SetTracerProvider(traceProvider)
 
-	metricProvider, err := newMeterProvider(ctx)
+	metricProvider, err := newMetricProvider(ctx, otelResource, getenv)
 	if err != nil {
 		errReturned(err)
 		return
@@ -245,7 +315,7 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 	shutdownFuncs = append(shutdownFuncs, metricProvider.Shutdown)
 	otel.SetMeterProvider(metricProvider)
 
-	logProvider, err := newLoggerProvider(ctx)
+	logProvider, err := newLoggerProvider(ctx, otelResource, getenv)
 	if err != nil {
 		errReturned(err)
 		return
