@@ -13,12 +13,15 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	/* TODO: FIX IMPORT LIST */
+	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -29,10 +32,7 @@ import (
 )
 
 const (
-/*
-TODO: UNCOMMENT ME!
-name = "net.hydrick.gift-registry"
-*/
+	name = "net.hydrick.gift-registry"
 )
 
 // Launches and runs the application. Returns an error indicating a failure so the application can exit with a non-0 status
@@ -40,6 +40,7 @@ func Run(
 	ctx context.Context,
 	logger *slog.Logger,
 	getenv func(string) string,
+	otelShutdown func(context.Context) error,
 ) error {
 
 	/* Create context that listens for the interrupt signal from the OS. */
@@ -48,16 +49,6 @@ func Run(
 
 	/* Create a done channel to signal when the shutdown is complete */
 	done := make(chan bool, 1)
-
-	/* Set up OpenTelemetry integration */
-	otelShutdown, err := setupOTelSDK(ctx)
-	if err != nil {
-		logger.Error("Error setting up OpenTelemetry", slog.String("errorMessage", err.Error()))
-		return fmt.Errorf("error setting up opentelemetry integration: %s", err.Error())
-	}
-	defer func() {
-		err = errors.Join(err, otelShutdown(ctx))
-	}()
 
 	/* Get a database connection to pass to our handlers */
 	db, err := database.Connection(ctx, logger, getenv)
@@ -106,18 +97,25 @@ func Run(
 // Application entrypoint. Configures the logger, then runs, exiting with a non-0 status if startup fails.
 func main() {
 
+	ctx := context.Background()
+
+	/* Set up OpenTelemetry integration */
+	/* TODO: MAKE OPENTELEMETRY OPTIONAL */
+	otelShutdown, err := setupOTelSDK(ctx)
+	if err != nil {
+		/* I don't have a logger to output this failure, panic for now*/
+		panic(err)
+	}
+	defer func() {
+		err = errors.Join(err, otelShutdown(ctx))
+	}()
+
 	/*
 	   Configure logging
 	*/
-	/*
-		TODO: EXPORT LOGS
-		logger := otelslog.NewLogger(name, otelslog.WithSource(true))
-	*/
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{AddSource: true, Level: slog.LevelDebug}))
+	logger := otelslog.NewLogger(name, otelslog.WithSource(true))
 
-	ctx := context.Background()
-
-	err := Run(ctx, logger, os.Getenv)
+	err = Run(ctx, logger, os.Getenv, otelShutdown)
 	if err != nil {
 		logger.Error("error launching the application", slog.String("errorMessage", err.Error()))
 		os.Exit(-1)
@@ -155,8 +153,6 @@ func gracefulShutdown(ctx context.Context, apiServer *http.Server, done chan boo
 }
 
 /* Sets up the OTel logging provider */
-/*
-TODO: FIX THIS
 func newLoggerProvider(ctx context.Context, otelResource *resource.Resource) (*log.LoggerProvider, error) {
 
 	logExporter, err := otlploghttp.New(ctx, otlploghttp.WithInsecure())
@@ -171,7 +167,6 @@ func newLoggerProvider(ctx context.Context, otelResource *resource.Resource) (*l
 	return logProvider, nil
 
 }
-*/
 
 /* Sets up the OTel meter provider */
 func newMetricProvider(ctx context.Context, otelResource *resource.Resource) (*metric.MeterProvider, error) {
@@ -273,16 +268,13 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 	shutdownFuncs = append(shutdownFuncs, metricProvider.Shutdown)
 	otel.SetMeterProvider(metricProvider)
 
-	/*
-		TODO: FIX THIS
-		logProvider, err := newLoggerProvider(ctx, otelResource)
-		if err != nil {
-			errReturned(err)
-			return
-		}
-		shutdownFuncs = append(shutdownFuncs, logProvider.Shutdown)
-		global.SetLoggerProvider(logProvider)
-	*/
+	logProvider, err := newLoggerProvider(ctx, otelResource)
+	if err != nil {
+		errReturned(err)
+		return
+	}
+	shutdownFuncs = append(shutdownFuncs, logProvider.Shutdown)
+	global.SetLoggerProvider(logProvider)
 
 	return
 
