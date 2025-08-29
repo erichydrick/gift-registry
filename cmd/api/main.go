@@ -15,9 +15,11 @@ import (
 	_ "github.com/lib/pq"
 	/* TODO: FIX IMPORT LIST */
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
@@ -172,23 +174,21 @@ func newLoggerProvider(ctx context.Context, otelResource *resource.Resource) (*l
 */
 
 /* Sets up the OTel meter provider */
-/*
-TODO: FIX THIS
-func newMeterProvider(ctx context.Context, otelResource *resource.Resource) (*metric.MeterProvider, error) {
+func newMetricProvider(ctx context.Context, otelResource *resource.Resource) (*metric.MeterProvider, error) {
 
 	metricExporter, err := otlpmetrichttp.New(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("error setting up metrics provider: %s", err.Error())
+		return nil, fmt.Errorf("error initializing the metric provider: %v", err)
 	}
 
 	metricProvider := metric.NewMeterProvider(
-		metric.WithReader(metric.NewPeriodicReader(metricExporter)),
+		metric.WithReader(metric.NewPeriodicReader(metricExporter, metric.WithInterval(1*time.Minute))),
 		metric.WithResource(otelResource),
 	)
+
 	return metricProvider, nil
 
 }
-*/
 
 /* Sets up the OTel propagator */
 func newPropagator() propagation.TextMapPropagator {
@@ -265,16 +265,13 @@ func setupOTelSDK(ctx context.Context) (shutdown func(context.Context) error, er
 	shutdownFuncs = append(shutdownFuncs, traceProvider.Shutdown)
 	otel.SetTracerProvider(traceProvider)
 
-	/*
-		TODO: FIX THIS
-		metricProvider, err := newMeterProvider(ctx, otelResource)
-		if err != nil {
-			errReturned(err)
-			return
-		}
-		shutdownFuncs = append(shutdownFuncs, metricProvider.Shutdown)
-		otel.SetMeterProvider(metricProvider)
-	*/
+	metricProvider, err := newMetricProvider(ctx, otelResource)
+	if err != nil {
+		errReturned(err)
+		return
+	}
+	shutdownFuncs = append(shutdownFuncs, metricProvider.Shutdown)
+	otel.SetMeterProvider(metricProvider)
 
 	/*
 		TODO: FIX THIS
