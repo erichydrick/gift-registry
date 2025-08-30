@@ -1,21 +1,15 @@
 package server_test
 
 import (
-	"log"
-	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-
-	"gift-registry/internal/database"
 	"gift-registry/internal/server"
 	"gift-registry/internal/test"
 )
@@ -166,11 +160,6 @@ func TestLoginEmailValidationForm(t *testing.T) {
 
 func TestLoginForm(t *testing.T) {
 
-	/* Sets up a testing logger */
-	options := &slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true}
-	handler := slog.NewTextHandler(os.Stderr, options)
-	logger = slog.New(handler)
-
 	testData := []struct {
 		expectedStatus   int
 		expectedElements []string
@@ -188,40 +177,15 @@ func TestLoginForm(t *testing.T) {
 
 			t.Parallel()
 
-			dbCont, dbURL, err := test.BuildDBContainer(ctx, dbPath, dbName, dbUser, dbPass)
-			defer func() {
-				if err := testcontainers.TerminateContainer(dbCont); err != nil {
-					log.Fatal("Failed to terminate the database test container ", err)
-				}
-			}()
-			if err != nil {
-				t.Fatal("Error setting up a test database", err)
-			}
-
-			env := map[string]string{
-				"DB_HOST":          strings.Split(dbURL, ":")[0],
-				"DB_USER":          dbUser,
-				"DB_PASS":          dbPass,
-				"DB_PORT":          strings.Split(dbURL, ":")[1],
-				"DB_NAME":          dbName,
-				"MIGRATIONS_DIR":   filepath.Join("..", "..", "internal", "database", "migrations"),
-				"STATIC_FILES_DIR": filepath.Join("..", "..", "cmd", "web"),
-				"TEMPLATES_DIR":    filepath.Join("..", "..", "cmd", "web", "templates"),
-			}
-
 			/*
 				Override environment values with test-specific ones if needed
 			*/
-			maps.Copy(env, data.envOverrides)
-			getenv := func(name string) string { return env[name] }
-
-			db, err := database.Connection(ctx, logger, getenv)
-			if err != nil {
-				t.Fatal("database connection failure! ", err)
-			}
+			testEnvs := maps.Clone(env)
+			maps.Copy(testEnvs, data.envOverrides)
+			getTestEnvs := func(name string) string { return testEnvs[name] }
 
 			var emailer server.Emailer = &test.EmailMock{}
-			appHandler, err := server.NewServer(getenv, db, logger, emailer)
+			appHandler, err := server.NewServer(getTestEnvs, db, logger, emailer)
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}
@@ -303,6 +267,7 @@ func TestVerification(t *testing.T) {
 		{attempts: server.MaxAttempts - 1, duration: 5 * time.Minute, email: "maxAttemptsExceeded@verificationtest.com", enteredToken: "thisiswrong", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed attempts at max", verificationSuccess: false, verifyEmailPopulated: false},
 		{attempts: 0, duration: 5 * time.Minute, email: "tryAgain@verificationtest.com", enteredToken: "thisiswrong", expectedVisibleFields: []string{"verify-form", "verify-error", "verify-code"}, expectedHiddenFields: []string{"verify-email"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed attempts more remaining", verificationSuccess: false, verifyEmailPopulated: true},
 		{attempts: 0, duration: 5 * time.Minute, email: "unregisteredEmail@verificiationtest.com", enteredToken: "unentered-token", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed invalid email", verificationSuccess: false, verifyEmailPopulated: false},
+		{attempts: 0, duration: 5 * time.Minute, email: "", enteredToken: "unentered-token", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed no email", verificationSuccess: false, verifyEmailPopulated: false},
 		{attempts: 0, duration: 5 * time.Minute, email: "successfulVerification@verificationtest.com", enteredToken: "valid-token", expectedVisibleFields: []string{}, expectedHiddenFields: []string{}, token: "valid-token", expectedStatusCode: http.StatusOK, location: "/registry", testName: "Successful verification", verificationSuccess: true, verifyEmailPopulated: false},
 	}
 
@@ -312,45 +277,26 @@ func TestVerification(t *testing.T) {
 
 			t.Parallel()
 
-			dbCont, dbURL, err := test.BuildDBContainer(ctx, dbPath, dbName, dbUser, dbPass)
-			defer func() {
-				if err := testcontainers.TerminateContainer(dbCont); err != nil {
-					log.Fatal("Failed to terminate the database test container ", err)
+			/*
+				We're including some edge cases where an attempt to verify without a valid
+				email is attempted. There should be no corresponding user in the database
+				in those cases.
+			*/
+			if data.verificationSuccess || data.verifyEmailPopulated {
+
+				userInfo := test.UserInfo{
+					Email: data.email,
 				}
-			}()
-			if err != nil {
-				t.Fatal("Error setting up a test database", err)
-			}
+				err := test.CreateUser(ctx, db, userInfo)
+				if err != nil {
+					t.Fatal("Error creating a person record to use for testing", err)
+				}
 
-			env := map[string]string{
-				"DB_HOST":          strings.Split(dbURL, ":")[0],
-				"DB_USER":          dbUser,
-				"DB_PASS":          dbPass,
-				"DB_PORT":          strings.Split(dbURL, ":")[1],
-				"DB_NAME":          dbName,
-				"MIGRATIONS_DIR":   filepath.Join("..", "..", "internal", "database", "migrations"),
-				"STATIC_FILES_DIR": filepath.Join("..", "..", "cmd", "web"),
-				"TEMPLATES_DIR":    filepath.Join("..", "..", "cmd", "web", "templates"),
-			}
+				err = test.CreateToken(ctx, db, data.token, data.duration, data.attempts, userInfo)
+				if err != nil {
+					t.Fatal("Error creating a verification record to use for testing", err)
+				}
 
-			getenv := func(name string) string { return env[name] }
-
-			db, err := database.Connection(ctx, logger, getenv)
-			if err != nil {
-				t.Fatal("database connection failure! ", err)
-			}
-
-			userInfo := test.UserInfo{
-				Email: data.email,
-			}
-			err = test.CreateUser(ctx, db, userInfo)
-			if err != nil {
-				t.Fatal("Error creating a person record to use for testing", err)
-			}
-
-			err = test.CreateToken(ctx, db, data.token, data.duration, data.attempts, userInfo)
-			if err != nil {
-				t.Fatal("Error creating a verification record to use for testing", err)
 			}
 
 			var emailer server.Emailer = &test.EmailMock{}

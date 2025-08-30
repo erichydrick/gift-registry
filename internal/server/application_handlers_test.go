@@ -111,7 +111,6 @@ func TestAuthMiddleware(t *testing.T) {
 			validSession:   true,
 		},
 	}
-	log.Println(t.Name(), "- TEST SET UP IN", time.Since(start).Milliseconds(), "MS")
 
 	for _, data := range testData {
 
