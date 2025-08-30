@@ -1,22 +1,17 @@
 package server_test
 
 import (
-	"gift-registry/internal/database"
 	"gift-registry/internal/server"
 	"gift-registry/internal/test"
 	"log"
-	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
 	"golang.org/x/net/html"
 )
 
@@ -154,16 +149,13 @@ func TestAuthMiddleware(t *testing.T) {
 				}
 
 			}
-			log.Println(data.testName, "- FINISHED APPLICABLE SESSION CREATION IN", time.Since(start).Milliseconds(), "MS")
 
 			appHandler, err := server.NewServer(getenv, db, logger, &test.EmailMock{})
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}
-			log.Println(data.testName, "- ROUTES SET UP AND INITIALIZED IN", time.Since(start).Milliseconds(), "MS")
 
 			testServer := httptest.NewServer(appHandler)
-			log.Println(data.testName, "- SERVER STARTED IN", time.Since(start).Milliseconds(), "MS")
 			defer testServer.Close()
 
 			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+data.path, nil)
@@ -173,9 +165,7 @@ func TestAuthMiddleware(t *testing.T) {
 
 			req.AddCookie(&sessCookie)
 			req.Header.Set("User-Agent", data.userAgent)
-			log.Println(data.testName, "- REQUEST SET UP IN", time.Since(start).Milliseconds(), "MS")
 			res, err := http.DefaultClient.Do(req)
-			log.Println(data.testName, "- DEFAULT CLIENT DID THE REQUEST IN", time.Since(start).Milliseconds(), "MS")
 			defer func() {
 				if res != nil && res.Body != nil {
 					res.Body.Close()
@@ -184,24 +174,20 @@ func TestAuthMiddleware(t *testing.T) {
 			if err != nil {
 				t.Fatal("Error making request to validate the authorization middleware", err)
 			}
-			log.Println(data.testName, "- CLIENT CLEANUP CONFIGURED IN", time.Since(start).Milliseconds(), "MS")
 
 			if res.StatusCode != data.expectedStatus {
 				t.Fatal("Expected a status of ", data.expectedStatus, "but got", res.StatusCode)
 			}
 
 			pgData := test.ReadResult(res)
-			log.Println(data.testName, "- READ IN DATA FOR PLAYWRIGHT PAGE IN", time.Since(start).Milliseconds(), "MS")
 			for _, bType := range browserList {
 
 				page, err := test.GetPage(bType)
-				log.Println(data.testName, "- GOT PAGE IN DATA FOR PLAYWRIGHT PAGE IN", time.Since(start).Milliseconds(), "MS")
 				if err != nil {
 					t.Fatal("Error getting a ", bType.Name(), "browser page!")
 				}
 
 				err = page.SetContent(string(pgData))
-				log.Println(data.testName, "- PAGE CONTENT SET IN", time.Since(start).Milliseconds(), "MS")
 				if err != nil {
 					t.Fatal("Error loading up the page content!")
 				}
@@ -217,7 +203,6 @@ func TestAuthMiddleware(t *testing.T) {
 					}
 
 				}
-				log.Println(data.testName, "- PAGE CONTENT CHECKED IN", time.Since(start).Milliseconds(), "MS")
 
 			}
 
@@ -244,42 +229,12 @@ func TestIndexHandler(t *testing.T) {
 
 			t.Parallel()
 
-			/* Sets up a testing logger */
-			options := &slog.HandlerOptions{Level: slog.LevelDebug}
-			handler := slog.NewTextHandler(os.Stderr, options)
-			logger = slog.New(handler)
-
-			dbCont, dbUrl, err := test.BuildDBContainer(ctx, filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql"), dbName, dbUser, dbPass)
-			defer func() {
-				if err := testcontainers.TerminateContainer(dbCont); err != nil {
-					log.Fatal("Failed to terminate the database test container ", err)
-				}
-			}()
-
-			if err != nil {
-				log.Fatal("Error making database container", err)
-			}
-
-			env := map[string]string{
-				"DB_USER":        dbUser,
-				"DB_PASS":        dbPass,
-				"DB_HOST":        strings.Split(dbUrl, ":")[0],
-				"DB_PORT":        strings.Split(dbUrl, ":")[1],
-				"DB_NAME":        dbName,
-				"PORT":           strconv.Itoa(test.FreePort()),
-				"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations"),
-				"TEMPLATES_DIR":  data.templatesDir,
-			}
-
-			getenv := func(name string) string { return env[name] }
-
-			db, err := database.Connection(ctx, logger, getenv)
-			if err != nil {
-				t.Fatal("database connection failure! ", err)
-			}
+			testEnvs := maps.Clone(env)
+			testEnvs["TEMPLATES_DIR"] = data.templatesDir
+			getTestEnvs := func(name string) string { return testEnvs[name] }
 
 			var emailer server.Emailer = &test.EmailMock{}
-			appHandler, err := server.NewServer(getenv, db, logger, emailer)
+			appHandler, err := server.NewServer(getTestEnvs, db, logger, emailer)
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}

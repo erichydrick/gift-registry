@@ -49,39 +49,21 @@ func TestLoginEmailValidationForm(t *testing.T) {
 
 			t.Parallel()
 
-			dbCont, dbURL, err := test.BuildDBContainer(ctx, dbPath, dbName, dbUser, dbPass)
-			defer func() {
-				if err := testcontainers.TerminateContainer(dbCont); err != nil {
-					log.Fatal("Failed to terminate the database test container ", err)
+			/*
+				We only expect to send an email when there's a record in the DB,
+				so don't add a record unless we're testing a scenario where the user was
+				in the database.
+			*/
+			if data.expectedEmailSent {
+
+				userInfo := test.UserInfo{
+					Email: data.email,
 				}
-			}()
-			if err != nil {
-				t.Fatal("Error setting up a test database", err)
-			}
+				err := test.CreateUser(ctx, db, userInfo)
+				if err != nil {
+					t.Fatal("Error creating a person record to use for testing", err)
+				}
 
-			env := map[string]string{
-				"DB_HOST":          strings.Split(dbURL, ":")[0],
-				"DB_USER":          dbUser,
-				"DB_PASS":          dbPass,
-				"DB_PORT":          strings.Split(dbURL, ":")[1],
-				"DB_NAME":          dbName,
-				"MIGRATIONS_DIR":   filepath.Join("..", "..", "internal", "database", "migrations"),
-				"STATIC_FILES_DIR": filepath.Join("..", "..", "cmd", "web"),
-				"TEMPLATES_DIR":    filepath.Join("..", "..", "cmd", "web", "templates"),
-			}
-			getenv := func(name string) string { return env[name] }
-
-			db, err := database.Connection(ctx, logger, getenv)
-			if err != nil {
-				t.Fatal("database connection failure! ", err)
-			}
-
-			userInfo := test.UserInfo{
-				Email: data.email,
-			}
-			err = test.CreateUser(ctx, db, userInfo)
-			if err != nil {
-				t.Fatal("Error creating a person record to use for testing", err)
 			}
 
 			var emailer server.Emailer = &test.EmailMock{}

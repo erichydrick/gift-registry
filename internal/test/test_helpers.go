@@ -30,7 +30,6 @@ type UserInfo struct {
 
 const (
 	DefaultUserAgent = "go-test-user-agent"
-	OutsideEmail     = "notarealuser@localhost.com"
 )
 
 var (
