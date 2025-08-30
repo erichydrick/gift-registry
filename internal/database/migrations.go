@@ -27,7 +27,7 @@ var (
 )
 
 // Checks for any pending database migrations and applies them
-func (dbConn dbConn) runMigrations(
+func (conn dbConn) runMigrations(
 	ctx context.Context,
 	logger *slog.Logger,
 	getenv func(string) string) error {
@@ -58,7 +58,7 @@ func (dbConn dbConn) runMigrations(
 		panic("could not initialize the total rows affected metric " + err.Error())
 	}
 
-	migrationsApplied, err := dbConn.readAppliedMigrations(ctx)
+	migrationsApplied, err := conn.readAppliedMigrations(ctx)
 	if err != nil {
 		logger.ErrorContext(ctx, "Error reading applied migrations from the database", slog.String("errorMessage", err.Error()))
 		return fmt.Errorf("error reading applied migrations from the database: %s", err.Error())
@@ -105,14 +105,14 @@ func (dbConn dbConn) runMigrations(
 
 		}
 
-		tx, err := dbConn.db.BeginTx(ctx, nil)
+		tx, err := conn.db.BeginTx(ctx, nil)
 		if err != nil {
 			logger.ErrorContext(ctx, "Error starting transaction", slog.String("errorMessage", err.Error()))
 			return fmt.Errorf("error starting transaction lock on the database migrations: %s", err.Error())
 		}
 
 		logger.InfoContext(ctx, "Applying migration file", slog.String("filename", sqlFile.Name()))
-		rowsAffected, err := dbConn.applyMigration(ctx, logger, migrationsFS, sqlFile)
+		rowsAffected, err := conn.applyMigration(ctx, logger, migrationsFS, sqlFile)
 		if err != nil {
 			rollback(ctx, tx, logger, sqlFile.Name())
 			returnedErr = ErrMigration
@@ -122,7 +122,7 @@ func (dbConn dbConn) runMigrations(
 		fileToRowsAffected[sqlFile.Name()] = rowsAffected
 
 		logger.DebugContext(ctx, fmt.Sprintf("Adding %s to the database", sqlFile.Name()))
-		_, err = dbConn.db.ExecContext(ctx, "INSERT INTO migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))", sqlFile.Name())
+		_, err = conn.db.ExecContext(ctx, "INSERT INTO migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))", sqlFile.Name())
 		if err != nil {
 			logger.ErrorContext(ctx, "Error adding migration file to migrations table!", slog.String("filenam", sqlFile.Name()), slog.String("errorMessage", err.Error()))
 			rollback(ctx, tx, logger, sqlFile.Name())
@@ -167,7 +167,7 @@ func (dbConn dbConn) runMigrations(
 
 }
 
-func (dbConn dbConn) applyMigration(
+func (conn dbConn) applyMigration(
 	ctx context.Context,
 	logger *slog.Logger,
 	migrations fs.FS,
@@ -183,7 +183,7 @@ func (dbConn dbConn) applyMigration(
 
 	statement := string(sqlBytes)
 	logger.DebugContext(ctx, "Applying SQL", slog.String("statement", statement))
-	result, err := dbConn.db.ExecContext(ctx, statement)
+	result, err := conn.db.ExecContext(ctx, statement)
 	if err != nil {
 		logger.ErrorContext(ctx, "Error applying migration",
 			slog.String("sqlStatement", statement),
@@ -221,10 +221,10 @@ func listMigrations(migrationsDir fs.FS, root string) ([]fs.DirEntry, error) {
 
 }
 
-func (dbConn dbConn) readAppliedMigrations(ctx context.Context) ([]string, error) {
+func (conn dbConn) readAppliedMigrations(ctx context.Context) ([]string, error) {
 
 	var migratedFiles []string
-	rows, err := dbConn.db.QueryContext(ctx, "SELECT filename "+
+	rows, err := conn.db.QueryContext(ctx, "SELECT filename "+
 		"	FROM migrations "+
 		"	ORDER BY filename ASC")
 	if err != nil {

@@ -31,7 +31,7 @@ type EmptyResult struct{}
 
 // The database is configured through environment variables that should be set in the container
 var (
-	openConnections map[string]dbConn = map[string]dbConn{}
+	connection dbConn
 )
 
 // Returns a singleton database connection, creating a new one if it's not already initialized. getenv() will use the container environment variables when running, but can be mocked for testing.
@@ -43,41 +43,28 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 		return nil, fmt.Errorf("invalid port value: %s: %v", getenv("DB_PORT"), err)
 	}
 
-	connection := dbConn{
+	logger.DebugContext(ctx,
+		"Want to see if I have and existing connection",
+		slog.String("connectionInfo", connection.String()))
+	if connection.db != nil && connection.db.Ping() == nil {
+
+		logger.InfoContext(
+			ctx,
+			"Have a connection reference, just need to make sure the DB reference is active",
+			slog.String("connectionInfo", connection.String()),
+		)
+		return connection.db, nil
+
+	}
+
+	logger.DebugContext(ctx, "Need to create a new connection with the connection URL", slog.String("connectionInfo", connection.String()))
+	connection = dbConn{
 		hostname: getenv("DB_HOST"),
 		port:     port,
 		name:     getenv("DB_NAME"),
 		username: getenv("DB_USER"),
 	}
-
-	connStr := url(getenv)
-
-	/* Re-use this specific connection if we have it */
-	if db, ok := openConnections[connection.String()]; ok && db.db != nil {
-
-		logger.InfoContext(
-			ctx,
-			"Have a connection reference, just need to make sure the DB reference is active",
-			slog.String("dbURL", connStr),
-		)
-		/* Make sure there's an sql.DB pointer is "live" */
-		if err = db.db.Ping(); err != nil {
-
-			logger.InfoContext(ctx, "DB reference closed, reopening...", slog.String("dbURL", connStr))
-			sql, err := connection.open(ctx, logger, connStr)
-			if err != nil {
-				return nil, err
-			}
-			db.db = sql
-
-		}
-
-		return openConnections[connection.String()].db, nil
-
-	}
-
-	logger.DebugContext(ctx, "Need to create a new connection with the connection URL", slog.String("dbURL", connStr))
-	db, err := connection.open(ctx, logger, connStr)
+	db, err := connection.open(ctx, logger, url(getenv))
 	/* We can't run the application if we can't connect to the database, so go ahead and exit */
 	if err != nil {
 		return nil, err
@@ -101,8 +88,6 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 	logger.InfoContext(ctx, "Applied migrations to database connection",
 		slog.String("connectionDetails", connection.String()))
 
-	openConnections[connection.String()] = connection
-
 	/*
 		err is the error from running the migration, send that back in case it
 		failed, but at this point it's a MigrationError so we can confirm it's
@@ -113,18 +98,18 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 }
 
 // Closes the database connection
-func (dbConn *dbConn) Close() (err error) {
+func (conn *dbConn) Close() (err error) {
 
-	if dbConn.db != nil {
+	if conn.db != nil {
 
-		err = dbConn.db.Close()
+		err = conn.db.Close()
 		/*
 			Clear the database connection reference so future calls to Connect()
 			create a fresh connection
 		*/
 		if err == nil {
 			var nilDB *sql.DB
-			dbConn.db = nilDB
+			conn.db = nilDB
 		}
 
 	}
@@ -135,9 +120,9 @@ func (dbConn *dbConn) Close() (err error) {
 
 // Make the database connection type comparable for sorting. This is calculated
 // using the connection URL for the connection.
-func (dbConn dbConn) Compare(otherConn dbConn) int {
+func (conn dbConn) Compare(otherConn dbConn) int {
 
-	return strings.Compare(dbConn.String(), otherConn.String())
+	return strings.Compare(conn.String(), otherConn.String())
 
 }
 
@@ -145,28 +130,28 @@ func (dbConn dbConn) Compare(otherConn dbConn) int {
 // calculated using the usernames, hostnames, ports, database names,
 // and whether the database pointer references are both nil or both
 // non-nil.
-func (dbConn dbConn) Equal(otherConn dbConn) bool {
+func (conn dbConn) Equal(otherConn dbConn) bool {
 
-	return dbConn.hostname == otherConn.hostname &&
-		dbConn.port == otherConn.port &&
-		dbConn.username == otherConn.username &&
-		dbConn.name == otherConn.name &&
-		((dbConn.db == nil && otherConn.db == nil) ||
-			(dbConn.db != nil && otherConn.db != nil))
+	return conn.hostname == otherConn.hostname &&
+		conn.port == otherConn.port &&
+		conn.username == otherConn.username &&
+		conn.name == otherConn.name &&
+		((conn.db == nil && otherConn.db == nil) ||
+			(conn.db != nil && otherConn.db != nil))
 
 }
 
 // Has the database connection type implement the Stringer interface
 // Prints all the public fields along with a boolean indicating if the
 // connection isn't nil
-func (dbConn dbConn) String() string {
+func (conn dbConn) String() string {
 
 	return fmt.Sprintf(
 		"{hostname: \"%s\", username: \"%s\", port: %d, password: *******, databaseName: \"%s\"}",
-		dbConn.hostname,
-		dbConn.username,
-		dbConn.port,
-		dbConn.name,
+		conn.hostname,
+		conn.username,
+		conn.port,
+		conn.name,
 	)
 
 }
@@ -187,7 +172,7 @@ func (er EmptyResult) RowsAffected() (int64, error) {
 
 }
 
-func (dbConn dbConn) open(
+func (conn dbConn) open(
 	ctx context.Context,
 	logger *slog.Logger,
 	url string) (*sql.DB, error) {

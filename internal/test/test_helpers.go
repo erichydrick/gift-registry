@@ -24,10 +24,13 @@ type EmailMock struct {
 	VerificationEmailSent bool
 }
 
+type UserInfo struct {
+	Email string
+}
+
 const (
 	DefaultUserAgent = "go-test-user-agent"
 	OutsideEmail     = "notarealuser@localhost.com"
-	ValidEmail       = "hydrickgiftregistrytestuser@localhost.com"
 )
 
 var (
@@ -87,7 +90,7 @@ func BuildDBContainer(ctx context.Context, initScripts string, dbName string, db
 
 }
 
-func CreateSession(ctx context.Context, db *sql.DB, timeLeft time.Duration, userAgent string) (string, error) {
+func CreateSession(ctx context.Context, db *sql.DB, timeLeft time.Duration, userAgent string, userInfo UserInfo) (string, error) {
 
 	token := rand.Text()
 
@@ -103,7 +106,7 @@ func CreateSession(ctx context.Context, db *sql.DB, timeLeft time.Duration, user
 	/*
 		Write the session record and sanity check that it's there.
 	*/
-	if res, err := db.ExecContext(ctx, "INSERT INTO session(session_id, email, expiration, user_agent) VALUES ($1, $2, $3, $4)", token, ValidEmail, time.Now().UTC().Add(timeLeft), userAgent); err != nil {
+	if res, err := db.ExecContext(ctx, "INSERT INTO session(session_id, email, expiration, user_agent) VALUES ($1, $2, $3, $4)", token, userInfo.Email, time.Now().UTC().Add(timeLeft), userAgent); err != nil {
 		return "", err
 	} else if modified, err := res.RowsAffected(); err != nil {
 		return "", err
@@ -120,7 +123,46 @@ func CreateSession(ctx context.Context, db *sql.DB, timeLeft time.Duration, user
 
 }
 
-func CreateUser(ctx context.Context, db *sql.DB) error {
+func CreateToken(ctx context.Context, db *sql.DB, token string, duration time.Duration, attempts int, userInfo UserInfo) error {
+
+	expires := time.Now().Add(duration).UTC()
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		log.Println("Error starting the create user transaction")
+		return fmt.Errorf("error starting transaction to write a test verification record: %v", err)
+	}
+
+	/*
+		Do the insertion and make sure it worked. We're going to t.Fatal() if this
+		fails, so I'm not going to worry about Rollback() calls erroring, the
+		database is going to be deleted anyhow
+	*/
+	if res, err := db.ExecContext(ctx, "INSERT INTO verification (email, token, token_expiration, attempts) VALUES ($1, $2, $3, $4)", userInfo.Email, token, expires, attempts); err != nil {
+		log.Println("Error adding a new test verification record to the database.")
+		tx.Rollback()
+		return fmt.Errorf("error executing insert operation: %v", err)
+	} else if added, err := res.RowsAffected(); err != nil {
+		log.Println("Error getting the last inserted ID from the test person creation.")
+		tx.Rollback()
+		return fmt.Errorf("no rows inserted into the table: %v", err)
+	} else if added < 1 {
+		log.Println("No rows were added to the verification table!")
+		tx.Rollback()
+		return fmt.Errorf("did not complete insertion for test verification details: %v", err)
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return nil
+
+}
+
+func CreateUser(ctx context.Context, db *sql.DB, userInfo UserInfo) error {
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -133,7 +175,7 @@ func CreateUser(ctx context.Context, db *sql.DB) error {
 		fails, so I'm not going to worry about Rollback() calls erroring, the
 		database is going to be deleted anyhow
 	*/
-	if res, err := db.ExecContext(ctx, "INSERT INTO person (email) VALUES ($1)", ValidEmail); err != nil {
+	if res, err := db.ExecContext(ctx, "INSERT INTO person (email) VALUES ($1)", userInfo.Email); err != nil {
 		log.Println("Error adding a new test person to the database.")
 		tx.Rollback()
 		return err

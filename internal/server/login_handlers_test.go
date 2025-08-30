@@ -1,9 +1,6 @@
 package server_test
 
 import (
-	"context"
-	"database/sql"
-	"fmt"
 	"log"
 	"log/slog"
 	"maps"
@@ -41,8 +38,8 @@ func TestLoginEmailValidationForm(t *testing.T) {
 		expectedVisibleFields []string
 		testName              string
 	}{
-		{email: test.ValidEmail, expectedEmailSent: true, expectedHiddenFields: []string{"verify-email", "verify-code-error", "verify-error"}, expectedVisibleFields: []string{"verify-code"}, expectedStatusCode: 200, testName: "Valid email"},
-		{email: test.OutsideEmail, expectedEmailSent: false, expectedHiddenFields: []string{"verify-email", "verify-code-error", "verify-error"}, expectedVisibleFields: []string{"verify-code"}, expectedStatusCode: 200, testName: "Invalid user"},
+		{email: "validEmail@loginhandlertest.com", expectedEmailSent: true, expectedHiddenFields: []string{"verify-email", "verify-code-error", "verify-error"}, expectedVisibleFields: []string{"verify-code"}, expectedStatusCode: 200, testName: "Valid email"},
+		{email: "unregisteredEmail@loginhandlertest.com", expectedEmailSent: false, expectedHiddenFields: []string{"verify-email", "verify-code-error", "verify-error"}, expectedVisibleFields: []string{"verify-code"}, expectedStatusCode: 200, testName: "Invalid user"},
 		{email: "no", expectedEmailSent: false, expectedHiddenFields: []string{"login-error"}, expectedVisibleFields: []string{"login-email-error", "login-email"}, expectedStatusCode: 200, testName: "Invalid email"},
 	}
 
@@ -79,7 +76,10 @@ func TestLoginEmailValidationForm(t *testing.T) {
 				t.Fatal("database connection failure! ", err)
 			}
 
-			err = test.CreateUser(ctx, db)
+			userInfo := test.UserInfo{
+				Email: data.email,
+			}
+			err = test.CreateUser(ctx, db, userInfo)
 			if err != nil {
 				t.Fatal("Error creating a person record to use for testing", err)
 			}
@@ -316,12 +316,12 @@ func TestVerification(t *testing.T) {
 		verificationSuccess   bool
 		verifyEmailPopulated  bool
 	}{
-		{attempts: 0, duration: -5 * time.Minute, email: test.ValidEmail, enteredToken: "expired-token", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "expired-token", expectedStatusCode: 200, testName: "Expired token", verificationSuccess: false, verifyEmailPopulated: false},
-		{attempts: server.MaxAttempts + 5, duration: 5 * time.Minute, email: test.ValidEmail, enteredToken: "thisiswrong", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed attempts exceeded", verificationSuccess: false, verifyEmailPopulated: false},
-		{attempts: server.MaxAttempts - 1, duration: 5 * time.Minute, email: test.ValidEmail, enteredToken: "thisiswrong", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed attempts at max", verificationSuccess: false, verifyEmailPopulated: false},
-		{attempts: 0, duration: 5 * time.Minute, email: test.ValidEmail, enteredToken: "thisiswrong", expectedVisibleFields: []string{"verify-form", "verify-error", "verify-code"}, expectedHiddenFields: []string{"verify-email"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed attempts more remaining", verificationSuccess: false, verifyEmailPopulated: true},
-		{attempts: 0, duration: 5 * time.Minute, email: test.OutsideEmail, enteredToken: "unentered-token", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed invalid email", verificationSuccess: false, verifyEmailPopulated: false},
-		{attempts: 0, duration: 5 * time.Minute, email: test.ValidEmail, enteredToken: "valid-token", expectedVisibleFields: []string{}, expectedHiddenFields: []string{}, token: "valid-token", expectedStatusCode: http.StatusOK, location: "/registry", testName: "Successful verification", verificationSuccess: true, verifyEmailPopulated: false},
+		{attempts: 0, duration: -5 * time.Minute, email: "expiredToken@verificationtest.com", enteredToken: "expired-token", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "expired-token", expectedStatusCode: 200, testName: "Expired token", verificationSuccess: false, verifyEmailPopulated: false},
+		{attempts: server.MaxAttempts + 5, duration: 5 * time.Minute, email: "attemptsExceeded@verificationtest.com", enteredToken: "thisiswrong", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed attempts exceeded", verificationSuccess: false, verifyEmailPopulated: false},
+		{attempts: server.MaxAttempts - 1, duration: 5 * time.Minute, email: "maxAttemptsExceeded@verificationtest.com", enteredToken: "thisiswrong", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed attempts at max", verificationSuccess: false, verifyEmailPopulated: false},
+		{attempts: 0, duration: 5 * time.Minute, email: "tryAgain@verificationtest.com", enteredToken: "thisiswrong", expectedVisibleFields: []string{"verify-form", "verify-error", "verify-code"}, expectedHiddenFields: []string{"verify-email"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed attempts more remaining", verificationSuccess: false, verifyEmailPopulated: true},
+		{attempts: 0, duration: 5 * time.Minute, email: "unregisteredEmail@verificiationtest.com", enteredToken: "unentered-token", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed invalid email", verificationSuccess: false, verifyEmailPopulated: false},
+		{attempts: 0, duration: 5 * time.Minute, email: "successfulVerification@verificationtest.com", enteredToken: "valid-token", expectedVisibleFields: []string{}, expectedHiddenFields: []string{}, token: "valid-token", expectedStatusCode: http.StatusOK, location: "/registry", testName: "Successful verification", verificationSuccess: true, verifyEmailPopulated: false},
 	}
 
 	for _, data := range testData {
@@ -358,12 +358,15 @@ func TestVerification(t *testing.T) {
 				t.Fatal("database connection failure! ", err)
 			}
 
-			err = test.CreateUser(ctx, db)
+			userInfo := test.UserInfo{
+				Email: data.email,
+			}
+			err = test.CreateUser(ctx, db, userInfo)
 			if err != nil {
 				t.Fatal("Error creating a person record to use for testing", err)
 			}
 
-			err = createToken(ctx, db, data.token, data.duration, data.attempts)
+			err = test.CreateToken(ctx, db, data.token, data.duration, data.attempts, userInfo)
 			if err != nil {
 				t.Fatal("Error creating a verification record to use for testing", err)
 			}
@@ -518,50 +521,5 @@ func TestVerification(t *testing.T) {
 		})
 
 	}
-
-}
-
-func createToken(
-	ctx context.Context,
-	db *sql.DB,
-	token string,
-	duration time.Duration,
-	attempts int,
-) error {
-
-	expires := time.Now().Add(duration).UTC()
-
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		log.Println("Error starting the create user transaction")
-		return fmt.Errorf("error starting transaction to write a test verification record: %v", err)
-	}
-
-	/*
-		Do the insertion and make sure it worked. We're going to t.Fatal() if this
-		fails, so I'm not going to worry about Rollback() calls erroring, the
-		database is going to be deleted anyhow
-	*/
-	if res, err := db.ExecContext(ctx, "INSERT INTO verification (email, token, token_expiration, attempts) VALUES ($1, $2, $3, $4)", test.ValidEmail, token, expires, attempts); err != nil {
-		log.Println("Error adding a new test verification record to the database.")
-		tx.Rollback()
-		return fmt.Errorf("error executing insert operation: %v", err)
-	} else if added, err := res.RowsAffected(); err != nil {
-		log.Println("Error getting the last inserted ID from the test person creation.")
-		tx.Rollback()
-		return fmt.Errorf("no rows inserted into the table: %v", err)
-	} else if added < 1 {
-		log.Println("No rows were added to the verification table!")
-		tx.Rollback()
-		return fmt.Errorf("did not complete insertion for test verification details: %v", err)
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	return nil
 
 }
