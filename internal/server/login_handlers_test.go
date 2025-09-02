@@ -118,47 +118,31 @@ func TestLoginEmailValidationForm(t *testing.T) {
 
 			}
 
-			pgData := test.ReadResult(res)
+			for _, elemID := range data.expectedVisibleFields {
 
-			for _, bType := range browsers {
+				locator := page.Locator("#" + elemID)
 
-				page, err := test.GetPage(bType)
+				if visible, err := locator.IsVisible(); !visible || err != nil {
+					t.Fatal("Could not find expected element", "#"+elemID, "in", bType.Name())
+				}
+
+			}
+
+			for _, elemID := range data.expectedHiddenFields {
+
+				locator := page.Locator("#" + elemID)
+				found, err := locator.Count()
 				if err != nil {
-					t.Fatal("Error getting a ", bType.Name(), "browser page!")
+					t.Fatal("Error trying to locate", "#"+elemID)
+				} else if found == 0 {
+					t.Fatal("Expected hidden element", "#"+elemID, "not found! Should be on page but hidden")
 				}
 
-				err = page.SetContent(string(pgData))
+				visible, err := locator.IsVisible()
 				if err != nil {
-					t.Fatal("Error loading up the page content!")
-				}
-
-				for _, elemID := range data.expectedVisibleFields {
-
-					locator := page.Locator("#" + elemID)
-
-					if visible, err := locator.IsVisible(); !visible || err != nil {
-						t.Fatal("Could not find expected element", "#"+elemID, "in", bType.Name())
-					}
-
-				}
-
-				for _, elemID := range data.expectedHiddenFields {
-
-					locator := page.Locator("#" + elemID)
-					found, err := locator.Count()
-					if err != nil {
-						t.Fatal("Error trying to locate", "#"+elemID)
-					} else if found == 0 {
-						t.Fatal("Expected hidden element", "#"+elemID, "not found! Should be on page but hidden")
-					}
-
-					visible, err := locator.IsVisible()
-					if err != nil {
-						t.Fatal("Error trying to checking visibility of", "#"+elemID)
-					} else if visible {
-						t.Fatal("Expected element", "#"+elemID, "to be hidden on the page")
-					}
-
+					t.Fatal("Error trying to checking visibility of", "#"+elemID)
+				} else if visible {
+					t.Fatal("Expected element", "#"+elemID, "to be hidden on the page")
 				}
 
 			}

@@ -9,12 +9,15 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
-	"github.com/playwright-community/playwright-go"
+	"github.com/chromedp/chromedp"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"golang.org/x/net/html"
 )
 
 // Stub for the Emailer interface so I can validate emailing in automated
@@ -30,36 +33,11 @@ const (
 	ValidEmail       = "hydrickgiftregistrytestuser@localhost.com"
 )
 
-var (
-	browsers []playwright.BrowserType
-)
-
 func (em *EmailMock) SendVerificationEmail(to []string, code string, getenv func(string) string) error {
 
 	em.Token = code
 	em.VerificationEmailSent = true
 	return nil
-
-}
-
-func BrowserList() ([]playwright.BrowserType, error) {
-
-	if len(browsers) == 0 {
-
-		pw, err := playwright.Run()
-		if err != nil {
-			log.Fatal("Error running Playwright!")
-		}
-
-		browsers = []playwright.BrowserType{
-			pw.Chromium,
-			pw.Firefox,
-			pw.WebKit,
-		}
-
-	}
-
-	return browsers, nil
 
 }
 
@@ -84,6 +62,22 @@ func BuildDBContainer(ctx context.Context, initScripts string, dbName string, db
 	}
 
 	return dbCont, dbURL, nil
+
+}
+
+func CheckElement(root html.Node, id string, visible bool) bool {
+
+	for node := range root.Descendants() {
+
+		/*
+			CASES:
+			1. NODE != THE ELEMENT WE WANT -> DEPTH-FIRST TO SEE IF IT'S A CHILD
+			2. NODE ID MATCHES -> CONFIRM VISIBILITY (PULL THAT INTO A HELPER FUNC)
+		*/
+
+	}
+
+	return false
 
 }
 
@@ -171,50 +165,5 @@ func FreePort() (port int) {
 	}
 
 	return
-
-}
-
-// Returns a page launched in the given browser type that can then be
-// populated for testing.
-func GetPage(bType playwright.BrowserType) (playwright.Page, error) {
-
-	browser, err := bType.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(true),
-	})
-	if err != nil {
-		log.Printf("Error launching browser! %v", err)
-		return nil, fmt.Errorf("error creating the browser: %v", err)
-	}
-
-	browseContext, err := browser.NewContext()
-	if err != nil {
-		log.Printf("Error building browser context! %v", err)
-		return nil, fmt.Errorf("error building the browser context: %v", err)
-	}
-
-	return browseContext.NewPage()
-
-}
-
-func ReadResult(res *http.Response) []byte {
-
-	pgData := make([]byte, 256)
-	readBytes := make([]byte, 256)
-	for {
-
-		numRead, err := res.Body.Read(readBytes)
-		pgData = append(pgData, readBytes[:numRead]...)
-		if err != nil {
-			/* We finished reading the response body */
-			if err == io.EOF {
-				break
-			} else {
-				log.Fatal("Error reading page content!", err)
-			}
-		}
-
-	}
-
-	return pgData
 
 }

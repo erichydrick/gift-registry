@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/chromedp/chromedp"
 	"github.com/playwright-community/playwright-go"
 )
 
@@ -29,7 +30,9 @@ var (
 // use in the methods and initializing a context.
 func TestMain(m *testing.M) {
 
-	ctx = context.Background()
+	var cancel context.CancelFunc
+	ctx, cancel = chromedp.NewContext(context.Background())
+	defer cancel()
 
 	/* Sets up a testing logger */
 	options := &slog.HandlerOptions{Level: slog.LevelDebug}
@@ -40,11 +43,6 @@ func TestMain(m *testing.M) {
 	err := playwright.Install()
 	if err != nil {
 		log.Fatal("Error installing Playwright dependencies! ", err)
-	}
-
-	browsers, err = test.BrowserList()
-	if err != nil {
-		log.Fatal("Error building browser list!", err)
 	}
 
 	exitCode := m.Run()

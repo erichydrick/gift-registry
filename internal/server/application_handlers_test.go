@@ -22,11 +22,6 @@ import (
 
 func TestAuthMiddleware(t *testing.T) {
 
-	browsers, err := test.BrowserList()
-	if err != nil {
-		t.Fatal("Error building browser list", err)
-	}
-
 	testData := []struct {
 		createSession  bool
 		elements       map[string]bool
