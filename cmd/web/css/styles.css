@@ -242,6 +242,10 @@ input::-webkit-inner-spin-button {
     color: var(--secondary-color);
 }
 
+.hidden {
+    display: none !important;
+}
+
 .left {
     float: left;
 }

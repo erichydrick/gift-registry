@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
+	"golang.org/x/net/html"
 
 	"gift-registry/internal/database"
 	"gift-registry/internal/server"
@@ -34,16 +35,46 @@ func init() {
 func TestLoginEmailValidationForm(t *testing.T) {
 
 	testData := []struct {
-		email                 string
-		expectedEmailSent     bool
-		expectedHiddenFields  []string
-		expectedStatusCode    int
-		expectedVisibleFields []string
-		testName              string
+		email              string
+		expectedEmailSent  bool
+		expectedFields     map[string]bool
+		expectedStatusCode int
+		testName           string
 	}{
-		{email: test.ValidEmail, expectedEmailSent: true, expectedHiddenFields: []string{"verify-email", "verify-code-error", "verify-error"}, expectedVisibleFields: []string{"verify-code"}, expectedStatusCode: 200, testName: "Valid email"},
-		{email: test.OutsideEmail, expectedEmailSent: false, expectedHiddenFields: []string{"verify-email", "verify-code-error", "verify-error"}, expectedVisibleFields: []string{"verify-code"}, expectedStatusCode: 200, testName: "Invalid user"},
-		{email: "no", expectedEmailSent: false, expectedHiddenFields: []string{"login-error"}, expectedVisibleFields: []string{"login-email-error", "login-email"}, expectedStatusCode: 200, testName: "Invalid email"},
+		{
+			email:             test.ValidEmail,
+			expectedEmailSent: true,
+			expectedFields: map[string]bool{
+				"verify-code":       true,
+				"verify-code-error": false,
+				"verify-email":      false,
+				"verify-error":      false},
+			expectedStatusCode: 200,
+			testName:           "Valid email",
+		},
+		{
+			email:             test.OutsideEmail,
+			expectedEmailSent: false,
+			expectedFields: map[string]bool{
+				"verify-code":       true,
+				"verify-code-error": false,
+				"verify-email":      false,
+				"verify-error":      false,
+			},
+			expectedStatusCode: 200,
+			testName:           "Invalid user",
+		},
+		{
+			email:             "no",
+			expectedEmailSent: false,
+			expectedFields: map[string]bool{
+				"login-email":       true,
+				"login-email-error": true,
+				"login-error":       false,
+			},
+			expectedStatusCode: 200,
+			testName:           "Invalid email",
+		},
 	}
 
 	for _, data := range testData {
@@ -118,33 +149,22 @@ func TestLoginEmailValidationForm(t *testing.T) {
 
 			}
 
-			for _, elemID := range data.expectedVisibleFields {
-
-				locator := page.Locator("#" + elemID)
-
-				if visible, err := locator.IsVisible(); !visible || err != nil {
-					t.Fatal("Could not find expected element", "#"+elemID, "in", bType.Name())
-				}
-
+			doc, err := html.Parse(res.Body)
+			if err != nil {
+				t.Fatal("error parsing reponse body")
 			}
 
-			for _, elemID := range data.expectedHiddenFields {
+			for id, visible := range data.expectedFields {
 
-				locator := page.Locator("#" + elemID)
-				found, err := locator.Count()
-				if err != nil {
-					t.Fatal("Error trying to locate", "#"+elemID)
-				} else if found == 0 {
-					t.Fatal("Expected hidden element", "#"+elemID, "not found! Should be on page but hidden")
+				if pageElem, ok := test.CheckElement(*doc, id); ok == false {
+
+					t.Fatal("Could not find element", id, "on the page")
+
+				} else if elemVis := test.ElementVisible(pageElem); elemVis != test.ElementVisible(pageElem) {
+
+					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
+
 				}
-
-				visible, err := locator.IsVisible()
-				if err != nil {
-					t.Fatal("Error trying to checking visibility of", "#"+elemID)
-				} else if visible {
-					t.Fatal("Expected element", "#"+elemID, "to be hidden on the page")
-				}
-
 			}
 
 			/*
@@ -175,13 +195,27 @@ func TestLoginForm(t *testing.T) {
 
 	testData := []struct {
 		expectedStatus   int
-		expectedElements []string
+		expectedElements map[string]bool
 		envOverrides     map[string]string
 		hiddenElements   []string
 		testName         string
 	}{
-		{expectedStatus: 200, expectedElements: []string{"application-header", "login-form", "login-email"}, hiddenElements: []string{"login-email-error", "login-error"}, testName: "Success"},
-		{expectedStatus: 500, envOverrides: map[string]string{"TEMPLATES_DIR": "."}, testName: "Bad Template"},
+		{
+			expectedStatus: 200,
+			expectedElements: map[string]bool{
+				"application-header": true,
+				"login-email":        true,
+				"login-email-error":  false,
+				"login-error":        false,
+				"login-form":         true,
+			},
+			testName: "Success",
+		},
+		{
+			expectedStatus: 500,
+			envOverrides:   map[string]string{"TEMPLATES_DIR": "."},
+			testName:       "Bad Template",
+		},
 	}
 
 	for _, data := range testData {
@@ -231,51 +265,42 @@ func TestLoginForm(t *testing.T) {
 			testServer := httptest.NewServer(appHandler)
 			defer testServer.Close()
 
-			for _, bType := range browsers {
-
-				page, err := test.GetPage(bType)
-				if err != nil {
-					t.Fatalf("Error creating new webpage object %v", err)
+			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/login", nil)
+			if err != nil {
+				t.Fatal("Error loading the login form page!", err)
+			}
+			res, err := http.DefaultClient.Do(req)
+			defer func() {
+				if res != nil && res.Body != nil {
+					res.Body.Close()
 				}
-				_, err = page.Evaluate("let htmx = window.htmx")
-				if err != nil {
-					t.Fatal("Error evaluating HTMX afterSettle!", err)
-				}
+			}()
+			if err != nil {
+				t.Fatal("Error reading the response from getting the login form!", err)
+			}
 
-				_, err = page.Goto(testServer.URL + "/login")
-				if err != nil {
-					t.Fatalf("Error opening the page %v", err)
-				}
+			if res.StatusCode != data.expectedStatus {
 
-				for _, elemID := range data.expectedElements {
+				t.Fatal("Expected a response status of", data.expectedStatus, "but got", res.StatusCode)
 
-					locator := page.Locator("#" + elemID)
+			}
 
-					if visible, err := locator.IsVisible(); !visible || err != nil {
-						t.Fatal("Could not find expected element", "#"+elemID, "in", bType.Name())
-					}
+			doc, err := html.Parse(res.Body)
+			if err != nil {
+				t.Fatal("error parsing reponse body")
+			}
 
-				}
+			for id, visible := range data.expectedElements {
 
-				for _, elemID := range data.hiddenElements {
+				if pageElem, ok := test.CheckElement(*doc, id); ok == false {
 
-					locator := page.Locator("#" + elemID)
-					found, err := locator.Count()
-					if err != nil {
-						t.Fatal("Error trying to locate", "#"+elemID)
-					} else if found == 0 {
-						t.Fatal("Expected hidden element", "#"+elemID, "not found! Should be on page but hidden")
-					}
+					t.Fatal("Could not find element", id, "on the page")
 
-					visible, err := locator.IsVisible()
-					if err != nil {
-						t.Fatal("Error trying to checking visibility of", "#"+elemID)
-					} else if visible {
-						t.Fatal("Expected element", "#"+elemID, "to be hidden on the page")
-					}
+				} else if elemVis := test.ElementVisible(pageElem); elemVis != test.ElementVisible(pageElem) {
+
+					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
 
 				}
-
 			}
 
 		})
@@ -287,25 +312,115 @@ func TestLoginForm(t *testing.T) {
 func TestVerification(t *testing.T) {
 
 	testData := []struct {
-		attempts              int
-		duration              time.Duration
-		email                 string
-		enteredToken          string
-		expectedVisibleFields []string
-		expectedHiddenFields  []string
-		expectedStatusCode    int
-		location              string
-		testName              string
-		token                 string
-		verificationSuccess   bool
-		verifyEmailPopulated  bool
+		attempts             int
+		duration             time.Duration
+		email                string
+		enteredToken         string
+		expectedFields       map[string]bool
+		expectedStatusCode   int
+		location             string
+		testName             string
+		token                string
+		verificationSuccess  bool
+		verifyEmailPopulated bool
 	}{
-		{attempts: 0, duration: -5 * time.Minute, email: test.ValidEmail, enteredToken: "expired-token", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "expired-token", expectedStatusCode: 200, testName: "Expired token", verificationSuccess: false, verifyEmailPopulated: false},
-		{attempts: server.MaxAttempts + 5, duration: 5 * time.Minute, email: test.ValidEmail, enteredToken: "thisiswrong", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed attempts exceeded", verificationSuccess: false, verifyEmailPopulated: false},
-		{attempts: server.MaxAttempts - 1, duration: 5 * time.Minute, email: test.ValidEmail, enteredToken: "thisiswrong", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed attempts at max", verificationSuccess: false, verifyEmailPopulated: false},
-		{attempts: 0, duration: 5 * time.Minute, email: test.ValidEmail, enteredToken: "thisiswrong", expectedVisibleFields: []string{"verify-form", "verify-error", "verify-code"}, expectedHiddenFields: []string{"verify-email"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed attempts more remaining", verificationSuccess: false, verifyEmailPopulated: true},
-		{attempts: 0, duration: 5 * time.Minute, email: test.OutsideEmail, enteredToken: "unentered-token", expectedVisibleFields: []string{"login-form", "login-email", "login-submit"}, expectedHiddenFields: []string{"login-email-error"}, token: "unentered-token", expectedStatusCode: 200, testName: "Failed invalid email", verificationSuccess: false, verifyEmailPopulated: false},
-		{attempts: 0, duration: 5 * time.Minute, email: test.ValidEmail, enteredToken: "valid-token", expectedVisibleFields: []string{}, expectedHiddenFields: []string{}, token: "valid-token", expectedStatusCode: http.StatusOK, location: "/registry", testName: "Successful verification", verificationSuccess: true, verifyEmailPopulated: false},
+		{
+			attempts:     0,
+			duration:     -5 * time.Minute,
+			email:        test.ValidEmail,
+			enteredToken: "expired-token",
+			expectedFields: map[string]bool{
+				"login-email":       true,
+				"login-email-error": true,
+				"login-form":        true,
+				"login-submit":      true,
+			},
+			expectedStatusCode:   200,
+			testName:             "Expired token",
+			token:                "expired-token",
+			verifyEmailPopulated: false,
+			verificationSuccess:  false,
+		},
+		{
+			attempts:     server.MaxAttempts + 5,
+			duration:     5 * time.Minute,
+			email:        test.ValidEmail,
+			enteredToken: "thisiswrong",
+			expectedFields: map[string]bool{
+				"login-email":       true,
+				"login-email-error": false,
+				"login-form":        true,
+				"login-submit":      true,
+			},
+			expectedStatusCode:   200,
+			token:                "unentered-token",
+			testName:             "Failed attempts exceeded",
+			verifyEmailPopulated: false,
+			verificationSuccess:  false,
+		},
+		{
+			attempts: server.MaxAttempts - 1, duration: 5 * time.Minute,
+			email:        test.ValidEmail,
+			enteredToken: "thisiswrong",
+			expectedFields: map[string]bool{
+				"login-email":       true,
+				"login-email-error": false,
+				"login-form":        true,
+				"login-submit":      true,
+			},
+			expectedStatusCode:   200,
+			testName:             "Failed attempts at max",
+			token:                "unentered-token",
+			verifyEmailPopulated: false,
+			verificationSuccess:  false,
+		},
+		{
+			attempts:     0,
+			duration:     5 * time.Minute,
+			email:        test.ValidEmail,
+			enteredToken: "thisiswrong",
+			expectedFields: map[string]bool{
+				"verify-code":  true,
+				"verify-email": false,
+				"verify-error": true,
+				"verify-form":  true,
+			},
+			expectedStatusCode:   200,
+			testName:             "Failed attempts more remaining",
+			token:                "unentered-token",
+			verifyEmailPopulated: true,
+			verificationSuccess:  false,
+		},
+		{
+			attempts:     0,
+			duration:     5 * time.Minute,
+			email:        test.OutsideEmail,
+			enteredToken: "unentered-token",
+			expectedFields: map[string]bool{
+				"login-email":       true,
+				"login-email-error": false,
+				"login-form":        true,
+				"login-submit":      true,
+			},
+			expectedStatusCode:   200,
+			testName:             "Failed invalid email",
+			token:                "unentered-token",
+			verifyEmailPopulated: false,
+			verificationSuccess:  false,
+		},
+		{
+			attempts:             0,
+			duration:             5 * time.Minute,
+			email:                test.ValidEmail,
+			enteredToken:         "valid-token",
+			expectedFields:       map[string]bool{},
+			expectedStatusCode:   http.StatusOK,
+			location:             "/registry",
+			testName:             "Successful verification",
+			token:                "valid-token",
+			verifyEmailPopulated: false,
+			verificationSuccess:  true,
+		},
 	}
 
 	for _, data := range testData {
@@ -371,132 +486,46 @@ func TestVerification(t *testing.T) {
 			}
 
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			res := httptest.NewRecorder()
-			appHandler.ServeHTTP(res, req)
+			res, err := http.DefaultClient.Do(req)
+			defer func() {
+				if res.Body != nil {
+					res.Body.Close()
+				}
+			}()
+			if err != nil {
+				t.Fatal("Error calling the request endpoint")
+			}
 
-			if res.Result().StatusCode != data.expectedStatusCode {
+			if res.StatusCode != data.expectedStatusCode {
 
-				t.Fatal("Expected a response status of", data.expectedStatusCode, "but got", res.Result().StatusCode)
+				t.Fatal("Expected a response status of", data.expectedStatusCode, "but got", res.StatusCode)
 
 			}
 
-			if res.Code == http.StatusSeeOther {
+			if res.StatusCode == http.StatusSeeOther {
 
-				if res.Result().Header.Get("Location") != data.location {
-					t.Fatal("Expected", data.location, "but redirected to", res.Result().Header.Get("Location"))
+				if res.Header.Get("Location") != data.location {
+					t.Fatal("Expected", data.location, "but redirected to", res.Header.Get("Location"))
 				}
 
 			}
 
-			for _, bType := range browsers {
+			doc, err := html.Parse(res.Body)
+			if err != nil {
+				t.Fatal("Error parsing the HTML response")
+			}
 
-				page, err := test.GetPage(bType)
-				if err != nil {
-					t.Fatal("Error getting a ", bType.Name(), "browser page!")
-				}
+			for id, visible := range data.expectedFields {
 
-				err = page.SetContent(res.Body.String())
-				if err != nil {
-					t.Fatal("Error loading up the page content!")
-				}
+				if pageElem, ok := test.CheckElement(*doc, id); ok == false {
 
-				/* Look for elements a user should be seeing */
-				for _, elemID := range data.expectedVisibleFields {
+					t.Fatal("Could not find element", id, "on the page")
 
-					locator := page.Locator("#" + elemID)
+				} else if elemVis := test.ElementVisible(pageElem); elemVis != test.ElementVisible(pageElem) {
 
-					if visible, err := locator.IsVisible(); !visible || err != nil {
-						t.Fatal("Could not find expected element", "#"+elemID, "in", bType.Name())
-					}
+					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
 
 				}
-
-				/* There are some elements that should be on the page, but hidden */
-				for _, elemID := range data.expectedHiddenFields {
-
-					locator := page.Locator("#" + elemID)
-					if found, err := locator.Count(); err != nil {
-						t.Fatal("Error trying to locate", "#"+elemID)
-					} else if found == 0 {
-						t.Fatal("Expected hidden element", "#"+elemID, "not found! Should be on page but hidden")
-					}
-
-					if visible, err := locator.IsVisible(); err != nil {
-						t.Fatal("Error trying to checking visibility of", "#"+elemID)
-					} else if visible {
-						t.Fatal("Expected element", "#"+elemID, "to be hidden on the page")
-					}
-
-				}
-
-				/* Verify we're on a valid verification form */
-				if data.verifyEmailPopulated {
-
-					locator := page.Locator("#verify-email")
-
-					if found, err := locator.Count(); err != nil {
-						t.Fatal("Error trying to locate the verify email field")
-					} else if found == 0 {
-						t.Fatal("Expected the verify email field to be present")
-					}
-
-					if value, err := locator.InputValue(); err != nil {
-						t.Fatal("Error confirming the verify email field to have a value")
-					} else if value != data.email {
-						t.Fatal("Expected the verify email field to have a value, even if it's hidden!")
-					}
-
-					if visible, err := locator.IsVisible(); err != nil {
-						t.Fatal("Error trying to checking visibility of the verify-email field")
-					} else if visible {
-						t.Fatal("Expected the verify email field to be hidden")
-					}
-
-					/* There should still be a record in the verification table */
-					if rows, err := db.Query("SELECT * FROM verification WHERE email = $1", data.email); err != nil {
-						t.Fatal("Error checking the verification table for the email", err)
-					} else if !rows.Next() {
-						t.Fatal("Expected a verification table record under email", data.email)
-					}
-
-				}
-
-				/* Check for a session record */
-				if data.verificationSuccess {
-
-					/*
-						There should now be a record in the session table.
-						No this isn't indexed, but there's 1 record in the table, so I don't care.
-					*/
-					if rows, err := db.Query("SELECT * FROM session WHERE email = $1", data.email); err != nil {
-						t.Fatal("Error checking the session table for the email", err)
-					} else if !rows.Next() {
-						t.Fatal("Expected a verification table record under email", data.email)
-					}
-
-					/*
-						Verify the session cookie exists
-					*/
-					validSessionCookie := false
-					var sessionCookie *http.Cookie
-					for _, cookie := range res.Result().Cookies() {
-						if cookie.Name != server.SessionCookie {
-							continue
-						}
-						/* Found the session cookie, check it out */
-						sessionCookie = cookie
-						validSessionCookie = true && cookie.HttpOnly && cookie.Secure
-						validSessionCookie = validSessionCookie && cookie.Value != ""
-						validSessionCookie = validSessionCookie && cookie.MaxAge > int(4*time.Minute.Seconds()) && cookie.MaxAge < int(5*time.Minute.Seconds())
-						break
-					}
-
-					if !validSessionCookie {
-						t.Fatalf("Expected a valid session cookie: %v", sessionCookie)
-					}
-
-				}
-
 			}
 
 		})

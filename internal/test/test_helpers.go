@@ -5,15 +5,12 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"net/http"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/chromedp/chromedp"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -65,19 +62,28 @@ func BuildDBContainer(ctx context.Context, initScripts string, dbName string, db
 
 }
 
-func CheckElement(root html.Node, id string, visible bool) bool {
+func CheckElement(root html.Node, id string) (html.Node, bool) {
 
+	/*
+		If this element has the ID we're looking for, return true.
+	*/
+	if slices.Contains(root.Attr, html.Attribute{Key: "id", Val: id}) {
+		return root, true
+	}
+
+	/*
+		Do a depth-first search of all this element's children
+		to see if any of them match the ID we're looking for.
+	*/
 	for node := range root.Descendants() {
 
-		/*
-			CASES:
-			1. NODE != THE ELEMENT WE WANT -> DEPTH-FIRST TO SEE IF IT'S A CHILD
-			2. NODE ID MATCHES -> CONFIRM VISIBILITY (PULL THAT INTO A HELPER FUNC)
-		*/
+		if _, ok := CheckElement(*node, id); ok {
+			return *node, true
+		}
 
 	}
 
-	return false
+	return html.Node{}, false
 
 }
 
@@ -148,6 +154,36 @@ func CreateUser(ctx context.Context, db *sql.DB) error {
 	}
 
 	return nil
+
+}
+
+func ElementVisible(node html.Node) bool {
+
+	for _, attr := range node.Attr {
+
+		/*
+			An element is visible if it does not have the hidden property and does not
+			have the "hidden" class. We don't care about any other attribute
+		*/
+		switch attr.Key {
+
+		/* The hidden property means the element is not visible */
+		case "hidden":
+			return false
+		case "class":
+			/* The "hidden" class will set the element's display to none */
+			if strings.Contains(attr.Val, "hidden") {
+				return false
+			}
+		default:
+			continue
+
+		}
+
+	}
+
+	/* Assume the element is visible by default */
+	return true
 
 }
 

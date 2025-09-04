@@ -2,13 +2,11 @@ package server_test
 
 import (
 	"context"
-	"gift-registry/internal/test"
 	"log"
 	"log/slog"
 	"os"
 	"testing"
 
-	"github.com/chromedp/chromedp"
 	"github.com/playwright-community/playwright-go"
 )
 
@@ -30,9 +28,7 @@ var (
 // use in the methods and initializing a context.
 func TestMain(m *testing.M) {
 
-	var cancel context.CancelFunc
-	ctx, cancel = chromedp.NewContext(context.Background())
-	defer cancel()
+	ctx = context.Background()
 
 	/* Sets up a testing logger */
 	options := &slog.HandlerOptions{Level: slog.LevelDebug}
