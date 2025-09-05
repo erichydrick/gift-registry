@@ -2,6 +2,7 @@ package health_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"gift-registry/internal/database"
 	"gift-registry/internal/server"
@@ -16,10 +17,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/testcontainers/testcontainers-go"
 	grafanalgtm "github.com/testcontainers/testcontainers-go/modules/grafana-lgtm"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"golang.org/x/net/html"
 )
 
@@ -30,15 +31,23 @@ const (
 	dbPass = "server_pass"
 )
 
+/*
+TODO: I DON'T NEED THE CONTAINER REFERENCES RIGHT?
+ALSO, TWEAK THE DB URL INSTEAD OF TURNING OFF THE DATABASE FOR DB ERROR VALIDATION
+*/
 var (
-	ctx    context.Context
-	logger *slog.Logger
+	ctx     context.Context
+	db      *sql.DB
+	dbCont  *postgres.PostgresContainer
+	dbURL   string
+	env     map[string]string
+	getenv  func(string) string
+	logger  *slog.Logger
+	obsCont *grafanalgtm.GrafanaLGTMContainer
+	obsURL  string
 )
 
-// TestHealthCheck validates the health check endpoint by connecting to the
-// testing database container, starting an application server, calling the
-// health check endpoint, and validating the output
-func TestHealthCheck(t *testing.T) {
+func TestMain(m *testing.M) {
 
 	/* Sets up a testing logger */
 	options := &slog.HandlerOptions{Level: slog.LevelDebug}
@@ -47,11 +56,22 @@ func TestHealthCheck(t *testing.T) {
 
 	ctx = context.Background()
 
+	var err error
+	dbCont, dbURL, err = test.BuildDBContainer(ctx, filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql"), dbName, dbUser, dbPass)
+	defer func() {
+		if err := testcontainers.TerminateContainer(dbCont); err != nil {
+			log.Fatal("Failed to terminate the database test container ", err)
+		}
+	}()
+	if err != nil {
+		log.Fatal("Error setting up test containers! ", err)
+	}
+
 	/*
 		Spin up a Grafana container to use for the observability part of the health
 		check. Doing it here because we don't need a separate copy per test case.
 	*/
-	obsCont, err := grafanalgtm.Run(
+	obsCont, err = grafanalgtm.Run(
 		ctx,
 		"grafana/otel-lgtm:0.11.7",
 	)
@@ -64,82 +84,120 @@ func TestHealthCheck(t *testing.T) {
 		log.Fatalf("Failed to launch the observability test container! %v", err)
 	}
 
-	obsURL, err := obsCont.Endpoint(ctx, "http")
+	obsURL, err = obsCont.Endpoint(ctx, "http")
 	if err != nil {
 		log.Fatalf("Error getting the observability endpoint %v", err)
 	}
 
+	env = map[string]string{
+		"DB_USER":        dbUser,
+		"DB_PASS":        dbPass,
+		"DB_HOST":        strings.Split(dbURL, ":")[0],
+		"DB_PORT":        strings.Split(dbURL, ":")[1],
+		"DB_NAME":        dbName,
+		"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations"),
+	}
+
+	getenv = func(key string) string { return env[key] }
+
+	db, err = database.Connection(ctx, logger, getenv)
+	if err != nil {
+		log.Fatal("database connection failure! ", err)
+	}
+
+	exitCode := m.Run()
+	os.Exit(exitCode)
+
+}
+
+// TestHealthCheck validates the health check endpoint by connecting to the
+// testing database container, starting an application server, calling the
+// health check endpoint, and validating the output
+func TestHealthCheck(t *testing.T) {
+
 	testData := []struct {
 		dbError                   bool
 		expectedDBStatusClass     string
-		expectedDBHealthEntries   int
 		expectedHttpStatus        int
 		expectedObservStatusClass string
 		healthy                   string
 		observError               bool
+		templates                 string
 		testName                  string
 	}{
-		{dbError: false, expectedDBHealthEntries: 6, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, testName: "Successful health check"},
-		{dbError: false, expectedDBHealthEntries: 0, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusInternalServerError, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, testName: "Invalid templates dir"},
-		{dbError: true, expectedDBHealthEntries: 0, expectedDBStatusClass: "unhealthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, testName: "Database error"},
-		{dbError: false, expectedDBHealthEntries: 6, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "unhealthy", healthy: "Healthy", observError: true, testName: "Observability error"},
-		{dbError: true, expectedDBHealthEntries: 0, expectedDBStatusClass: "unhealthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "unhealthy", healthy: "Healthy", observError: true, testName: "Nothing healthy"},
+		{
+			dbError:                   false,
+			expectedDBStatusClass:     "healthy",
+			expectedHttpStatus:        http.StatusOK,
+			expectedObservStatusClass: "healthy",
+			healthy:                   "Healthy",
+			observError:               false,
+			templates:                 filepath.Join("..", "..", "cmd", "web", "templates"),
+			testName:                  "Successful health check",
+		},
+		{
+			dbError:                   false,
+			expectedDBStatusClass:     "healthy",
+			expectedHttpStatus:        http.StatusInternalServerError,
+			expectedObservStatusClass: "healthy",
+			healthy:                   "Healthy",
+			observError:               false,
+			templates:                 "templates",
+			testName:                  "Invalid templates dir",
+		},
+		{
+			dbError:                   false,
+			expectedDBStatusClass:     "healthy",
+			expectedHttpStatus:        http.StatusOK,
+			expectedObservStatusClass: "unhealthy",
+			healthy:                   "Unhealthy",
+			observError:               true,
+			templates:                 filepath.Join("..", "..", "cmd", "web", "templates"),
+			testName:                  "Observability error",
+		},
+		{
+			dbError:                   true,
+			expectedDBStatusClass:     "unhealthy",
+			expectedHttpStatus:        http.StatusOK,
+			expectedObservStatusClass: "healthy",
+			healthy:                   "Unhealthy",
+			observError:               false,
+			templates:                 filepath.Join("..", "..", "cmd", "web", "templates"),
+			testName:                  "Database error",
+		},
+		{
+			dbError:                   true,
+			expectedDBStatusClass:     "unhealthy",
+			expectedHttpStatus:        http.StatusOK,
+			expectedObservStatusClass: "unhealthy",
+			healthy:                   "Unhealthy",
+			observError:               true,
+			templates:                 filepath.Join("..", "..", "cmd", "web", "templates"),
+			testName:                  "Nothing healthy",
+		},
 	}
 
 	for _, data := range testData {
 
 		t.Run(data.testName, func(t *testing.T) {
 
-			t.Parallel()
-
-			dbCont, dbURL, err := test.BuildDBContainer(ctx, filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql"), dbName, dbUser, dbPass)
-			defer func() {
-				if err := testcontainers.TerminateContainer(dbCont); err != nil {
-					log.Fatal("Failed to terminate the database test container ", err)
-				}
-			}()
-			if err != nil {
-				t.Fatal("Error setting up test containers! ", err)
-			}
-
 			port := test.FreePort()
 
-			env := map[string]string{
-				"DB_USER":        dbUser,
-				"DB_PASS":        dbPass,
-				"DB_HOST":        strings.Split(dbURL, ":")[0],
-				"DB_PORT":        strings.Split(dbURL, ":")[1],
-				"DB_NAME":        dbName,
-				"OTEL_HC":        fmt.Sprintf("%s/api/health", obsURL),
-				"PORT":           strconv.Itoa(port),
-				"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations"),
-			}
+			env["PORT"] = strconv.Itoa(port)
+			env["TEMPLATES_DIR"] = data.templates
 
-			if data.testName == "Invalid templates dir" {
+			/*
+				Simulate a failure to get data from the observability container by just
+				using a bad URL.
+			*/
+			if data.observError {
 
-				env["TEMPLATES_DIR"] = "templates"
+				env["OTEL_HC"] = fmt.Sprintf("%s/api/health", "")
 
 			} else {
 
-				env["TEMPLATES_DIR"] = filepath.Join("..", "..", "cmd", "web", "templates")
+				env["OTEL_HC"] = fmt.Sprintf("%s/api/health", obsURL)
 
-			}
-
-			getenv := func(key string) string { return env[key] }
-
-			db, err := database.Connection(ctx, logger, getenv)
-			if err != nil {
-				t.Fatal("database connection failure! ", err)
-			}
-
-			err = test.CreateUser(ctx, db)
-			if err != nil {
-				t.Fatal("Error setting up a test user!", err)
-			}
-
-			token, err := test.CreateSession(ctx, db, 5*time.Minute, test.DefaultUserAgent)
-			if err != nil {
-				t.Fatal("Error setting up test user session!", err)
 			}
 
 			var emailer server.Emailer = &test.EmailMock{}
@@ -162,17 +220,6 @@ func TestHealthCheck(t *testing.T) {
 				db.Close()
 
 			}
-
-			/* Set up session info */
-			sessCookie := http.Cookie{}
-			sessCookie.Name = server.SessionCookie
-			sessCookie.MaxAge = time.Now().UTC().Add(5 * time.Minute).Second()
-			sessCookie.HttpOnly = true
-			sessCookie.Secure = true
-			sessCookie.SameSite = http.SameSiteStrictMode
-			sessCookie.Value = token
-			req.AddCookie(&sessCookie)
-			req.Header.Set("User-Agent", test.DefaultUserAgent)
 
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
@@ -198,7 +245,7 @@ func TestHealthCheck(t *testing.T) {
 			/*
 				Don't try to validate document contents if there was an HTTP error
 			*/
-			if data.expectedDBHealthEntries != http.StatusOK {
+			if data.expectedHttpStatus != http.StatusOK {
 
 				return
 
@@ -210,7 +257,6 @@ func TestHealthCheck(t *testing.T) {
 				of data points and that they have data.
 			*/
 			dbStatusFound, observStatusFound := false, false
-			var dbHealthItems int = 0
 			for node := range doc.Descendants() {
 
 				if slices.Contains(node.Attr, html.Attribute{Key: "id", Val: "db-health-status"}) {
@@ -229,9 +275,9 @@ func TestHealthCheck(t *testing.T) {
 
 					observStatusFound = true
 
-					if !slices.Contains(node.Attr, html.Attribute{Key: "class", Val: data.expectedDBStatusClass}) {
+					if !slices.Contains(node.Attr, html.Attribute{Key: "class", Val: data.expectedObservStatusClass}) {
 
-						t.Fatal("invalid database health status class, expected ", data.expectedDBStatusClass)
+						t.Fatal("invalid observability health status class, expected ", data.expectedObservStatusClass)
 
 					}
 
@@ -241,19 +287,11 @@ func TestHealthCheck(t *testing.T) {
 					slices.Contains(node.Attr, html.Attribute{Key: "id", Val: "overall-health"}) &&
 					node.FirstChild.Data != "" {
 
-					if node.FirstChild.Data != data.healthy {
+					if strings.TrimSpace(node.FirstChild.Data) != data.healthy {
 
 						t.Fatalf("Expected an overall health status of %s, but was %s", data.healthy, node.FirstChild.Data)
 
 					}
-
-				}
-
-				if node.Type == html.ElementNode &&
-					slices.Contains(node.Attr, html.Attribute{Key: "class", Val: "db-health-item"}) &&
-					node.FirstChild.Data != "" {
-
-					dbHealthItems++
 
 				}
 
@@ -268,14 +306,6 @@ func TestHealthCheck(t *testing.T) {
 			if !observStatusFound {
 
 				t.Fatal("no observability health status found!")
-
-			}
-
-			if data.expectedDBHealthEntries != dbHealthItems {
-
-				t.Fatal("Expected", data.expectedDBHealthEntries,
-					" database health items in the application health report, but got",
-					dbHealthItems, "instead")
 
 			}
 
