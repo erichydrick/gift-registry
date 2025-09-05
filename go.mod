@@ -20,7 +20,6 @@ require (
 )
 
 require (
-	github.com/playwright-community/playwright-go v0.5200.0
 	github.com/testcontainers/testcontainers-go/modules/grafana-lgtm v0.37.0
 )
 

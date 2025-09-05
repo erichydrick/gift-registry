@@ -2,12 +2,9 @@ package server_test
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"os"
 	"testing"
-
-	"github.com/playwright-community/playwright-go"
 )
 
 // Connection details for the test database
@@ -19,9 +16,8 @@ const (
 
 // Test-specific values
 var (
-	browsers []playwright.BrowserType
-	ctx      context.Context
-	logger   *slog.Logger
+	ctx    context.Context
+	logger *slog.Logger
 )
 
 // TestMain sets up the application tests by initializing a logger object to
@@ -34,12 +30,6 @@ func TestMain(m *testing.M) {
 	options := &slog.HandlerOptions{Level: slog.LevelDebug}
 	handler := slog.NewTextHandler(os.Stderr, options)
 	logger = slog.New(handler)
-
-	/* Install playwright dependencies */
-	err := playwright.Install()
-	if err != nil {
-		log.Fatal("Error installing Playwright dependencies! ", err)
-	}
 
 	exitCode := m.Run()
 	os.Exit(exitCode)

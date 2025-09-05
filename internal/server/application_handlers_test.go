@@ -201,31 +201,22 @@ func TestAuthMiddleware(t *testing.T) {
 				t.Fatal("Expected a status of ", data.expectedStatus, "but got", res.StatusCode)
 			}
 
-			pgData := test.ReadResult(res)
-			for _, bType := range browsers {
+			doc, err := html.Parse(res.Body)
+			if err != nil {
+				t.Fatal("Error parsing the HTML response", err)
+			}
 
-				page, err := test.GetPage(bType)
-				if err != nil {
-					t.Fatal("Error getting a ", bType.Name(), "browser page!")
-				}
+			for id, visible := range data.elements {
 
-				err = page.SetContent(string(pgData))
-				if err != nil {
-					t.Fatal("Error loading up the page content!")
-				}
+				if pageElem, ok := test.CheckElement(*doc, id); ok == false {
 
-				for elemID, visible := range data.elements {
+					t.Fatal("Could not find element", id, "on the page")
 
-					locator := page.Locator("#" + elemID)
+				} else if elemVis := test.ElementVisible(pageElem); elemVis != test.ElementVisible(pageElem) {
 
-					if elemVis, err := locator.IsVisible(); err != nil {
-						t.Fatal("Error confirming element and its visibility", err)
-					} else if elemVis != visible {
-						t.Fatal("Expected element #", elemID, "to have visibility of ", visible, "but it was", elemVis)
-					}
+					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
 
 				}
-
 			}
 
 		})
