@@ -1,22 +1,10 @@
 package server
 
 import (
-	"fmt"
 	"gift-registry/internal/util"
 	"html/template"
 	"log/slog"
 	"net/http"
-
-	"go.opentelemetry.io/otel"
-)
-
-const (
-	name = "net.hydrick.gift-registry/server"
-)
-
-var (
-	meter  = otel.Meter(name)
-	tracer = otel.Tracer(name)
 )
 
 // Returns the landing page for the application
@@ -24,10 +12,7 @@ func IndexHandler(svr *util.ServerUtils) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
-		ctx, span := tracer.Start(req.Context(), "index")
-		defer span.End()
-
-		svr.Logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s", req.URL.Path))
+		ctx := req.Context()
 
 		dir := svr.Getenv("TEMPLATES_DIR")
 		tmpl, tmplErr := template.ParseFiles(dir + "/index.html")

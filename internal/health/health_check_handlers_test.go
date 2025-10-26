@@ -2,6 +2,7 @@ package health_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"gift-registry/internal/database"
 	"gift-registry/internal/server"
@@ -19,9 +20,13 @@ import (
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
-	grafanalgtm "github.com/testcontainers/testcontainers-go/modules/grafana-lgtm"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"golang.org/x/net/html"
 )
+
+type testDB struct {
+	db *sql.DB
+}
 
 // Connection details for the test database
 const (
@@ -32,13 +37,18 @@ const (
 
 var (
 	ctx    context.Context
+	db     database.Database
+	dbURL  string
+	env    map[string]string
+	getenv func(string) string
 	logger *slog.Logger
+	port   int
+	start  time.Time
 )
 
-// TestHealthCheck validates the health check endpoint by connecting to the
-// testing database container, starting an application server, calling the
-// health check endpoint, and validating the output
-func TestHealthCheck(t *testing.T) {
+func TestMain(m *testing.M) {
+
+	start = time.Now().Local()
 
 	/* Sets up a testing logger */
 	options := &slog.HandlerOptions{Level: slog.LevelDebug}
@@ -47,43 +57,69 @@ func TestHealthCheck(t *testing.T) {
 
 	ctx = context.Background()
 
-	/*
-		Spin up a Grafana container to use for the observability part of the health
-		check. Doing it here because we don't need a separate copy per test case.
-	*/
-	obsCont, err := grafanalgtm.Run(
-		ctx,
-		"grafana/otel-lgtm:0.11.7",
-	)
+	var dbCont *postgres.PostgresContainer
+	var err error
+
+	dbCont, dbURL, err = test.BuildDBContainer(ctx, filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql"), dbName, dbUser, dbPass)
 	defer func() {
-		if err := testcontainers.TerminateContainer(obsCont); err != nil {
-			log.Fatal("Failed to terminate the observability test container ", err)
+		if err := testcontainers.TerminateContainer(dbCont); err != nil {
+			log.Fatal("Failed to terminate the database test container ", err)
 		}
 	}()
 	if err != nil {
-		log.Fatalf("Failed to launch the observability test container! %v", err)
+		log.Fatal("Error setting up test containers! ", err)
 	}
 
-	obsURL, err := obsCont.Endpoint(ctx, "http")
-	if err != nil {
-		log.Fatalf("Error getting the observability endpoint %v", err)
+	port = test.FreePort()
+
+	env = map[string]string{
+		"DB_USER":        dbUser,
+		"DB_PASS":        dbPass,
+		"DB_HOST":        strings.Split(dbURL, ":")[0],
+		"DB_PORT":        strings.Split(dbURL, ":")[1],
+		"DB_NAME":        dbName,
+		"PORT":           strconv.Itoa(port),
+		"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations"),
+		"TEMPLATES_DIR":  filepath.Join("..", "..", "cmd", "web", "templates"),
 	}
+	getenv = func(key string) string { return env[key] }
+
+	db, err = database.Connection(ctx, logger, func(key string) string { return env[key] })
+	if err != nil {
+		log.Fatal("database connection failure! ", err)
+	}
+
+	exitCode := m.Run()
+	os.Exit(exitCode)
+
+}
+
+// TestHealthCheck validates the health check endpoint by connecting to the
+// testing database container, starting an application server, calling the
+// health check endpoint, and validating the output
+func TestHealthCheck(t *testing.T) {
 
 	testData := []struct {
-		dbError                   bool
-		expectedDBStatusClass     string
-		expectedDBHealthEntries   int
-		expectedHttpStatus        int
-		expectedObservStatusClass string
-		healthy                   string
-		observError               bool
-		testName                  string
+		dbError               bool
+		expectedDBStatusClass string
+		expectedHttpStatus    int
+		healthy               string
+		testName              string
 	}{
-		{dbError: false, expectedDBHealthEntries: 6, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, testName: "Successful health check"},
-		{dbError: false, expectedDBHealthEntries: 0, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusInternalServerError, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, testName: "Invalid templates dir"},
-		{dbError: true, expectedDBHealthEntries: 0, expectedDBStatusClass: "unhealthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "healthy", healthy: "Healthy", observError: false, testName: "Database error"},
-		{dbError: false, expectedDBHealthEntries: 6, expectedDBStatusClass: "healthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "unhealthy", healthy: "Healthy", observError: true, testName: "Observability error"},
-		{dbError: true, expectedDBHealthEntries: 0, expectedDBStatusClass: "unhealthy", expectedHttpStatus: http.StatusOK, expectedObservStatusClass: "unhealthy", healthy: "Healthy", observError: true, testName: "Nothing healthy"},
+		{
+			dbError:               false,
+			expectedDBStatusClass: "healthy",
+			expectedHttpStatus:    http.StatusOK,
+			healthy:               "Healthy",
+			testName:              "Successful health check",
+		},
+		{
+			dbError:               true,
+			expectedDBStatusClass: "unhealthy",
+			expectedHttpStatus:    http.StatusOK,
+			healthy:               "Unhealthy",
+			testName:              "Database error",
+		},
 	}
 
 	for _, data := range testData {
@@ -92,58 +128,30 @@ func TestHealthCheck(t *testing.T) {
 
 			t.Parallel()
 
-			dbCont, dbURL, err := test.BuildDBContainer(ctx, filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql"), dbName, dbUser, dbPass)
-			defer func() {
-				if err := testcontainers.TerminateContainer(dbCont); err != nil {
-					log.Fatal("Failed to terminate the database test container ", err)
+			/*
+				When we need to simulate a database error, we'll close the connection.
+				Because I want to run these tests in parallel, I can't close the same
+				connection the healthy database tests use, so create a duplicate that
+				I'll close instead. For healthy database tests, use the existing
+				connection reference.
+			*/
+			var testDB database.Database
+			var err error
+			if data.dbError {
+
+				testDB, err = throwawayDB()
+				if err != nil {
+					t.Fatal("Error setting up a throwaway database connection for testing a database failure!", err)
 				}
-			}()
-			if err != nil {
-				t.Fatal("Error setting up test containers! ", err)
-			}
-
-			port := test.FreePort()
-
-			env := map[string]string{
-				"DB_USER":        dbUser,
-				"DB_PASS":        dbPass,
-				"DB_HOST":        strings.Split(dbURL, ":")[0],
-				"DB_PORT":        strings.Split(dbURL, ":")[1],
-				"DB_NAME":        dbName,
-				"OTEL_HC":        fmt.Sprintf("%s/api/health", obsURL),
-				"PORT":           strconv.Itoa(port),
-				"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations"),
-			}
-
-			if data.testName == "Invalid templates dir" {
-
-				env["TEMPLATES_DIR"] = "templates"
 
 			} else {
 
-				env["TEMPLATES_DIR"] = filepath.Join("..", "..", "cmd", "web", "templates")
+				testDB = db
 
-			}
-
-			getenv := func(key string) string { return env[key] }
-
-			db, err := database.Connection(ctx, logger, getenv)
-			if err != nil {
-				t.Fatal("database connection failure! ", err)
-			}
-
-			err = test.CreateUser(ctx, db)
-			if err != nil {
-				t.Fatal("Error setting up a test user!", err)
-			}
-
-			token, err := test.CreateSession(ctx, db, 5*time.Minute, test.DefaultUserAgent)
-			if err != nil {
-				t.Fatal("Error setting up test user session!", err)
 			}
 
 			var emailer server.Emailer = &test.EmailMock{}
-			appHandler, err := server.NewServer(getenv, db, logger, emailer)
+			appHandler, err := server.NewServer(getenv, testDB, logger, emailer)
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}
@@ -159,20 +167,9 @@ func TestHealthCheck(t *testing.T) {
 			/* Fake a database error by just closing the databse (if applicable) */
 			if data.dbError {
 
-				db.Close()
+				testDB.Close()
 
 			}
-
-			/* Set up session info */
-			sessCookie := http.Cookie{}
-			sessCookie.Name = server.SessionCookie
-			sessCookie.MaxAge = time.Now().UTC().Add(5 * time.Minute).Second()
-			sessCookie.HttpOnly = true
-			sessCookie.Secure = true
-			sessCookie.SameSite = http.SameSiteStrictMode
-			sessCookie.Value = token
-			req.AddCookie(&sessCookie)
-			req.Header.Set("User-Agent", test.DefaultUserAgent)
 
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
@@ -198,7 +195,7 @@ func TestHealthCheck(t *testing.T) {
 			/*
 				Don't try to validate document contents if there was an HTTP error
 			*/
-			if data.expectedDBHealthEntries != http.StatusOK {
+			if data.expectedHttpStatus != http.StatusOK {
 
 				return
 
@@ -209,8 +206,7 @@ func TestHealthCheck(t *testing.T) {
 				they won't be reliable), I just care that I'm picking up the correct number
 				of data points and that they have data.
 			*/
-			dbStatusFound, observStatusFound := false, false
-			var dbHealthItems int = 0
+			dbStatusFound := false
 			for node := range doc.Descendants() {
 
 				if slices.Contains(node.Attr, html.Attribute{Key: "id", Val: "db-health-status"}) {
@@ -225,35 +221,15 @@ func TestHealthCheck(t *testing.T) {
 
 				}
 
-				if slices.Contains(node.Attr, html.Attribute{Key: "id", Val: "observ-health-status"}) {
-
-					observStatusFound = true
-
-					if !slices.Contains(node.Attr, html.Attribute{Key: "class", Val: data.expectedDBStatusClass}) {
-
-						t.Fatal("invalid database health status class, expected ", data.expectedDBStatusClass)
-
-					}
-
-				}
-
 				if node.Type == html.ElementNode &&
 					slices.Contains(node.Attr, html.Attribute{Key: "id", Val: "overall-health"}) &&
 					node.FirstChild.Data != "" {
 
-					if node.FirstChild.Data != data.healthy {
+					if strings.TrimSpace(node.FirstChild.Data) != data.healthy {
 
 						t.Fatalf("Expected an overall health status of %s, but was %s", data.healthy, node.FirstChild.Data)
 
 					}
-
-				}
-
-				if node.Type == html.ElementNode &&
-					slices.Contains(node.Attr, html.Attribute{Key: "class", Val: "db-health-item"}) &&
-					node.FirstChild.Data != "" {
-
-					dbHealthItems++
 
 				}
 
@@ -265,22 +241,139 @@ func TestHealthCheck(t *testing.T) {
 
 			}
 
-			if !observStatusFound {
+		})
 
-				t.Fatal("no observability health status found!")
+	}
 
+}
+
+func throwawayDB() (database.Database, error) {
+
+	url := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s?sslmode=disable&timezone=UTC",
+		dbUser,
+		dbPass,
+		strings.Split(dbURL, ":")[0],
+		strings.Split(dbURL, ":")[1],
+		dbName,
+	)
+
+	conn, err := sql.Open("postgres", url)
+	if err != nil {
+		return nil, fmt.Errorf("error opening a throwaway database connection: %v", err)
+	}
+
+	if err = conn.Ping(); err != nil {
+		return nil, fmt.Errorf("error pinging the throwaway database connection: %v", err)
+	}
+
+	return testDB{db: conn}, nil
+
+}
+
+// TestHealthCheck validates the health check endpoint by connecting to the
+// testing database container, starting an application server, calling the
+// health check endpoint, and validating the output
+func TestHealthCheckInvalidTemplate(t *testing.T) {
+
+	env = map[string]string{
+		"DB_USER":        dbUser,
+		"DB_PASS":        dbPass,
+		"DB_HOST":        strings.Split(dbURL, ":")[0],
+		"DB_PORT":        strings.Split(dbURL, ":")[1],
+		"DB_NAME":        dbName,
+		"PORT":           strconv.Itoa(port),
+		"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations"),
+		"TEMPLATES_DIR":  "templates",
+	}
+	getenv = func(key string) string { return env[key] }
+
+	testData := []struct {
+		dbError               bool
+		expectedDBStatusClass string
+		expectedHttpStatus    int
+		healthy               string
+		templates             string
+		testName              string
+	}{
+		{
+			dbError:               false,
+			expectedDBStatusClass: "healthy",
+			expectedHttpStatus:    http.StatusInternalServerError,
+			healthy:               "Healthy",
+			templates:             "templates",
+			testName:              "Invalid templates dir",
+		},
+	}
+
+	for _, data := range testData {
+
+		t.Run(data.testName, func(t *testing.T) {
+
+			t.Parallel()
+
+			var emailer server.Emailer = &test.EmailMock{}
+			appHandler, err := server.NewServer(getenv, db, logger, emailer)
+			if err != nil {
+				t.Fatal("error setting up the test handler", err)
 			}
 
-			if data.expectedDBHealthEntries != dbHealthItems {
+			testServer := httptest.NewServer(appHandler)
+			defer testServer.Close()
 
-				t.Fatal("Expected", data.expectedDBHealthEntries,
-					" database health items in the application health report, but got",
-					dbHealthItems, "instead")
+			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/health", nil)
+			if err != nil {
+				t.Fatal("error building health check request", err)
+			}
+
+			res, err := http.DefaultClient.Do(req)
+			defer func() {
+				if res != nil && res.Body != nil {
+					res.Body.Close()
+				}
+			}()
+			if err != nil {
+				logger.Error(fmt.Sprintf("Server call failed %v", err))
+			}
+
+			if res.StatusCode != data.expectedHttpStatus {
+
+				t.Fatal("Expected a ", data.expectedHttpStatus, "status, but got a ", res.StatusCode, "response")
 
 			}
 
 		})
 
 	}
+
+}
+
+func (db testDB) Close() error {
+
+	return db.db.Close()
+
+}
+
+func (db testDB) Execute(ctx context.Context, statement string, params ...any) (sql.Result, error) {
+
+	return nil, sql.ErrNoRows
+
+}
+
+func (db testDB) Ping(ctx context.Context) error {
+
+	return db.db.Ping()
+
+}
+
+func (db testDB) Query(ctx context.Context, query string, params ...any) (*sql.Rows, error) {
+
+	return nil, sql.ErrNoRows
+
+}
+
+func (db testDB) QueryRow(ctx context.Context, query string, params ...any) *sql.Row {
+
+	return nil
 
 }

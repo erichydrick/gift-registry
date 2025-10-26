@@ -2,13 +2,10 @@ package health
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"fmt"
 	"gift-registry/internal/util"
 	"log/slog"
 	"net/http"
-	"strings"
 	"text/template"
 	"time"
 
@@ -22,9 +19,8 @@ const (
 )
 
 type healthStatus struct {
-	DBHealth     healthInfo
-	Healthy      bool
-	ObservHealth healthInfo
+	DBHealth healthInfo
+	Healthy  bool
 }
 
 type healthInfo struct {
@@ -60,24 +56,16 @@ func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 		ctx, span := tracer.Start(req.Context(), "health")
 		defer span.End()
 
-		dbStatus, err := dbHealth(ctx, svr.DB)
+		dbStatus, err := dbHealth(ctx, svr)
 		svr.Logger.DebugContext(ctx, "DB status info obtained", slog.Any("statusObj", dbStatus))
 		if err != nil {
 			svr.Logger.ErrorContext(ctx, "Error getting database health data", slog.String("errorMessage", err.Error()))
 			dbStatus.Error = err.Error()
 		}
 
-		observStatus, err := observHealth(svr.Getenv, svr.Logger)
-		svr.Logger.DebugContext(ctx, "Observability health info obtained", slog.Any("statusObj", observStatus))
-		if err != nil {
-			svr.Logger.ErrorContext(ctx, "Error getting the observability health data", slog.String("errorMessage", err.Error()))
-			observStatus.Error = err.Error()
-		}
-
 		status := healthStatus{
-			DBHealth:     dbStatus,
-			Healthy:      dbStatus.Healthy && observStatus.Healthy,
-			ObservHealth: observStatus,
+			DBHealth: dbStatus,
+			Healthy:  dbStatus.Healthy,
 		}
 
 		defer func() {
@@ -88,11 +76,13 @@ func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 		}()
 
 		tmpl, tmplErr := template.ParseFiles(svr.Getenv("TEMPLATES_DIR") + "/health.html")
+		svr.Logger.DebugContext(ctx, "Where are the templates?",
+			slog.String("templatesDir:", svr.Getenv("TEMPLATES_DIR")),
+		)
 
 		healthCheckCtr.Add(ctx, 1, metric.WithAttributes(
 			attribute.Bool("healthy", status.Healthy),
 			attribute.Bool("dbHealthy", status.DBHealth.Healthy),
-			attribute.Bool("observHealthy", status.ObservHealth.Healthy),
 		))
 
 		span.SetAttributes(
@@ -105,9 +95,7 @@ func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 			fmt.Sprintf("Finished the operation %s", req.URL.Path),
 			slog.Bool("healthy", status.Healthy),
 			slog.Bool("dbHealthy", status.DBHealth.Healthy),
-			slog.Bool("observHealthy", status.ObservHealth.Healthy),
 			slog.String("dbError", status.DBHealth.Error),
-			slog.String("observError", status.ObservHealth.Error),
 		)
 
 		if tmplErr != nil {
@@ -138,7 +126,7 @@ func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 
 }
 
-func dbHealth(ctx context.Context, db *sql.DB) (healthInfo, error) {
+func dbHealth(ctx context.Context, svr *util.ServerUtils) (healthInfo, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
 	defer cancel()
@@ -148,7 +136,7 @@ func dbHealth(ctx context.Context, db *sql.DB) (healthInfo, error) {
 	}
 
 	/* Ping the database */
-	err := db.PingContext(ctx)
+	err := svr.DB.Ping(ctx)
 	if err != nil {
 		stats.Healthy = false
 		stats.Error = fmt.Sprintf("db down: %v", err)
@@ -159,34 +147,5 @@ func dbHealth(ctx context.Context, db *sql.DB) (healthInfo, error) {
 	stats.Healthy = true
 
 	return stats, nil
-
-}
-
-// Hits the health check endpoint of my obersvability tool and confirms it's up
-// Returns a struct with the status and any other details I want to include
-func observHealth(getenv func(string) string, logger *slog.Logger) (healthInfo, error) {
-
-	observHealth := healthInfo{
-		Healthy: false,
-	}
-
-	res, err := http.Get(getenv("OTEL_HC"))
-	if err != nil {
-		return observHealth, fmt.Errorf("error reading the observability health check endpoint: %s", err.Error())
-	}
-	defer res.Body.Close()
-
-	jsonData := make(map[string]any)
-	err = json.NewDecoder(res.Body).Decode(&jsonData)
-	if err != nil {
-		return observHealth, fmt.Errorf("error reading the observability health status: %s", err.Error())
-	}
-
-	/*
-		The response appears to be just a field indicating if the observability tool
-		can connect to its datastore, so we'll look that up and use it.
-	*/
-	observHealth.Healthy = strings.ToLower(jsonData["database"].(string)) == "ok"
-	return observHealth, nil
 
 }

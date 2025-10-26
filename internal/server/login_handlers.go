@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"fmt"
+	"gift-registry/internal/middleware"
 	"gift-registry/internal/util"
 	"log/slog"
 	"net/http"
@@ -14,8 +15,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
 )
 
 type Submitter interface {
@@ -50,45 +49,34 @@ type verificationFormErrors struct {
 
 type verificationRecord struct {
 	attempts     int
-	email        string
+	personID     int64
 	token        string
 	tokenExpires time.Time
 }
 
 const (
-	LoginFailed   = "Login process failed. Please try again"
-	MaxAttempts   = 3
-	SessionCookie = "gift-registry-session"
+	DeleteVerificationTokenStatement = `DELETE 
+		FROM verification 
+		WHERE person_id = $1`
+	GetVerificationQuery = `SELECT v.person_id, v.token, v.token_expiration, v.attempts 
+		FROM verification v 
+			INNER JOIN person p ON p.person_id = v.person_id 
+		WHERE p.email = $1`
+	InsertSessionStatement = `INSERT INTO session(session_id, person_id, expiration, user_agent) 
+		VALUES ($1, $2, $3, $4)`
+	LoginFailed            = "Login process failed. Please try again"
+	MaxAttempts            = 3
+	SelectUserByEmailQuery = `SELECT person_id, email 
+		FROM person 
+		WHERE email = $1`
+	SetVerificationTokenStatement = `INSERT INTO verification (token, token_expiration, person_id) 
+		VALUES ($1, $2, $3) 
+		ON CONFLICT (person_id) DO 
+			UPDATE SET token = $1, token_expiration = $2`
+	UpdateAttemptCountStatement = `UPDATE verification 
+		SET attempts = $1 
+		WHERE person_id = $2`
 )
-
-var (
-	loginCtr        metric.Int64Counter
-	verificationCtr metric.Int64Counter
-)
-
-func init() {
-
-	var err error
-
-	loginCtr, err = meter.Int64Counter(
-		"login.counter",
-		metric.WithDescription("Number of login attempts"),
-		metric.WithUnit("{call}"),
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	verificationCtr, err = meter.Int64Counter(
-		"verification.counter",
-		metric.WithDescription("Number of email verification attempts"),
-		metric.WithUnit("{call}"),
-	)
-	if err != nil {
-		panic(err)
-	}
-
-}
 
 // Creates a new user account in the person table. The login is valid if the
 // user has provided a properly formatted email address, a first name, and a
@@ -97,8 +85,7 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
-		ctx, span := tracer.Start(req.Context(), "login")
-		defer span.End()
+		ctx := req.Context()
 
 		userData := loginForm{
 			success: true,
@@ -109,7 +96,7 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 			svr.Logger.ErrorContext(ctx, "Error parsing the form data!", slog.String("errorMessage", err.Error()))
 			userData.Errors.ErrorMessage = "Error parsing the form data"
 			userData.success = false
-			writeResponse(ctx, res, req, span, loginCtr, svr, userData, "/verify-login.html", "verify-login-form")
+			writeResponse(ctx, res, req, svr, userData, "/verify-login.html", "verify-login-form")
 			return
 		}
 
@@ -126,15 +113,15 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 		if userData.Errors.Email != "" {
 
 			userData.success = false
-			writeResponse(ctx, res, req, span, loginCtr, svr, userData, "/login-form.html", "login-form")
+			writeResponse(ctx, res, req, svr, userData, "/login-form.html", "login-form")
 			return
 
 		}
 
-		pplRows := svr.DB.QueryRowContext(ctx, "SELECT email FROM person WHERE email = $1", userData.Email)
 		var email string = ""
-		if err = pplRows.Scan(&email); err != nil && err != sql.ErrNoRows {
-			svr.Logger.ErrorContext(ctx, "Could not read email from the database", slog.String("userEmail", userData.Email))
+		var personID int64 = 0
+		if err := svr.DB.QueryRow(ctx, SelectUserByEmailQuery, userData.Email).Scan(&personID, &email); err != nil && err != sql.ErrNoRows {
+			svr.Logger.ErrorContext(ctx, "Could not read person from the database", slog.String("errorMessage", err.Error()), slog.String("userEmail", userData.Email))
 		}
 
 		var modified int64 = 0
@@ -142,9 +129,9 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 
 		if email != "" {
 
-			modified, token, err = setVerificationCode(ctx, svr, &userData)
+			modified, token, err = setVerificationCode(ctx, svr, personID, &userData)
 			if err != nil {
-				writeResponse(ctx, res, req, span, loginCtr, svr, userData, "/login-form.html", "login-form")
+				writeResponse(ctx, res, req, svr, userData, "/login-form.html", "login-form")
 				return
 			}
 
@@ -154,7 +141,7 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 		if modified == 1 {
 
 			svr.Logger.DebugContext(ctx, "Sending user email with the login token", slog.String("userEmail", userData.Email))
-			emailErr = emailer.SendVerificationEmail([]string{userData.Email}, token, svr.Getenv)
+			emailErr = emailer.SendVerificationEmail(ctx, []string{userData.Email}, token, svr.Getenv)
 			if emailErr != nil {
 				svr.Logger.ErrorContext(ctx,
 					"Failed to send the verification email",
@@ -166,8 +153,11 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 		}
 
 		/* Capture if the login attempt matched a user in the database */
-		span.SetAttributes(attribute.Bool("emailFound", modified == 1))
-		span.SetAttributes(attribute.Bool("emailSuccess", emailErr == nil))
+		attributes := middleware.TelemetryAttributes(ctx)
+		attributes = append(attributes, attribute.Bool("emailFound", modified == 1))
+		attributes = append(attributes, attribute.Bool("emailSuccess", emailErr == nil))
+		ctx = middleware.WriteTelemetry(ctx, attributes)
+		_ = req.WithContext(ctx)
 
 		tmplPath := fmt.Sprintf("%s/%s", svr.Getenv("TEMPLATES_DIR"), "/verify-login.html")
 		tmpl, err := template.ParseFiles(tmplPath)
@@ -176,11 +166,6 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 			res.Write([]byte("Error loading the login page template!"))
 			return
 		}
-
-		svr.Logger.InfoContext(ctx,
-			fmt.Sprintf("Finished the operation %s", req.URL.Path),
-			slog.String("userData", userData.String()),
-		)
 
 		userVerify := verificationForm{
 			Email: userData.Email,
@@ -203,8 +188,7 @@ func LoginFormHandler(svr *util.ServerUtils) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
-		ctx, span := tracer.Start(req.Context(), "loginForm")
-		defer span.End()
+		ctx := req.Context()
 
 		templates := svr.Getenv("TEMPLATES_DIR")
 		svr.Logger.DebugContext(ctx, "Reading data from template directory", slog.String("templateDir", templates))
@@ -219,8 +203,6 @@ func LoginFormHandler(svr *util.ServerUtils) http.Handler {
 
 		res.WriteHeader(200)
 
-		svr.Logger.InfoContext(ctx, fmt.Sprintf("Finished the operation %s",
-			req.URL.Path))
 		err := tmpl.ExecuteTemplate(res, "login-page", loginForm{})
 		if err != nil {
 			svr.Logger.ErrorContext(ctx, "Error writing template!",
@@ -243,8 +225,7 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
-		ctx, span := tracer.Start(req.Context(), "verification")
-		defer span.End()
+		ctx := req.Context()
 
 		submission := verificationForm{
 			success: true,
@@ -262,12 +243,13 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 		submission.Email = req.FormValue("email")
 		submission.validate(ctx, svr)
 		if !submission.success {
-			writeResponse(ctx, res, req, span, verificationCtr, svr, submission, "/verify-login.html", "verify-login-form")
+			writeResponse(ctx, res, req, svr, submission, "/verify-login.html", "verify-login-form")
 		}
 
 		/* Look up the verification record */
 		recData := verificationRecord{}
-		err = svr.DB.QueryRowContext(ctx, "SELECT email, token, token_expiration, attempts FROM verification WHERE email = $1", submission.Email).Scan(&recData.email, &recData.token, &recData.tokenExpires, &recData.attempts)
+		err = svr.DB.QueryRow(ctx, GetVerificationQuery, submission.Email).
+			Scan(&recData.personID, &recData.token, &recData.tokenExpires, &recData.attempts)
 
 		/*
 			Handle errors looking up verification details (other than not finding the
@@ -277,7 +259,7 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 
 			if err == sql.ErrNoRows {
 				svr.Logger.ErrorContext(ctx, "Could not find verification record", slog.String("userEmail", submission.Email))
-				writeResponse(ctx, res, req, span, verificationCtr, svr, loginWithError(LoginFailed), "/login-form.html", "login-form")
+				writeResponse(ctx, res, req, svr, loginWithError(LoginFailed), "/login-form.html", "login-form")
 				return
 			}
 
@@ -287,71 +269,70 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 				slog.String("token", submission.Code),
 				slog.String("errorMessage", err.Error()),
 			)
-			err = deleteVerification(ctx, svr, submission.Email, nil)
+			err = deleteVerification(ctx, svr, recData.personID)
 			if err != nil {
 				svr.Logger.ErrorContext(ctx,
 					"Error cleaning up the verification table!",
-					slog.String("userEmail", recData.email),
+					slog.String("userEmail", submission.Email),
 					slog.String("errorMessage", err.Error()),
 				)
 				submission.success = false
 				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
-				writeResponse(ctx, res, req, span, verificationCtr, svr, submission, "/login-form.html", "login-form")
+				writeResponse(ctx, res, req, svr, submission, "/login-form.html", "login-form")
 				return
 			}
-			writeResponse(ctx, res, req, span, verificationCtr, svr, loginWithError(LoginFailed), "/login-form.html", "login-form")
+			writeResponse(ctx, res, req, svr, loginWithError(LoginFailed), "/login-form.html", "login-form")
 			return
 
 		} else {
-			svr.Logger.DebugContext(ctx, "Read in record data", slog.String("recordEmail", recData.email))
+			svr.Logger.DebugContext(ctx, "Read in record data", slog.String("userEmail", submission.Email))
 		}
 
-		emailsMatch, codesMatch, attemptsRemaining, beforeExpiration := compareValidation(recData, submission)
+		codesMatch, attemptsRemaining, beforeExpiration := compareValidation(recData, submission)
 		svr.Logger.DebugContext(ctx,
 			"Checked verification fields",
-			slog.Bool("emailsMatch", emailsMatch),
 			slog.Bool("codesMatch", codesMatch),
 			slog.Bool("attemptsRemaining", attemptsRemaining),
 			slog.Bool("beforeExpiration", beforeExpiration),
 		)
 		switch {
 
-		case emailsMatch && codesMatch && !beforeExpiration:
-			err = deleteVerification(ctx, svr, submission.Email, nil)
+		case codesMatch && !beforeExpiration:
+			err = deleteVerification(ctx, svr, recData.personID)
 			if err != nil {
 				svr.Logger.ErrorContext(ctx,
 					"Error cleaning up the verification table!",
-					slog.String("userEmail", recData.email),
+					slog.String("userEmail", submission.Email),
 					slog.String("errorMessage", err.Error()),
 				)
 				submission.success = false
 				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
-				writeResponse(ctx, res, req, span, verificationCtr, svr, submission, "/verify-login.html", "verify-login-form")
+				writeResponse(ctx, res, req, svr, submission, "/verify-login.html", "verify-login-form")
 			}
-			writeResponse(ctx, res, req, span, verificationCtr, svr, loginWithError(LoginFailed), "/login-form.html", "login-form")
+			writeResponse(ctx, res, req, svr, loginWithError(LoginFailed), "/login-form.html", "login-form")
 
-		case emailsMatch && !codesMatch:
+		case !codesMatch:
 			if attemptsRemaining {
 
 				submission.success = false
 				submission.Errors.ErrorMessage = "There was a problem confirming your verification code, please re-enter the code and try again"
-				updateAttemptCount(ctx, svr, recData.email, recData.attempts)
-				writeResponse(ctx, res, req, span, verificationCtr, svr, submission, "/verify-login.html", "verify-login-form")
+				updateAttemptCount(ctx, svr, submission.Email, recData.personID, recData.attempts)
+				writeResponse(ctx, res, req, svr, submission, "/verify-login.html", "verify-login-form")
 
 			} else {
 
-				err := deleteVerification(ctx, svr, submission.Email, nil)
+				err := deleteVerification(ctx, svr, recData.personID)
 				if err != nil {
 					svr.Logger.ErrorContext(ctx,
 						"Error cleaning up the verification table!",
-						slog.String("userEmail", recData.email),
+						slog.String("userEmail", submission.Email),
 						slog.String("errorMessage", err.Error()),
 					)
 					submission.success = false
 					submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
-					writeResponse(ctx, res, req, span, verificationCtr, svr, submission, "/verify-login.html", "verify-login-form")
+					writeResponse(ctx, res, req, svr, submission, "/verify-login.html", "verify-login-form")
 				}
-				writeResponse(ctx, res, req, span, verificationCtr, svr, loginWithError(LoginFailed), "/login-form.html", "login-form")
+				writeResponse(ctx, res, req, svr, loginWithError(LoginFailed), "/login-form.html", "login-form")
 
 			}
 
@@ -359,60 +340,32 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 			/*
 				Clean up the verification record so this code can't be re-used
 			*/
-			tx, err := svr.DB.BeginTx(ctx, nil)
-			if err != nil {
-				svr.Logger.ErrorContext(ctx,
-					"Error starting a transaction to build a validated session",
-					slog.String("userEmail", submission.Email),
-					slog.String("errorMessage", err.Error()),
-				)
-				submission.success = false
-				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
-				writeResponse(ctx, res, req, span, verificationCtr, svr, submission, "/verify-login.html", "verify-login-form")
-			}
-
-			err = deleteVerification(ctx, svr, recData.email, tx)
+			err = deleteVerification(ctx, svr, recData.personID)
 			if err != nil {
 				svr.Logger.ErrorContext(ctx,
 					"Error cleaning up the verification table!",
-					slog.String("userEmail", recData.email),
-					slog.String("errorMessage", err.Error()),
-				)
-				rbErr := tx.Rollback()
-				if rbErr != nil {
-					panic(rbErr)
-				}
-				submission.success = false
-				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
-				writeResponse(ctx, res, req, span, verificationCtr, svr, submission, "/verify-login.html", "verify-login-form")
-			}
-
-			sessionID, sessionExpires, err := createSession(ctx, svr, req, recData.email)
-			if err != nil {
-				svr.Logger.ErrorContext(ctx,
-					"Error writing a session record!",
-					slog.String("userEmail", recData.email),
-					slog.String("errorMessage", err.Error()),
-				)
-				rbErr := tx.Rollback()
-				if rbErr != nil {
-					panic(rbErr)
-				}
-				submission.success = false
-				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
-				writeResponse(ctx, res, req, span, verificationCtr, svr, submission, "/verify-login.html", "verify-login-form")
-			}
-			err = tx.Commit()
-			if err != nil {
-				svr.Logger.ErrorContext(ctx,
-					"Error committing the session initialization!",
 					slog.String("userEmail", submission.Email),
 					slog.String("errorMessage", err.Error()),
 				)
+				submission.success = false
+				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
+				writeResponse(ctx, res, req, svr, submission, "/verify-login.html", "verify-login-form")
+			}
+
+			sessionID, sessionExpires, err := createSession(ctx, svr, req, recData.personID, submission.Email)
+			if err != nil {
+				svr.Logger.ErrorContext(ctx,
+					"Error writing a session record!",
+					slog.String("userEmail", submission.Email),
+					slog.String("errorMessage", err.Error()),
+				)
+				submission.success = false
+				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
+				writeResponse(ctx, res, req, svr, submission, "/verify-login.html", "verify-login-form")
 			}
 
 			cookie := http.Cookie{
-				Name:     SessionCookie,
+				Name:     middleware.SessionCookie,
 				Value:    sessionID,
 				MaxAge:   int(time.Until(sessionExpires).Seconds()),
 				HttpOnly: true,
@@ -428,7 +381,12 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 
 }
 
-func createSession(ctx context.Context, svr *util.ServerUtils, req *http.Request, email string) (string, time.Time, error) {
+func createSession(
+	ctx context.Context,
+	svr *util.ServerUtils,
+	req *http.Request,
+	personID int64,
+	email string) (string, time.Time, error) {
 
 	svr.Logger.InfoContext(ctx,
 		"Starting a new authenticated session",
@@ -439,7 +397,7 @@ func createSession(ctx context.Context, svr *util.ServerUtils, req *http.Request
 	sessionID := rand.Text()
 	userAgent := req.UserAgent()
 
-	res, err := svr.DB.ExecContext(ctx, "INSERT INTO session(session_id, email, expiration, user_agent) VALUES ($1, $2, $3, $4)", sessionID, email, expires, userAgent)
+	res, err := svr.DB.Execute(ctx, InsertSessionStatement, sessionID, personID, expires, userAgent)
 	if err != nil {
 		svr.Logger.ErrorContext(ctx,
 			"Error inserting session record",
@@ -460,8 +418,15 @@ func createSession(ctx context.Context, svr *util.ServerUtils, req *http.Request
 		)
 		/* Not returning an error since the database update itself worked. */
 	} else if modified != 1 {
+		/*
+			In theory, the only non-1 value would be 0 since this was an INSERT
+			operation. That said, checking modified != 1 leaves me coverage in
+			case I was WILDLY off and we somehow write 2 session records (which would
+			also be error-level bad)
+		*/
 		svr.Logger.ErrorContext(ctx,
-			"Error getting the number of rows modified saving the session",
+			"Session data not actually updated",
+			slog.Int64("rowsModified", modified),
 			slog.String("userEmail", email),
 			slog.String("userAgent", userAgent),
 		)
@@ -479,59 +444,16 @@ func createSession(ctx context.Context, svr *util.ServerUtils, req *http.Request
 
 }
 
-func deleteVerification(ctx context.Context, svr *util.ServerUtils, email string, tx *sql.Tx) error {
+func deleteVerification(ctx context.Context, svr *util.ServerUtils, personID int64) error {
 
 	/* Make sure we have a transaction so we can roll back if this doesn't work */
-	commit := false
-	if tx == nil {
-
-		var err error
-		tx, err = svr.DB.BeginTx(ctx, nil)
-		if err != nil {
-			svr.Logger.ErrorContext(ctx,
-				"Error starting a transaction to remove a verification record from the database",
-				slog.String("errorMessage",
-					err.Error()),
-			)
-			return fmt.Errorf("could not start a transaction to remove a verification record: %v", err)
-		}
-		commit = true
-
-	}
-
-	res, err := svr.DB.ExecContext(ctx, "DELETE FROM verification WHERE email = $1", email)
+	res, err := svr.DB.Execute(ctx, DeleteVerificationTokenStatement, personID)
 	if err != nil {
-		rbErr := tx.Rollback()
-		if rbErr != nil {
-			/*
-				This should never happen, because the database could be in an invalid
-				state, so panic
-			*/
-			panic(err)
-		}
 		svr.Logger.ErrorContext(ctx,
 			"Error deleting the verification record",
 			slog.String("errorMessage", err.Error()),
 		)
 		return fmt.Errorf("error executing the cleanup of the verification record: %v", err)
-	}
-
-	/* If we created the transaction here, commit it here */
-	if commit {
-
-		err = tx.Commit()
-		if err != nil {
-			svr.Logger.ErrorContext(ctx,
-				"Error committing the verification cleanup transaction",
-				slog.String("userEmail", email),
-				slog.String("errorMessage", err.Error()),
-			)
-			if rbErr := tx.Rollback(); rbErr != nil {
-				panic(rbErr)
-			}
-			return fmt.Errorf("error committing verification cleanup: %v", err)
-		}
-
 	}
 
 	if cnt, err := res.RowsAffected(); err != nil {
@@ -540,10 +462,16 @@ func deleteVerification(ctx context.Context, svr *util.ServerUtils, email string
 			slog.String("errorMessage", err.Error()),
 		)
 	} else {
+		/*
+			TODO: CHANGING THIS FROM EMAIL TO PERSONID RAISES A BIGGER QUESTION - DO I
+			NEED TO BE CAPTURING THINGS LIKE USER EMAIL IN LOG MESSAGES, OR CAN I
+			CAPTURE THAT ONCE AND THEN FOLLOW THE TRACE TO GET ALL ASSOCIATED LOGS
+			WITH A PARTICULAR LOGIN OPERATION?
+		*/
 		svr.Logger.InfoContext(ctx,
 			"Cleaned up the verification table",
 			slog.Int64("count", cnt),
-			slog.String("userEmail", email),
+			slog.Int64("personID", personID),
 		)
 	}
 
@@ -551,30 +479,14 @@ func deleteVerification(ctx context.Context, svr *util.ServerUtils, email string
 
 }
 
-func updateAttemptCount(ctx context.Context, svr *util.ServerUtils, email string, attempt int) error {
+func updateAttemptCount(ctx context.Context, svr *util.ServerUtils, email string, personID int64, attempt int) error {
 
 	attempt++
 
-	tx, err := svr.DB.BeginTx(ctx, nil)
-	if err != nil {
-		svr.Logger.ErrorContext(ctx,
-			"Error starting the transaction to update verification attempts",
-			slog.String("userEmail", email),
-			slog.Int("attemptNum", attempt),
-			slog.String("errorMessage", err.Error()),
-		)
-		/*
-			Swallowing the error because no DB operation actually started, so I don't
-			care if the rollback fails
-		*/
-		_ = tx.Rollback()
-		return fmt.Errorf("could not start the transaction to update the attempt count: %v", err)
-	}
-
-	res, err := svr.DB.ExecContext(ctx,
-		"UPDATE verification SET attempts = $1 WHERE email = $2",
+	res, err := svr.DB.Execute(ctx,
+		UpdateAttemptCountStatement,
 		attempt,
-		email,
+		personID,
 	)
 	if res == nil || err != nil {
 		svr.Logger.ErrorContext(ctx,
@@ -583,46 +495,6 @@ func updateAttemptCount(ctx context.Context, svr *util.ServerUtils, email string
 			slog.Int("attemptNum", attempt),
 			slog.String("errorMessage", err.Error()),
 		)
-		rbErr := tx.Rollback()
-		if rbErr != nil {
-			panic(rbErr)
-		}
-	}
-
-	if modified, err := res.RowsAffected(); err != nil {
-		svr.Logger.ErrorContext(ctx,
-			"Error getting the list of rows modified after updating the verification attempt count",
-			slog.String("userEmail", email),
-			slog.Int("attemptNum", attempt),
-			slog.String("errorMessage", err.Error()),
-		)
-		/* Don't return an error, the UPDATE operation itself didn't fail */
-	} else if modified != 1 {
-		svr.Logger.ErrorContext(ctx,
-			"Expected 1 (and only 1) row to have been modified!",
-			slog.String("userEmail", email),
-			slog.Int("attemptNum", attempt),
-			slog.Int64("rowsModified", modified),
-		)
-		rbErr := tx.Rollback()
-		if rbErr != nil {
-			panic(rbErr)
-		}
-	}
-
-	err = tx.Commit()
-	if err != nil {
-		svr.Logger.ErrorContext(ctx,
-			"Error writing the updated attempt count to the database",
-			slog.String("userEmail", email),
-			slog.Int("attemptNum", attempt),
-			slog.String("errorMessage", err.Error()),
-		)
-		rbErr := tx.Rollback()
-		if rbErr != nil {
-			panic(rbErr)
-		}
-		return fmt.Errorf("could not commit the updated attempt count: %v", err)
 	}
 
 	return nil
@@ -640,24 +512,17 @@ func loginWithError(errorMessage string) loginForm {
 
 }
 
-func setVerificationCode(ctx context.Context, svr *util.ServerUtils, userData *loginForm) (int64, string, error) {
-
-	/* Open a transaction so we can rollback on a DB write failure */
-	tx, err := svr.DB.BeginTx(ctx, nil)
-	if err != nil {
-		svr.Logger.ErrorContext(ctx, "Error starting transaction", slog.String("errorMessage", err.Error()))
-		/* Not capturing the error here because we haven't touched the DB yet */
-		tx.Rollback()
-		userData.success = false
-		userData.Errors.ErrorMessage = "Error saving login"
-		return 0, "", fmt.Errorf("could not start transaction to save verification token: %v", err)
-	}
+func setVerificationCode(
+	ctx context.Context,
+	svr *util.ServerUtils,
+	personID int64,
+	userData *loginForm) (int64, string, error) {
 
 	token := rand.Text()
 	expires := time.Now().Add(5 * time.Minute).UTC()
 	svr.Logger.DebugContext(ctx, "Created a login token", slog.String("userEmail", userData.Email))
 
-	rows, err := svr.DB.ExecContext(ctx, "INSERT INTO verification (token, token_expiration, email) VALUES ($1, $2, $3) ON CONFLICT (email) DO UPDATE SET token = $1, token_expiration = $2", token, expires, userData.Email)
+	rows, err := svr.DB.Execute(ctx, SetVerificationTokenStatement, token, expires, personID)
 	if err != nil {
 
 		switch {
@@ -666,10 +531,11 @@ func setVerificationCode(ctx context.Context, svr *util.ServerUtils, userData *l
 			This happens when an email not in the DB is submitted. Swallow it so we
 			don't given away valid emails to a scan
 		*/
-		case strings.Contains(err.Error(), "violates foreign key constraint \"verification_email_fkey\""):
+		case strings.Contains(err.Error(), "violates foreign key constraint \"verification_person_id_fkey\""):
 			svr.Logger.WarnContext(ctx,
-				"Email not found in database. Postgres thinks it's an error, but we don't",
+				"Person not found in database, returning normally with no code set",
 				slog.String("userEmail", userData.Email),
+				slog.Int64("personID", personID),
 				slog.String("errorMessage", err.Error()),
 			)
 			return 0, "", nil
@@ -677,23 +543,18 @@ func setVerificationCode(ctx context.Context, svr *util.ServerUtils, userData *l
 		default:
 			svr.Logger.ErrorContext(ctx, "Error saving token information!", slog.String("errorMessage", err.Error()))
 			userData.success = false
-			rollbackErr := tx.Rollback()
-			/*
-				The rollback error warrants a panic because the database could be in an
-				invalid state
-			*/
-			if rollbackErr != nil {
-				panic(fmt.Errorf("error rolling back the token assignment transaction: %v", rollbackErr))
-			}
 			return 0, token, fmt.Errorf("could not write verification token information to the database: %v", err)
 
 		}
 
 	}
 
-	tx.Commit()
-
-	svr.Logger.DebugContext(ctx, "Ran the token INSERT command", slog.String("userEmail", userData.Email))
+	svr.Logger.DebugContext(
+		ctx,
+		"Ran the token INSERT command",
+		slog.String("userEmail", userData.Email),
+		slog.Int64("personID", personID),
+	)
 	modified, err := rows.RowsAffected()
 	/*
 		Not returning this as an error because the main objective (create a
@@ -708,11 +569,10 @@ func setVerificationCode(ctx context.Context, svr *util.ServerUtils, userData *l
 
 }
 
-func compareValidation(record verificationRecord, submission verificationForm) (emailsMatch bool, tokensMatch bool, attemptsRemaining bool, beforeExpiration bool) {
+func compareValidation(record verificationRecord, submission verificationForm) (tokensMatch bool, attemptsRemaining bool, beforeExpiration bool) {
 
 	now := time.Now().UTC()
 
-	emailsMatch = strings.EqualFold(record.email, submission.Email)
 	tokensMatch = strings.EqualFold(record.token, submission.Code)
 	beforeExpiration = now.Before(record.tokenExpires)
 
@@ -729,21 +589,18 @@ func compareValidation(record verificationRecord, submission verificationForm) (
 func writeResponse(ctx context.Context,
 	res http.ResponseWriter,
 	req *http.Request,
-	span trace.Span,
-	ctr metric.Int64Counter,
 	svr *util.ServerUtils,
 	submission Submitter,
 	templateFile string,
 	templateDef string,
 ) {
 
-	ctr.Add(ctx, 1, metric.WithAttributes(
-		attribute.Bool("successful", submission.succeeded()),
-	))
-	span.SetAttributes(
-		attribute.Bool("successful", submission.succeeded()),
-		attribute.String("email", submission.emailAddress()),
-	)
+	attributes := middleware.TelemetryAttributes(ctx)
+
+	attributes = append(attributes, attribute.Bool("successful", submission.succeeded()))
+	attributes = append(attributes, attribute.String("email", submission.emailAddress()))
+	ctx = middleware.WriteTelemetry(ctx, attributes)
+	_ = req.WithContext(ctx)
 
 	tmplPath := fmt.Sprintf("%s/%s", svr.Getenv("TEMPLATES_DIR"), templateFile)
 
@@ -753,14 +610,6 @@ func writeResponse(ctx context.Context,
 		res.Write([]byte("Error loading the login page template!"))
 		return
 	}
-
-	/* TODO: SHOULD I MOVE THESE MESSAGES TO A MIDDLEWARE WITH A CONTEXT VARAIBLE REFERENCE FOR DATA? */
-	svr.Logger.InfoContext(ctx,
-		fmt.Sprintf("Finished the operation %s", req.URL.Path),
-		slog.String("userData", submission.String()),
-		slog.String("validationErrors", submission.Error()),
-		slog.Bool("successful", submission.succeeded()),
-	)
 
 	res.WriteHeader(200)
 	err := tmpl.ExecuteTemplate(res, templateDef, submission)

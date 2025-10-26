@@ -10,24 +10,21 @@ import (
 	"slices"
 	"strings"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
 const (
-	name = "net.hydrick.gift-registry/database"
+	FindMigrationsQuery      = "SELECT filename FROM migrations ORDER BY filename ASC"
+	InsertMigrationStatement = "INSERT INTO migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))"
 )
 
 var (
 	ErrMigration = fmt.Errorf("could not apply database migration")
-
-	meter  = otel.Meter(name)
-	tracer = otel.Tracer(name)
 )
 
 // Checks for any pending database migrations and applies them
-func (dbConn dbConn) runMigrations(
+func (dbConn DBConn) runMigrations(
 	ctx context.Context,
 	logger *slog.Logger,
 	getenv func(string) string) error {
@@ -48,6 +45,7 @@ func (dbConn dbConn) runMigrations(
 
 	}
 
+	/* Capture metrics around the migrations run */
 	var rowCount int64 = 0
 	totalRowsImpacted, err := meter.Int64Counter(
 		"migrations.rows.impacted",
@@ -58,6 +56,9 @@ func (dbConn dbConn) runMigrations(
 		panic("could not initialize the total rows affected metric " + err.Error())
 	}
 
+	/*
+		Find the list of migrations we've already applied so we don't duplicate them
+	*/
 	migrationsApplied, err := dbConn.readAppliedMigrations(ctx)
 	if err != nil {
 		logger.ErrorContext(ctx, "Error reading applied migrations from the database", slog.String("errorMessage", err.Error()))
@@ -65,9 +66,10 @@ func (dbConn dbConn) runMigrations(
 	}
 	logger.DebugContext(ctx, "Have the list of migrations applied", slog.Any("migrationsApplied", migrationsApplied))
 
+	/* Check the filesystem for migrations to run */
 	logger.DebugContext(ctx, "Listing the migrations files", slog.String("migrationsDirectory", getenv("MIGRATIONS_DIR")))
 	migrationsFS := os.DirFS(getenv("MIGRATIONS_DIR"))
-	sqlFiles, err := listMigrations(migrationsFS, ".")
+	sqlFiles, err := listMigrations(migrationsFS, ".", logger)
 	if err != nil {
 		logger.ErrorContext(ctx, "Error listing database migration files", slog.String("errorMessage", err.Error()))
 		return fmt.Errorf("error reading applied migrations from the database: %s", err.Error())
@@ -92,11 +94,6 @@ func (dbConn dbConn) runMigrations(
 		/*
 			The length of migrationsApplied is 0 when no migrations have been run yet,
 			so we obviously need to apply anything we have in that case.
-
-			Technically, if migrationsRun[recIndex] (where we are in the list of applied
-			migrations per the DB) is < the file, it implies that a migration file was
-			removed but is still "live" in the database. There's nothing we can do about
-			that, just carry on wayward son.
 		*/
 		if slices.Contains(migrationsApplied, sqlFile.Name()) {
 
@@ -105,6 +102,9 @@ func (dbConn dbConn) runMigrations(
 
 		}
 
+		/*
+			Run any migrations not already logged in the database
+		*/
 		tx, err := dbConn.db.BeginTx(ctx, nil)
 		if err != nil {
 			logger.ErrorContext(ctx, "Error starting transaction", slog.String("errorMessage", err.Error()))
@@ -114,6 +114,7 @@ func (dbConn dbConn) runMigrations(
 		logger.InfoContext(ctx, "Applying migration file", slog.String("filename", sqlFile.Name()))
 		rowsAffected, err := dbConn.applyMigration(ctx, logger, migrationsFS, sqlFile)
 		if err != nil {
+			logger.ErrorContext(ctx, "Migration failed", slog.String("errorMessage", err.Error()))
 			rollback(ctx, tx, logger, sqlFile.Name())
 			returnedErr = ErrMigration
 			break
@@ -121,20 +122,20 @@ func (dbConn dbConn) runMigrations(
 
 		fileToRowsAffected[sqlFile.Name()] = rowsAffected
 
+		/* Log the migration to the database so we don't repeat it */
 		logger.DebugContext(ctx, fmt.Sprintf("Adding %s to the database", sqlFile.Name()))
-		_, err = dbConn.db.ExecContext(ctx, "INSERT INTO migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))", sqlFile.Name())
+		_, err = dbConn.Execute(ctx, InsertMigrationStatement, sqlFile.Name())
 		if err != nil {
 			logger.ErrorContext(ctx, "Error adding migration file to migrations table!", slog.String("filenam", sqlFile.Name()), slog.String("errorMessage", err.Error()))
-			rollback(ctx, tx, logger, sqlFile.Name())
 			returnedErr = ErrMigration
 			break
 		}
 
-		/* Flush everything to the database */
 		err = tx.Commit()
 		if err != nil {
-			logger.ErrorContext(ctx, "Error committing the database migration!", slog.String("errorMessage", err.Error()))
-			returnedErr = ErrMigration
+			rollback(ctx, tx, logger, sqlFile.Name())
+			returnedErr = fmt.Errorf("error committing the migration to the database: %v", err)
+			break
 		}
 
 	}
@@ -167,7 +168,7 @@ func (dbConn dbConn) runMigrations(
 
 }
 
-func (dbConn dbConn) applyMigration(
+func (dbConn DBConn) applyMigration(
 	ctx context.Context,
 	logger *slog.Logger,
 	migrations fs.FS,
@@ -182,8 +183,7 @@ func (dbConn dbConn) applyMigration(
 	}
 
 	statement := string(sqlBytes)
-	logger.DebugContext(ctx, "Applying SQL", slog.String("statement", statement))
-	result, err := dbConn.db.ExecContext(ctx, statement)
+	result, err := dbConn.Execute(ctx, statement)
 	if err != nil {
 		logger.ErrorContext(ctx, "Error applying migration",
 			slog.String("sqlStatement", statement),
@@ -203,30 +203,24 @@ func (dbConn dbConn) applyMigration(
 
 }
 
-func listMigrations(migrationsDir fs.FS, root string) ([]fs.DirEntry, error) {
+func listMigrations(migrationsDir fs.FS, root string, logger *slog.Logger) ([]fs.DirEntry, error) {
 
 	migrationFiles, err := fs.ReadDir(migrationsDir, root)
 	if err != nil {
-		return migrationFiles, fmt.Errorf("error building the list of migration files: %s", err.Error())
+		return []fs.DirEntry{}, fmt.Errorf("error building the list of migration files: %s", err)
 	}
 
-	/* The migrations directory should just be flat files, strip out subdirectories */
-	migrationFiles = slices.DeleteFunc(migrationFiles, func(entry fs.DirEntry) bool {
-		return entry.IsDir()
-	})
-
+	logger.Debug("Does just using subdirectories work?")
 	/* Sort alphabetically by filename */
 	slices.SortFunc(migrationFiles, sortDirEntries)
 	return migrationFiles, nil
 
 }
 
-func (dbConn dbConn) readAppliedMigrations(ctx context.Context) ([]string, error) {
+func (dbConn DBConn) readAppliedMigrations(ctx context.Context) ([]string, error) {
 
 	var migratedFiles []string
-	rows, err := dbConn.db.QueryContext(ctx, "SELECT filename "+
-		"	FROM migrations "+
-		"	ORDER BY filename ASC")
+	rows, err := dbConn.Query(ctx, FindMigrationsQuery)
 	if err != nil {
 		return migratedFiles, fmt.Errorf("error querying previous migrations from the database: %s", err.Error())
 	}

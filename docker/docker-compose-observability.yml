@@ -1,0 +1,28 @@
+name: gift-registry
+
+services:
+  
+  observability:
+    container_name: gift-registry-observability
+    image: grafana/otel-lgtm:0.11.7
+    pull_policy: missing
+    volumes:
+      - type: bind
+        source: ${GRAFANA_DATA}
+        target: /data
+    ports: 
+      - 3000:3000 
+    healthcheck:
+      test: ["CMD-SHELL", "curl http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    environment: 
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USERNAME}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+    networks:
+      - gift-registry-network
+  app:
+    depends_on: 
+      observability: 
+        condition: service_healthy

@@ -1,1 +1,0 @@
-INSERT INTO person (firstName, lastName, email, password, salt, createdOn, modifiedOn) VALUES ('Test', 'User', 'test.user@yopmail.com', 'test123', 'abc098', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3));
