@@ -28,9 +28,9 @@ go.work.sum
 .env_*
 
 # Generated Docker compose files
-# docker-compose-local
-# docker-compose-test
-# docker-compose-prod
+docker-compose-local.yml
+docker-compose-test.yml
+docker-compose-prod.yml
 
 # Person schema changes
 **/private_migrations/*
