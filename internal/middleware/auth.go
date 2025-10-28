@@ -14,13 +14,13 @@ import (
 
 const (
 	ExtendSessionQuery = "UPDATE session SET expiration = $1 WHERE session_id = $2"
-	LookupSessionQuery = "SELECT * FROM session WHERE session_id = $1"
+	LookupSessionQuery = "SELECT session_id, person_id, expiration, user_agent FROM session WHERE session_id = $1"
 	SessionCookie      = "gift-registry-session"
 )
 
 type session struct {
 	sessionID  string    `db:"session_id"`
-	email      string    `db:"email"`
+	personID   string    `db:"person_id"`
 	expiration time.Time `db:"expiration"`
 	userAgent  string    `db:"user_agent"`
 }
@@ -87,7 +87,7 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 			svr.Logger.InfoContext(ctx,
 				"Session has expired, logging out",
 				slog.String("cookieValue", cookie.Value),
-				slog.String("emailAddress", sessInfo.email),
+				slog.String("personID", sessInfo.personID),
 			)
 			authNext(ctx, svr, res, req, next, pass)
 			return
@@ -100,7 +100,7 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 			svr.Logger.InfoContext(ctx,
 				"User agent doesn't match agent at sign-in. Logging out.",
 				slog.String("cookieValue", cookie.Value),
-				slog.String("emailAddress", sessInfo.email),
+				slog.String("personID", sessInfo.personID),
 			)
 			authNext(ctx, svr, res, req, next, pass)
 			return
@@ -113,6 +113,7 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 		cookie.MaxAge = int(time.Until(newExp).Seconds())
 		http.SetCookie(res, cookie)
 		extendSession(ctx, svr, sessInfo.sessionID, newExp)
+		/* TODO: STORE THE PERSON ID IN THE REQUEST CONTEXT, AND ADD GETTER TO PULL IT */
 		authNext(ctx, svr, res, req, next, pass)
 
 	})
@@ -222,7 +223,9 @@ func isPublic(ctx context.Context, svr *util.ServerUtils, req *http.Request) boo
 func lookupSession(ctx context.Context, svr *util.ServerUtils, sessionID string) (session, error) {
 
 	var sessRec session
-	err := svr.DB.QueryRow(ctx, LookupSessionQuery, sessionID).Scan(&sessRec.sessionID, &sessRec.email, &sessRec.expiration, &sessRec.userAgent)
+	err := svr.DB.
+		QueryRow(ctx, LookupSessionQuery, sessionID).
+		Scan(&sessRec.sessionID, &sessRec.personID, &sessRec.expiration, &sessRec.userAgent)
 	/* Just returning an empty session to since that's the same as sql.ErrNoRows */
 	if err != nil && err != sql.ErrNoRows {
 		svr.Logger.ErrorContext(ctx,

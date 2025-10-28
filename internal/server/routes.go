@@ -3,6 +3,7 @@ package server
 import (
 	"gift-registry/internal/health"
 	"gift-registry/internal/middleware"
+	"gift-registry/internal/profile"
 	"gift-registry/internal/registry"
 	"net/http"
 
@@ -33,6 +34,10 @@ func registerRoutes() (http.Handler, error) {
 	handleFunc("GET /login", LoginFormHandler(appSrv))
 	handleFunc("POST /login", LoginHandler(appSrv))
 	handleFunc("POST /verify", VerificationHandler(appSrv))
+
+	/* Profile routes */
+	handleFunc("GET /profile", profile.ProfileHandler(appSrv))
+	handleFunc("POST /profile", profile.ProfileUpdateHandler(appSrv))
 
 	/* Registry routes */
 	handleFunc("GET /registry", registry.RegistryHandler(appSrv))
