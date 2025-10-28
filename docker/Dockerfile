@@ -14,6 +14,7 @@ WORKDIR /app
 
 COPY --from=build /app/main /app/main
 COPY internal/database/migrations migrations/
+COPY internal/database/private_migrations migrations/
 COPY cmd/web/templates/ templates/
 COPY cmd/web/css/ css/
 COPY cmd/web/js/ js/

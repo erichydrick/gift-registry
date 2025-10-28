@@ -32,5 +32,6 @@ docker-compose-local.yml
 docker-compose-test.yml
 docker-compose-prod.yml
 
-# Person schema changes
+# Data schema changes
 **/private_migrations/*
+**/data_migrations/*
