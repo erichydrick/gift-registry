@@ -42,11 +42,6 @@ func registerRoutes() (http.Handler, error) {
 	/* Registry routes */
 	handleFunc("GET /registry", registry.RegistryHandler(appSrv))
 
-	/*
-		TODO:
-		1. IS THERE SOMETHING WITH FIRST-CLASS FUNCTIONS THAT CAN MAKE THIS READ LESS AWKWARDLY?
-		2. IS THIS THE RIGHT ORDER (SHOULD TELEMETRY BE BEFORE AUTH SO WE CAN CAPTURE AUTH FAILURES?)
-	*/
 	handler := otelhttp.NewHandler(
 		middleware.Cors(
 			appSrv,

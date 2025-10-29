@@ -168,7 +168,7 @@ func TestBadTemplates(t *testing.T) {
 				t.Fatal("Error reading the response from email validation!", err)
 			}
 
-			if res.StatusCode != 500 {
+			if res.StatusCode != http.StatusInternalServerError {
 
 				t.Fatal("Expected a 500 response")
 

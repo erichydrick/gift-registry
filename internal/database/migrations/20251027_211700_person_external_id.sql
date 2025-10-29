@@ -1,1 +1,0 @@
-ALTER TABLE person ADD COLUMN external_id CHAR(40), ADD COLUMN first_name VARCHAR(255), ADD COLUMN last_name VARCHAR(255), ADD COLUMN display_name VARCHAR(255);

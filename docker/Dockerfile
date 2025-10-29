@@ -8,7 +8,7 @@ RUN go mod download
 COPY . .
 RUN go build -o main cmd/api/main.go
 
-FROM scratch AS executor
+FROM alpine:3.22.2 AS executor
 
 WORKDIR /app
 

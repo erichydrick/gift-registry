@@ -18,6 +18,12 @@ import (
 	"golang.org/x/net/html"
 )
 
+// Holds the details needed to validate page contents
+type ElementValidation struct {
+	Value   string
+	Visible bool
+}
+
 // Stub for the Emailer interface so I can validate emailing in automated
 // testing
 type EmailMock struct {
@@ -25,15 +31,21 @@ type EmailMock struct {
 	EmailToSent  map[string]bool
 }
 
+// Holds the details needed to make a test user in the database
+type UserData struct {
+	DisplayName string
+	Email       string
+	ExternalID  string
+	FirstName   string
+	LastName    string
+}
+
 const (
 	DefaultUserAgent = "go-test-user-agent"
+	externalIDLength = 40
 )
 
 func (em *EmailMock) SendVerificationEmail(ctx context.Context, to []string, code string, getenv func(string) string) error {
-
-	if em.EmailToSent == nil || em.EmailToToken == nil {
-		log.Println("MAPS ARE NIL, WHO KNEW")
-	}
 
 	for _, email := range to {
 
@@ -85,8 +97,8 @@ func CheckElement(root html.Node, id string) (html.Node, bool) {
 	*/
 	for node := range root.Descendants() {
 
-		if _, ok := CheckElement(*node, id); ok {
-			return *node, true
+		if childNode, ok := CheckElement(*node, id); ok {
+			return childNode, true
 		}
 
 	}
@@ -95,11 +107,11 @@ func CheckElement(root html.Node, id string) (html.Node, bool) {
 
 }
 
-func CreateSession(ctx context.Context, logger *slog.Logger, db database.Database, email string, timeLeft time.Duration, userAgent string) (string, error) {
+func CreateSession(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData, timeLeft time.Duration, userAgent string) (string, error) {
 
-	personID, err := CreateUser(ctx, logger, db, email)
+	personID, err := CreateUser(ctx, logger, db, userData)
 	if err != nil {
-		log.Println("Could not create user for", email)
+		log.Println("Could not create user for", userData, err)
 		return "", err
 	}
 
@@ -120,16 +132,27 @@ func CreateSession(ctx context.Context, logger *slog.Logger, db database.Databas
 
 }
 
-func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, email string) (int64, error) {
+func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData) (int64, error) {
 
 	id := int64(0)
+
+	/*
+		I don't want to have to make external IDs for every test, just use a string
+		timestamp as a "good enough" placeholder
+	*/
+	if userData.ExternalID == "" {
+
+		externalID := time.Now().String()
+		userData.ExternalID = externalID[0:externalIDLength]
+
+	}
 
 	/*
 		Do the insertion and make sure it worked. We're going to t.Fatal() if this
 		fails, so I'm not going to worry about Rollback() calls erroring, the
 		database is going to be deleted anyhow
 	*/
-	if res, err := db.Execute(ctx, "INSERT INTO person (email) VALUES ($1)", email); err != nil {
+	if res, err := db.Execute(ctx, "INSERT INTO person (external_id, email, first_name, last_name, display_name) VALUES ($1, $2, $3, $4, $5)", userData.ExternalID, userData.Email, userData.FirstName, userData.LastName, userData.DisplayName); err != nil {
 		log.Println("Error adding a new test person to the database.")
 		return 0, err
 	} else if added, err := res.RowsAffected(); err != nil {
@@ -140,7 +163,7 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 		return 0, err
 	}
 
-	err := db.QueryRow(ctx, "SELECT person_id FROM person WHERE email = $1", email).Scan(&id)
+	err := db.QueryRow(ctx, "SELECT person_id FROM person WHERE email = $1", userData.Email).Scan(&id)
 	if err != nil {
 		log.Println("Error reading the created user's ID")
 		return 0, fmt.Errorf("error reading the created user's id: %v", err)
@@ -150,8 +173,11 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 
 }
 
+// Checks if the element has the hidden property or hidden class.
+// Returns true if either is found
 func ElementVisible(node html.Node) bool {
 
+	log.Printf("Checking attributes of %v\n", node)
 	for _, attr := range node.Attr {
 
 		/*
@@ -194,5 +220,65 @@ func FreePort() (port int) {
 	}
 
 	return
+
+}
+
+// Goes through the mapping of elements to validation details and confirms that the given HTML has the expected elements with the given properties.
+func ValidatePage(page *html.Node, elements map[string]ElementValidation) error {
+
+	for id, validationInfo := range elements {
+
+		if pageElem, ok := CheckElement(*page, id); !ok {
+
+			return fmt.Errorf("could not find element %v on the page", id)
+
+		} else if elemVis := ElementVisible(pageElem); elemVis != validationInfo.Visible {
+
+			return fmt.Errorf("expected element %v to have visibility = %v, but it was %v", id, validationInfo.Visible, elemVis)
+
+		} else if validationInfo.Value != "" {
+
+			pageData := elementData(pageElem)
+			if validationInfo.Value != pageData {
+
+				return fmt.Errorf("expected element %v to have value = %v, but had %v",
+					id, validationInfo.Value, pageData)
+
+			}
+
+		}
+
+	}
+
+	return nil
+
+}
+
+func elementData(pageElem html.Node) string {
+
+	/*
+		Prioritize the value attribute first. Then element body.
+	*/
+	for _, attr := range pageElem.Attr {
+
+		/*
+			Don't return on an empty value attribute value -
+			try element body next.
+		*/
+		if attr.Key == "value" && attr.Val != "" {
+
+			return attr.Val
+
+		}
+
+	}
+
+	if pageElem.FirstChild != nil {
+
+		return pageElem.FirstChild.Data
+
+	}
+
+	return ""
 
 }

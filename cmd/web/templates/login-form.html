@@ -1,21 +1,21 @@
 {{define "login-form"}}
-<form id="login-form" hx-disabled-elt="#login-submit" hx-swap="outerHTML" hx-post="/login">
-    <div id="login-error" class="danger" {{if ne .Errors.ErrorMessage "" }}{{else}}hidden{{end}}>
-        {{.Errors.ErrorMessage}}
-    </div>
-    <div class="form-input-group">
-        <div class="left">
+<div id="login">
+    <h3 class="center-text">Login to view your registry</h3>
+    <form id="login-form" hx-disabled-elt="#login-submit" hx-post="/login" hx-target="#login" class="flex-column">
+        <div id="login-error" class="danger mt-2 flex-row" {{if ne .Errors.ErrorMessage "" }}{{else}}hidden{{end}}>
+            {{.Errors.ErrorMessage}}
+        </div>
+        <div class="form-input-group">
             <label for="login-email">Email address</label>
+            <div class="flex-column">
+                <input type="text" id="login-email" name="email" value="{{or .Email ""}}" />
+                <small id="login-email-error" class="danger" {{if eq .Errors.Email nil
+                    }}hidden{{end}}>{{.Errors.Email}}</small>
+            </div>
         </div>
-        <div class="right">
-            <input type="email" id="login-email" name="email" value='{{or .Email ""}}' />
-            <small id="login-email-error" class="danger" {{if eq .Errors.Email nil
-                }}hidden{{end}}>{{.Errors.Email}}</small>
-
+        <div class="w-100">
+            <button id="login-submit" class="btn btn-contained primary w-100" type="submit">Login</button>
         </div>
-    </div>
-    <div class="w-100">
-        <button id="login-submit" class="btn btn-contained primary w-100" type="submit">Login</button>
-    </div>
-</form>
+    </form>
+</div>
 {{end}}

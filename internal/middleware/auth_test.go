@@ -14,9 +14,11 @@ func TestAuthMiddleware(t *testing.T) {
 
 	testData := []struct {
 		createSession  bool
-		elements       map[string]bool
+		elements       map[string]test.ElementValidation
 		email          string
 		expectedStatus int
+		firstName      string
+		lastName       string
 		path           string
 		sessionAgent   string
 		testName       string
@@ -25,10 +27,16 @@ func TestAuthMiddleware(t *testing.T) {
 		validSession   bool
 	}{
 		{
-			createSession:  false,
-			elements:       map[string]bool{"login-form": true, "login-email": true, "login-submit": true, "login-email-error": false},
+			createSession: false,
+			elements: map[string]test.ElementValidation{
+				"login-form":        {Visible: true},
+				"login-email":       {Visible: true},
+				"login-submit":      {Visible: true},
+				"login-email-error": {Visible: false}},
 			email:          "unprotectedEndpointTest@localhost.com",
 			expectedStatus: http.StatusOK,
+			firstName:      "Unprotected",
+			lastName:       "Endpoint",
 			path:           "/login",
 			sessionAgent:   test.DefaultUserAgent,
 			testName:       "Unprotected endpoint",
@@ -36,10 +44,17 @@ func TestAuthMiddleware(t *testing.T) {
 			validSession:   false,
 		},
 		{
-			createSession:  false,
-			elements:       map[string]bool{"login-form": true, "login-email": true, "login-submit": true, "login-email-error": false},
+			createSession: false,
+			elements: map[string]test.ElementValidation{
+				"login-form":        {Visible: true},
+				"login-email":       {Visible: true},
+				"login-submit":      {Visible: true},
+				"login-email-error": {Visible: false},
+			},
 			email:          "protectedEndpointNoCookieTest@localhost.com",
 			expectedStatus: http.StatusOK,
+			firstName:      "Protected",
+			lastName:       "Endpoint",
 			path:           "/registry",
 			sessionAgent:   test.DefaultUserAgent,
 			testName:       "Protected endpoint no cookie",
@@ -48,10 +63,17 @@ func TestAuthMiddleware(t *testing.T) {
 			validSession:   true,
 		},
 		{
-			createSession:  true,
-			elements:       map[string]bool{"login-form": true, "login-email": true, "login-submit": true, "login-email-error": false},
+			createSession: true,
+			elements: map[string]test.ElementValidation{
+				"login-form":        {Visible: true},
+				"login-email":       {Visible: true},
+				"login-submit":      {Visible: true},
+				"login-email-error": {Visible: false},
+			},
 			email:          "idNotInDBTest@localhost.com",
 			expectedStatus: http.StatusOK,
+			firstName:      "Idnot",
+			lastName:       "Indb",
 			path:           "/registry",
 			sessionAgent:   test.DefaultUserAgent,
 			testName:       "Unauthorized access ID not in DB",
@@ -60,10 +82,17 @@ func TestAuthMiddleware(t *testing.T) {
 			validSession:   false,
 		},
 		{
-			createSession:  true,
-			elements:       map[string]bool{"login-form": true, "login-email": true, "login-submit": true, "login-email-error": false},
+			createSession: true,
+			elements: map[string]test.ElementValidation{
+				"login-form":        {Visible: true},
+				"login-email":       {Visible: true},
+				"login-submit":      {Visible: true},
+				"login-email-error": {Visible: false},
+			},
 			email:          "sessionExpiredTest@localhost.com",
 			expectedStatus: http.StatusOK,
+			firstName:      "Session",
+			lastName:       "Expired",
 			path:           "/registry",
 			sessionAgent:   test.DefaultUserAgent,
 			testName:       "Unauthorized access session expired",
@@ -72,10 +101,17 @@ func TestAuthMiddleware(t *testing.T) {
 			validSession:   true,
 		},
 		{
-			createSession:  true,
-			elements:       map[string]bool{"login-form": true, "login-email": true, "login-submit": true, "login-email-error": false},
+			createSession: true,
+			elements: map[string]test.ElementValidation{
+				"login-form":        {Visible: true},
+				"login-email":       {Visible: true},
+				"login-submit":      {Visible: true},
+				"login-email-error": {Visible: false},
+			},
 			email:          "wrongUserAgentTest@localhost.com",
 			expectedStatus: http.StatusOK,
+			firstName:      "Wrong",
+			lastName:       "Agent",
 			path:           "/registry",
 			sessionAgent:   test.DefaultUserAgent,
 			testName:       "Unauthorized access wrong user agent",
@@ -84,10 +120,14 @@ func TestAuthMiddleware(t *testing.T) {
 			validSession:   true,
 		},
 		{
-			createSession:  true,
-			elements:       map[string]bool{"registry-data": true},
+			createSession: true,
+			elements: map[string]test.ElementValidation{
+				"registry-data": {Visible: true},
+			},
 			email:          "validSessionTest@localhost.com",
 			expectedStatus: http.StatusOK,
+			firstName:      "Valid",
+			lastName:       "Session",
 			path:           "/registry",
 			sessionAgent:   test.DefaultUserAgent,
 			testName:       "Valid session",
@@ -96,10 +136,14 @@ func TestAuthMiddleware(t *testing.T) {
 			validSession:   true,
 		},
 		{
-			createSession:  true,
-			elements:       map[string]bool{"registry-data": true},
+			createSession: true,
+			elements: map[string]test.ElementValidation{
+				"registry-data": {Visible: true},
+			},
 			email:          "loginTest@localhost.com",
 			expectedStatus: http.StatusOK,
+			firstName:      "Login",
+			lastName:       "User",
 			path:           "/login",
 			sessionAgent:   test.DefaultUserAgent,
 			testName:       "Valid session via login",
@@ -119,7 +163,13 @@ func TestAuthMiddleware(t *testing.T) {
 
 			if data.createSession {
 
-				sessionID, err := test.CreateSession(ctx, logger, db, data.email, data.timeLeft, data.sessionAgent)
+				userData := test.UserData{
+					Email:     data.email,
+					FirstName: data.firstName,
+					LastName:  data.lastName,
+				}
+
+				sessionID, err := test.CreateSession(ctx, logger, db, userData, data.timeLeft, data.sessionAgent)
 				if err != nil {
 					t.Fatal("Error setting up test session", err)
 				}
@@ -164,17 +214,9 @@ func TestAuthMiddleware(t *testing.T) {
 				t.Fatal("Error parsing the HTML response", err)
 			}
 
-			for id, visible := range data.elements {
-
-				if pageElem, ok := test.CheckElement(*doc, id); ok == false {
-
-					t.Fatal("Could not find element", id, "on the page")
-
-				} else if elemVis := test.ElementVisible(pageElem); elemVis != test.ElementVisible(pageElem) {
-
-					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
-
-				}
+			err = test.ValidatePage(doc, data.elements)
+			if err != nil {
+				t.Fatal("Page validation failed:", err)
 			}
 
 		})

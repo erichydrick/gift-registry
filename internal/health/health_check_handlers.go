@@ -11,7 +11,6 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 )
 
 const (
@@ -29,24 +28,8 @@ type healthInfo struct {
 }
 
 var (
-	meter          = otel.Meter(name)
-	tracer         = otel.Tracer(name)
-	healthCheckCtr metric.Int64Counter
+	tracer = otel.Tracer(name)
 )
-
-func init() {
-
-	var err error
-	healthCheckCtr, err = meter.Int64Counter(
-		"health.check.counter",
-		metric.WithDescription("Number of calls to the /health endpoint"),
-		metric.WithUnit("{call}"),
-	)
-	if err != nil {
-		panic(err)
-	}
-
-}
 
 // Checks the health of the application and returns some relevant statistics
 func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
@@ -76,14 +59,6 @@ func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 		}()
 
 		tmpl, tmplErr := template.ParseFiles(svr.Getenv("TEMPLATES_DIR") + "/health.html")
-		svr.Logger.DebugContext(ctx, "Where are the templates?",
-			slog.String("templatesDir:", svr.Getenv("TEMPLATES_DIR")),
-		)
-
-		healthCheckCtr.Add(ctx, 1, metric.WithAttributes(
-			attribute.Bool("healthy", status.Healthy),
-			attribute.Bool("dbHealthy", status.DBHealth.Healthy),
-		))
 
 		span.SetAttributes(
 			attribute.Bool("healthy", status.Healthy),
@@ -99,7 +74,8 @@ func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 		)
 
 		if tmplErr != nil {
-			svr.Logger.ErrorContext(ctx,
+			svr.Logger.ErrorContext(
+				ctx,
 				"Error loading the health check template",
 				slog.String("errorMessage", tmplErr.Error()),
 			)
@@ -108,7 +84,8 @@ func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 			return
 		}
 
-		svr.Logger.DebugContext(ctx,
+		svr.Logger.DebugContext(
+			ctx,
 			"Writing health check results",
 			slog.Any("results", status),
 		)

@@ -97,6 +97,7 @@ func (es *emailSender) SendVerificationEmail(ctx context.Context, to []string, c
 	auth := smtp.PlainAuth("", es.fromAddress, es.passwd, es.hostname)
 
 	err = smtp.SendMail(es.hostname+":"+es.port, auth, es.fromAddress, to, msg.Bytes())
+
 	span.SetAttributes(attribute.StringSlice("to", to))
 
 	if err != nil {

@@ -1,0 +1,46 @@
+{{define "profile-form"}}
+<div id="profile">
+    <h3 id="profile-header" class="center-text mb-3">{{.FirstName}} {{.LastName}} Profile Page</h3>
+    <form id="profile-form" hx-disabled-elt="#profile-submit" hx-post="/profile" hx-target="#profile"
+        class="flex-column">
+        <div id="profile-error" class="danger flex-row" {{if ne .Errors.ErrorMessage "" }}{{else}}hidden{{end}}>
+            {{.Errors.ErrorMessage}}
+        </div>
+        <div class="form-input-group">
+            <label for="first-name">First name</label>
+            <div class="flex-column">
+                <input type="text" id="first-name" name="firstName" value="{{.FirstName}}" />
+                <small id="first-name-error" class="danger" {{if eq .Errors.FirstName ""
+                    }}hidden{{end}}>{{.Errors.FirstName}}</small>
+            </div>
+        </div>
+        <div class="form-input-group">
+            <label for="last-name">Last name</label>
+            <div class="flex-column">
+                <input type="text" id="last-name" name="lastName" value="{{.LastName}}" />
+                <small id="last-name-error" class="danger" {{if eq .Errors.LastName ""
+                    }}hidden{{end}}>{{.Errors.LastName}}</small>
+            </div>
+        </div>
+        <div class="form-input-group">
+            <label for="display-name">Display name</label>
+            <div class="flex-column">
+                <input type="text" id="display-name" name="displayName" value="{{.DisplayName}}" />
+                <small>This is the name others see on the app</small>
+            </div>
+        </div>
+        <div class="form-input-group">
+            <label for="email">Email address</label>
+            <div class="flex-column">
+                <input type="text" id="email" name="email" value="{{.Email}}" />
+                <small>This is where the login verification code is sent</small>
+                <small id="email-error" class="danger" {{if eq .Errors.Email ""
+                    }}hidden{{end}}>{{.Errors.Email}}</small>
+            </div>
+        </div>
+        <div class="w-100">
+            <button id="profile-submit" class="btn btn-contained primary w-100" type="submit">Update</button>
+        </div>
+    </form>
+</div>
+{{end}}
