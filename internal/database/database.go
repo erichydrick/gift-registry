@@ -118,7 +118,6 @@ func (dbConn DBConn) Execute(
 // Wraps a call to sql.DB.Ping operation so everything is accessible from the interface. Not capturing the histogram since I'm not worried about performance on Ping().
 func (dbConn DBConn) Ping(ctx context.Context) error {
 
-	/* TODO: THIS MAY BE OVERKILL, SHOULD I JUST RETURN DB.PING()? */
 	err := dbConn.db.PingContext(ctx)
 	if err != nil {
 		return fmt.Errorf("error pinging the database: %v", err)

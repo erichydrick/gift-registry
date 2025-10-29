@@ -166,7 +166,6 @@ func authNext(
 
 	} else {
 
-		/* TODO: MAKE THIS A HARD REDIRECT TO /LOGIN */
 		http.Redirect(res, req, "login", http.StatusSeeOther)
 		return
 
@@ -224,14 +223,21 @@ func extendSession(ctx context.Context, svr *util.ServerUtils, sessionID string,
 
 	if modified, err := res.RowsAffected(); err != nil {
 		/* No rollback here, the write has been successful */
-		svr.Logger.ErrorContext(ctx,
+		svr.Logger.ErrorContext(
+			ctx,
 			"Error getting the number of rows modified from the update",
 			slog.String("sessionID", sessionID),
 			slog.String("errorMessage", err.Error()),
 		)
-		/* TODO: WARN ON MODIFIED != 1 */
+	} else if modified > 1 {
+		svr.Logger.WarnContext(
+			ctx,
+			"Expected 0 or 1 recoreds modifie but that wasn't the case",
+			slog.Int64("updatedCount", modified),
+		)
 	} else {
-		svr.Logger.InfoContext(ctx,
+		svr.Logger.InfoContext(
+			ctx,
 			"Successfully set the updated expiration time in the database",
 			slog.Int64("updatedCount", modified),
 			slog.String("sessionID", sessionID),
