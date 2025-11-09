@@ -3,6 +3,7 @@ package server
 import (
 	"gift-registry/internal/health"
 	"gift-registry/internal/middleware"
+	"gift-registry/internal/profile"
 	"gift-registry/internal/registry"
 	"net/http"
 
@@ -34,14 +35,13 @@ func registerRoutes() (http.Handler, error) {
 	handleFunc("POST /login", LoginHandler(appSrv))
 	handleFunc("POST /verify", VerificationHandler(appSrv))
 
+	/* Profile routes */
+	handleFunc("GET /profile", profile.ProfileHandler(appSrv))
+	handleFunc("POST /profile", profile.ProfileUpdateHandler(appSrv))
+
 	/* Registry routes */
 	handleFunc("GET /registry", registry.RegistryHandler(appSrv))
 
-	/*
-		TODO:
-		1. IS THERE SOMETHING WITH FIRST-CLASS FUNCTIONS THAT CAN MAKE THIS READ LESS AWKWARDLY?
-		2. IS THIS THE RIGHT ORDER (SHOULD TELEMETRY BE BEFORE AUTH SO WE CAN CAPTURE AUTH FAILURES?)
-	*/
 	handler := otelhttp.NewHandler(
 		middleware.Cors(
 			appSrv,

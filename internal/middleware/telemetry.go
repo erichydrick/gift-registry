@@ -64,7 +64,7 @@ func Telemetry(svr *util.ServerUtils, next http.Handler) http.Handler {
 
 		next.ServeHTTP(statRes, req)
 
-		attributes, _ = ctx.Value(attrKey).([]attribute.KeyValue)
+		// attributes, _ = ctx.Value(attrKey).([]attribute.KeyValue)
 		attributes = append(attributes,
 			attribute.Bool("successful", statRes.statusCode >= 200 && statRes.statusCode < 300))
 		attributes = append(attributes, attribute.String("path", req.URL.Path))

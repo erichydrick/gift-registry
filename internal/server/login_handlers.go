@@ -78,9 +78,9 @@ const (
 		WHERE person_id = $2`
 )
 
-// Creates a new user account in the person table. The login is valid if the
-// user has provided a properly formatted email address, a first name, and a
-// last name (we're not tracking any other user details).
+// Starts the login process by checking the provided email address against the
+// person table. If there's an account associated with that email, triggers an
+// email with a verification token to complete the login process.
 func LoginHandler(svr *util.ServerUtils) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
@@ -142,13 +142,6 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 
 			svr.Logger.DebugContext(ctx, "Sending user email with the login token", slog.String("userEmail", userData.Email))
 			emailErr = emailer.SendVerificationEmail(ctx, []string{userData.Email}, token, svr.Getenv)
-			if emailErr != nil {
-				svr.Logger.ErrorContext(ctx,
-					"Failed to send the verification email",
-					slog.String("userEmail", userData.Email),
-					slog.String("errorMessage", emailErr.Error()),
-				)
-			}
 
 		}
 
@@ -162,6 +155,11 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 		tmplPath := fmt.Sprintf("%s/%s", svr.Getenv("TEMPLATES_DIR"), "/verify-login.html")
 		tmpl, err := template.ParseFiles(tmplPath)
 		if err != nil {
+			svr.Logger.ErrorContext(
+				ctx,
+				"Error loading the login page template",
+				slog.String("errorMessage", err.Error()),
+			)
 			res.WriteHeader(500)
 			res.Write([]byte("Error loading the login page template!"))
 			return

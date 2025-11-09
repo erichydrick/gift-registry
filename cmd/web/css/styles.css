@@ -24,6 +24,11 @@ body {
     background-color: var(--gray-color);
     font-family: Arial;
     font-size: 1.125rem;
+    line-height: 1.10rem;
+}
+
+button {
+    font-size: 1.10rem;
 }
 
 form button {
@@ -37,10 +42,7 @@ form h2 {
 input {
     border: none;
     border-bottom: 1px solid #000000;
-    display: inline;
     font-size: 1.10rem;
-    margin-left: auto;
-    margin-right: auto;
 }
 
 input:checked+.slider {
@@ -74,6 +76,10 @@ input::-webkit-outer-spin-button,
 input::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
+}
+
+small {
+    font-style: italic;
 }
 
 .btn {
@@ -200,42 +206,49 @@ input::-webkit-inner-spin-button {
     color: var(--danger-color);
 }
 
+.flex-column {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+}
+
+.flex-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
 .form-input-group {
-    display: block;
+    display: flex;
+    flex-basis: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
     height: 1.10rem;
-    margin-bottom: 2rem;
+    margin-top: 2rem;
+}
+
+.form-input-group .flex-column {
+    flex-basis: 70%;
+    flex-grow: 1;
 }
 
 .form-input-group label {
     background-color: var(--white-color);
-    bottom: 0;
-    clear: both;
-    float: left;
+    bottom: -0.3rem;
+    flex-basis: 15%;
     font-weight: 600;
     line-height: 1.10rem;
+    margin-bottom: 1rem;
+    margin-right: 2rem;
     position: relative;
-}
-
-.form-input-group>.left {
-    display: inline;
-    float: left;
-    width: 20%;
-}
-
-.form-input-group>.right {
-    display: inline;
-    float: right;
-    width: 80%;
-}
-
-.form-input-group>.right>input {
-    float: left;
-    text-align: left;
-    width: 100%;
 }
 
 .form-input-group:focus-within label {
     color: var(--primary-color);
+}
+
+.form-input-group .flex-column input {
+    max-width: 100%;
 }
 
 .healthy {
@@ -254,8 +267,36 @@ input::-webkit-inner-spin-button {
     list-style-type: none;
 }
 
+.mb-2 {
+    margin-bottom: 2rem;
+}
+
 .mb-3 {
     margin-bottom: 3rem;
+}
+
+.ml-2 {
+    margin-left: 2rem;
+}
+
+.ml-3 {
+    margin-left: 3rem;
+}
+
+.mr-2 {
+    margin-right: 2rem;
+}
+
+.mr-3 {
+    margin-right: 3rem;
+}
+
+.mt-2 {
+    margin-top: 2rem;
+}
+
+.mt-3 {
+    margin-top: 3rem;
 }
 
 .overflow-x {
@@ -290,6 +331,10 @@ input::-webkit-inner-spin-button {
 .unhealthy {
     color: var(--danger-color);
     font-weight: 700;
+}
+
+.w-50 {
+    width: 50%;
 }
 
 .w-100 {

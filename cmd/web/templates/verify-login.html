@@ -1,13 +1,11 @@
 {{define "verify-login-form"}}
-<form id="verify-form" hx-post="/verify">
+<form id="verify-form" hx-post="/verify" class="flex-column">
     <div id="verify-error" class="danger" {{if ne .Errors.ErrorMessage "" }}{{else}}hidden{{end}}>
         {{.Errors.ErrorMessage}}
     </div>
     <div class="form-input-group">
-        <div class="left">
-            <label for="verify-code">Verification code</label>
-        </div>
-        <div class="right">
+        <label for="verify-code">Verification code</label>
+        <div class="flex-column">
             <input type="text" id="verify-code" name="code" />
             <small id="verify-code-error" class="danger" {{if eq .Errors.Code ""
                 }}hidden{{end}}>{{.Errors.Code}}</small>

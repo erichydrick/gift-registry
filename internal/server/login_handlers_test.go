@@ -21,14 +21,13 @@ import (
 func TestLoginEmailValidationForm(t *testing.T) {
 
 	testData := []struct {
-		email              string
 		expectedEmailSent  bool
 		expectedFields     map[string]bool
 		expectedStatusCode int
 		testName           string
+		userData           test.UserData
 	}{
 		{
-			email:             "validemailtest@localhost.com",
 			expectedEmailSent: true,
 			expectedFields: map[string]bool{
 				"verify-code":       true,
@@ -37,9 +36,14 @@ func TestLoginEmailValidationForm(t *testing.T) {
 				"verify-error":      false},
 			expectedStatusCode: 200,
 			testName:           "Valid email",
+			userData: test.UserData{
+				DisplayName: "Allgood",
+				Email:       "validemailtest@localhost.com",
+				FirstName:   "Valid",
+				LastName:    "Email",
+			},
 		},
 		{
-			email:             "unregistereduser@localhost.com",
 			expectedEmailSent: false,
 			expectedFields: map[string]bool{
 				"verify-code":       true,
@@ -49,9 +53,14 @@ func TestLoginEmailValidationForm(t *testing.T) {
 			},
 			expectedStatusCode: 200,
 			testName:           "Invalid user",
+			userData: test.UserData{
+				DisplayName: "Whoami",
+				Email:       "unregistereduser@localhost.com",
+				FirstName:   "Unregistered",
+				LastName:    "User",
+			},
 		},
 		{
-			email:             "no",
 			expectedEmailSent: false,
 			expectedFields: map[string]bool{
 				"login-email":       true,
@@ -60,6 +69,11 @@ func TestLoginEmailValidationForm(t *testing.T) {
 			},
 			expectedStatusCode: 200,
 			testName:           "Invalid email",
+			userData: test.UserData{
+				Email:     "no",
+				FirstName: "John",
+				LastName:  "Dont",
+			},
 		},
 	}
 
@@ -74,7 +88,7 @@ func TestLoginEmailValidationForm(t *testing.T) {
 			*/
 			if data.expectedEmailSent {
 
-				_, err := test.CreateUser(ctx, logger, db, data.email)
+				_, err := test.CreateUser(ctx, logger, db, data.userData)
 				if err != nil {
 					t.Fatal("Error creating a person record to use for testing", err)
 				}
@@ -82,7 +96,7 @@ func TestLoginEmailValidationForm(t *testing.T) {
 			}
 
 			form := url.Values{}
-			form.Add("email", data.email)
+			form.Add("email", data.userData.Email)
 
 			req, err := http.NewRequestWithContext(ctx, "POST", testServer.URL+"/login", strings.NewReader(form.Encode()))
 			if err != nil {
@@ -128,11 +142,11 @@ func TestLoginEmailValidationForm(t *testing.T) {
 				We could have triggered more than 1 email because we tested agaisnt more
 				than 1 browser.
 			*/
-			if sent, ok := emailer.(*test.EmailMock).EmailToSent[data.email]; ok && sent != data.expectedEmailSent {
+			if sent, ok := emailer.(*test.EmailMock).EmailToSent[data.userData.Email]; ok && sent != data.expectedEmailSent {
 
 				t.Fatalf("Should the verification email have been sent? (%v) Was it? (%v)",
 					data.expectedEmailSent,
-					emailer.(*test.EmailMock).EmailToSent[data.email],
+					emailer.(*test.EmailMock).EmailToSent[data.userData.Email],
 				)
 
 			}
@@ -226,13 +240,13 @@ func TestVerification(t *testing.T) {
 		attempts             int
 		createSession        bool
 		duration             time.Duration
-		email                string
 		enteredToken         string
 		expectedFields       map[string]bool
 		expectedStatusCode   int
 		location             string
 		testName             string
 		token                string
+		userData             test.UserData
 		verificationSuccess  bool
 		verifyEmailPopulated bool
 	}{
@@ -240,7 +254,6 @@ func TestVerification(t *testing.T) {
 			attempts:      0,
 			createSession: true,
 			duration:      -5 * time.Minute,
-			email:         "expiredTokenTest@localhost.com",
 			enteredToken:  "expired-token",
 			expectedFields: map[string]bool{
 				"login-email":       true,
@@ -248,9 +261,14 @@ func TestVerification(t *testing.T) {
 				"login-form":        true,
 				"login-submit":      true,
 			},
-			expectedStatusCode:   200,
-			testName:             "Expired token",
-			token:                "expired-token",
+			expectedStatusCode: 200,
+			testName:           "Expired token",
+			token:              "expired-token",
+			userData: test.UserData{
+				Email:     "expiredTokenTest@localhost.com",
+				FirstName: "Expired",
+				LastName:  "Token",
+			},
 			verifyEmailPopulated: false,
 			verificationSuccess:  false,
 		},
@@ -258,7 +276,6 @@ func TestVerification(t *testing.T) {
 			attempts:      server.MaxAttempts + 5,
 			createSession: true,
 			duration:      5 * time.Minute,
-			email:         "exceededAttemptsTokenTest@localhost.com",
 			enteredToken:  "thisiswrong",
 			expectedFields: map[string]bool{
 				"login-email":       true,
@@ -266,8 +283,13 @@ func TestVerification(t *testing.T) {
 				"login-form":        true,
 				"login-submit":      true,
 			},
-			expectedStatusCode:   200,
-			token:                "unentered-exceeded-token",
+			expectedStatusCode: 200,
+			token:              "unentered-exceeded-token",
+			userData: test.UserData{
+				Email:     "exceededAttemptsTokenTest@localhost.com",
+				FirstName: "Exceeded",
+				LastName:  "Attempts",
+			},
 			testName:             "Failed attempts exceeded",
 			verifyEmailPopulated: false,
 			verificationSuccess:  false,
@@ -275,7 +297,6 @@ func TestVerification(t *testing.T) {
 		{
 			attempts: server.MaxAttempts - 1, duration: 5 * time.Minute,
 			createSession: true,
-			email:         "maxedFailuresTokenTest@localhost.com",
 			enteredToken:  "thisiswrong",
 			expectedFields: map[string]bool{
 				"login-email":       true,
@@ -283,9 +304,14 @@ func TestVerification(t *testing.T) {
 				"login-form":        true,
 				"login-submit":      true,
 			},
-			expectedStatusCode:   200,
-			testName:             "Failed attempts at max",
-			token:                "unentered-max-token",
+			expectedStatusCode: 200,
+			testName:           "Failed attempts at max",
+			token:              "unentered-max-token",
+			userData: test.UserData{
+				Email:     "maxedFailuresTokenTest@localhost.com",
+				FirstName: "Maxed",
+				LastName:  "Failures",
+			},
 			verifyEmailPopulated: false,
 			verificationSuccess:  false,
 		},
@@ -293,7 +319,6 @@ func TestVerification(t *testing.T) {
 			attempts:      0,
 			createSession: true,
 			duration:      5 * time.Minute,
-			email:         "moreTriesTokenTest@localhost.com",
 			enteredToken:  "thisiswrong",
 			expectedFields: map[string]bool{
 				"verify-code":  true,
@@ -301,9 +326,14 @@ func TestVerification(t *testing.T) {
 				"verify-error": true,
 				"verify-form":  true,
 			},
-			expectedStatusCode:   200,
-			testName:             "Failed attempts more remaining",
-			token:                "unentered-more-tries-token",
+			expectedStatusCode: 200,
+			testName:           "Failed attempts more remaining",
+			token:              "unentered-more-tries-token",
+			userData: test.UserData{
+				Email:     "moreTriesTokenTest@localhost.com",
+				FirstName: "More",
+				LastName:  "Tries",
+			},
 			verifyEmailPopulated: true,
 			verificationSuccess:  false,
 		},
@@ -311,7 +341,6 @@ func TestVerification(t *testing.T) {
 			attempts:      0,
 			createSession: false,
 			duration:      5 * time.Minute,
-			email:         "invalidEmail@localhost.com",
 			enteredToken:  "invalid-email-token",
 			expectedFields: map[string]bool{
 				"login-email":       true,
@@ -319,23 +348,32 @@ func TestVerification(t *testing.T) {
 				"login-form":        true,
 				"login-submit":      true,
 			},
-			expectedStatusCode:   200,
-			testName:             "Failed invalid email",
-			token:                "invalid-email-token",
+			expectedStatusCode: 200,
+			testName:           "Failed invalid email",
+			token:              "invalid-email-token",
+			userData: test.UserData{
+				Email:     "invalidEmail@localhost.com",
+				FirstName: "Invalid",
+				LastName:  "Email",
+			},
 			verifyEmailPopulated: false,
 			verificationSuccess:  false,
 		},
 		{
-			attempts:             0,
-			createSession:        true,
-			duration:             5 * time.Minute,
-			email:                "successfulVerification@localhost.com",
-			enteredToken:         "valid-token",
-			expectedFields:       map[string]bool{},
-			expectedStatusCode:   http.StatusOK,
-			location:             "/registry",
-			testName:             "Successful verification",
-			token:                "valid-token",
+			attempts:           0,
+			createSession:      true,
+			duration:           5 * time.Minute,
+			enteredToken:       "valid-token",
+			expectedFields:     map[string]bool{},
+			expectedStatusCode: http.StatusOK,
+			location:           "/registry",
+			testName:           "Successful verification",
+			token:              "valid-token",
+			userData: test.UserData{
+				Email:     "successfulVerification@localhost.com",
+				FirstName: "Successful",
+				LastName:  "Verification",
+			},
 			verifyEmailPopulated: false,
 			verificationSuccess:  true,
 		},
@@ -349,8 +387,8 @@ func TestVerification(t *testing.T) {
 
 			if data.createSession {
 
-				log.Println("Need to create a user and associated token", data.email, data.token, data.duration, data.attempts)
-				err := createToken(db, data.email, data.token, data.duration, data.attempts)
+				log.Println("Need to create a user and associated token", data.userData, data.token, data.duration, data.attempts)
+				err := createToken(db, data.userData, data.token, data.duration, data.attempts)
 				if err != nil {
 					t.Fatal("Error creating a verification record to use for testing: ", err)
 				}
@@ -360,7 +398,7 @@ func TestVerification(t *testing.T) {
 
 			form := url.Values{}
 			form.Add("code", data.enteredToken)
-			form.Add("email", data.email)
+			form.Add("email", data.userData.Email)
 
 			req, err := http.NewRequestWithContext(ctx, "POST", testServer.URL+"/verify", strings.NewReader(form.Encode()))
 			if err != nil {
@@ -418,13 +456,13 @@ func TestVerification(t *testing.T) {
 
 func createToken(
 	dbConn database.Database,
-	email string,
+	userData test.UserData,
 	token string,
 	duration time.Duration,
 	attempts int,
 ) error {
 
-	personID, err := test.CreateUser(ctx, logger, dbConn, email)
+	personID, err := test.CreateUser(ctx, logger, dbConn, userData)
 	if err != nil {
 		return fmt.Errorf("error creating a test user to associate with the verification token: %v", err)
 	}

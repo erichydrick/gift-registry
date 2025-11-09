@@ -210,7 +210,6 @@ func listMigrations(migrationsDir fs.FS, root string, logger *slog.Logger) ([]fs
 		return []fs.DirEntry{}, fmt.Errorf("error building the list of migration files: %s", err)
 	}
 
-	logger.Debug("Does just using subdirectories work?")
 	/* Sort alphabetically by filename */
 	slices.SortFunc(migrationFiles, sortDirEntries)
 	return migrationFiles, nil

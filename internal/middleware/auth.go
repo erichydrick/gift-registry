@@ -13,17 +13,25 @@ import (
 )
 
 const (
+	DeleteSessionQuery = "DELETE FROM session WHERE session_id = $1"
 	ExtendSessionQuery = "UPDATE session SET expiration = $1 WHERE session_id = $2"
-	LookupSessionQuery = "SELECT * FROM session WHERE session_id = $1"
+	LookupSessionQuery = "SELECT session_id, person_id, expiration, user_agent FROM session WHERE session_id = $1"
 	SessionCookie      = "gift-registry-session"
 )
 
+type personKey int
+
 type session struct {
 	sessionID  string    `db:"session_id"`
-	email      string    `db:"email"`
+	personID   int64     `db:"person_id"`
 	expiration time.Time `db:"expiration"`
 	userAgent  string    `db:"user_agent"`
 }
+
+const (
+	_ personKey = iota
+	loggedInUser
+)
 
 var (
 	publicRoutes  []*regexp.Regexp
@@ -41,7 +49,7 @@ func init() {
 	}
 }
 
-/* Enforces valid login sessions for non-public endpoints */
+// Enforces valid login sessions for non-public endpoints
 func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
@@ -87,8 +95,9 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 			svr.Logger.InfoContext(ctx,
 				"Session has expired, logging out",
 				slog.String("cookieValue", cookie.Value),
-				slog.String("emailAddress", sessInfo.email),
+				slog.Int64("personID", sessInfo.personID),
 			)
+			deleteSession(ctx, svr, sessInfo.sessionID)
 			authNext(ctx, svr, res, req, next, pass)
 			return
 
@@ -100,8 +109,9 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 			svr.Logger.InfoContext(ctx,
 				"User agent doesn't match agent at sign-in. Logging out.",
 				slog.String("cookieValue", cookie.Value),
-				slog.String("emailAddress", sessInfo.email),
+				slog.Int64("personID", sessInfo.personID),
 			)
+			deleteSession(ctx, svr, sessInfo.sessionID)
 			authNext(ctx, svr, res, req, next, pass)
 			return
 
@@ -113,9 +123,17 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 		cookie.MaxAge = int(time.Until(newExp).Seconds())
 		http.SetCookie(res, cookie)
 		extendSession(ctx, svr, sessInfo.sessionID, newExp)
+		ctx = context.WithValue(ctx, loggedInUser, sessInfo.personID)
+		req = req.WithContext(ctx)
 		authNext(ctx, svr, res, req, next, pass)
 
 	})
+
+}
+
+func PersonID(res http.ResponseWriter, req *http.Request) int64 {
+
+	return req.Context().Value(loggedInUser).(int64)
 
 }
 
@@ -148,10 +166,52 @@ func authNext(
 
 	} else {
 
+		/* TODO: MAKE THIS A HARD REDIRECT TO /LOGIN */
 		http.Redirect(res, req, "login", http.StatusSeeOther)
 		return
 
 	}
+
+}
+
+func deleteSession(ctx context.Context, svr *util.ServerUtils, sessionID string) error {
+
+	svr.Logger.InfoContext(
+		ctx,
+		"Deleting existing session information",
+		slog.String("sessionID", sessionID),
+	)
+
+	if result, err := svr.DB.Execute(ctx, DeleteSessionQuery, sessionID); err != nil {
+		return fmt.Errorf("could not delete session information from the database: %v", err)
+	} else if modified, err := result.RowsAffected(); err != nil {
+		/*
+			This error doesn't represent a failure to delete the session information,
+			so still going to return nil, but I want to capture it in the logs just in
+			case
+		*/
+		svr.Logger.WarnContext(
+			ctx,
+			"Could not the number of rows modified",
+			slog.String("errorMessage", err.Error()),
+		)
+	} else if modified != 1 {
+		/*
+			Again, the operation didn't fail per se, but this isn't expected and we
+			should be aware of it.
+
+			In the immediate term, this will likely fire as a false positive until I
+			get session/token cleanup automation implemented.
+		*/
+		svr.Logger.WarnContext(
+			ctx,
+			"Session deletion did not modify the expected number of records",
+			slog.Int64("expectedCount", 1),
+			slog.Int64("actualCount", modified),
+		)
+	}
+
+	return nil
 
 }
 
@@ -169,6 +229,7 @@ func extendSession(ctx context.Context, svr *util.ServerUtils, sessionID string,
 			slog.String("sessionID", sessionID),
 			slog.String("errorMessage", err.Error()),
 		)
+		/* TODO: WARN ON MODIFIED != 1 */
 	} else {
 		svr.Logger.InfoContext(ctx,
 			"Successfully set the updated expiration time in the database",
@@ -222,7 +283,9 @@ func isPublic(ctx context.Context, svr *util.ServerUtils, req *http.Request) boo
 func lookupSession(ctx context.Context, svr *util.ServerUtils, sessionID string) (session, error) {
 
 	var sessRec session
-	err := svr.DB.QueryRow(ctx, LookupSessionQuery, sessionID).Scan(&sessRec.sessionID, &sessRec.email, &sessRec.expiration, &sessRec.userAgent)
+	err := svr.DB.
+		QueryRow(ctx, LookupSessionQuery, sessionID).
+		Scan(&sessRec.sessionID, &sessRec.personID, &sessRec.expiration, &sessRec.userAgent)
 	/* Just returning an empty session to since that's the same as sql.ErrNoRows */
 	if err != nil && err != sql.ErrNoRows {
 		svr.Logger.ErrorContext(ctx,
