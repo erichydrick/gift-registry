@@ -38,6 +38,15 @@
                     }}hidden{{end}}>{{.Errors.Email}}</small>
             </div>
         </div>
+        <div class="form-input-group">
+            <label for="household-name">Household name</label>
+            <div class="flex-column">
+                <input type="text" id="household-name" name="householdName" value="{{.HouseholdName}}" />
+                <small>This is what shows up when you claim a gift request</small>
+                <small id="household-error" class="danger" {{if eq .Errors.Household ""
+                    }}hidden{{end}}>{{.Errors.Household}}</small>
+            </div>
+        </div>
         <div class="w-100">
             <button id="profile-submit" class="btn btn-contained primary w-100" type="submit">Update</button>
         </div>

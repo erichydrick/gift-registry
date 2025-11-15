@@ -360,6 +360,12 @@ func (db testDB) Execute(ctx context.Context, statement string, params ...any) (
 
 }
 
+func (db testDB) ExecuteBatch(ctx context.Context, statement []string, params [][]any) ([]sql.Result, []error) {
+
+	return []sql.Result{}, []error{sql.ErrNoRows}
+
+}
+
 func (db testDB) Ping(ctx context.Context) error {
 
 	return db.db.Ping()

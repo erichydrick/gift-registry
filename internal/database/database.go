@@ -19,6 +19,7 @@ import (
 type Database interface {
 	Close() error
 	Execute(ctx context.Context, statement string, params ...any) (sql.Result, error)
+	ExecuteBatch(ctx context.Context, statements []string, params [][]any) ([]sql.Result, []error)
 	Ping(ctx context.Context) error
 	Query(ctx context.Context, query string, params ...any) (*sql.Rows, error)
 	QueryRow(ctx context.Context, query string, params ...any) *sql.Row
@@ -112,6 +113,77 @@ func (dbConn DBConn) Execute(
 
 	dbConn.histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
 	return res, nil
+
+}
+
+// Wraps multiple database operations in a series of sql.DB.ExecContext
+// operations so we can capture the time it takes to perform the operation,
+// and so other files don't have to handle the transaction logic
+func (dbConn DBConn) ExecuteBatch(
+	ctx context.Context,
+	statements []string,
+	params [][]any,
+) (results []sql.Result, errors []error) {
+
+	start := time.Now()
+	results = make([]sql.Result, len(statements))
+	errors = make([]error, len(statements))
+
+	ctx, span := tracer.Start(ctx, "DatabaseExecute")
+	defer span.End()
+
+	tx, err := dbConn.db.BeginTx(ctx, nil)
+	if err != nil {
+		dbConn.histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
+		results = append(results, EmptyResult{})
+		errors = append(errors, err)
+		span.End()
+		return
+	}
+
+	for idx := range statements {
+
+		/*
+			Create per-query span details so I can easily find specific problem queries
+			if needed. Using shadowing to (and try to) keep the code clean and easy to follow
+		*/
+		start := time.Now()
+		ctx, span := tracer.Start(ctx, "QueryExecute")
+		span.SetAttributes(attribute.String("query", statements[idx]), attribute.String("parameters", fmt.Sprintf("%v", params[idx]...)))
+
+		res, err := dbConn.db.ExecContext(ctx, statements[idx], params[idx]...)
+		if err != nil {
+			txFailure(ctx, tx, dbConn.histogram, start, err)
+			dbConn.histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
+			results = append(results, EmptyResult{})
+			errors = append(errors, err)
+			span.End()
+			continue
+		}
+
+		/* Capture the number of rows modified */
+		if count, err := res.RowsAffected(); err == nil {
+			span.SetAttributes(attribute.Int64("modifiedCount", count))
+		}
+
+		errors = append(errors, nil)
+		dbConn.histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
+		span.End()
+
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		txFailure(ctx, tx, dbConn.histogram, start, err)
+		dbConn.histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
+		results = append(results, EmptyResult{})
+		errors = append(errors, err)
+		span.End()
+		return
+	}
+
+	dbConn.histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
+	return
 
 }
 

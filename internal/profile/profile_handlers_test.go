@@ -21,14 +21,35 @@ import (
 	"golang.org/x/net/html"
 )
 
+type person struct {
+	personID      int64
+	householdID   int64
+	firstName     string
+	lastName      string
+	displayName   string
+	email         string
+	householdName string
+}
+
 // Connection details for the test database
 const (
-	dbName            = "profile_test"
-	dbUser            = "profile_user"
-	dbPass            = "profile_pass"
-	insertPersonQuery = "INSERT INTO person (display_name, email, external_id, first_name, last_name) VALUES ($1, $2, $3, $4, $5)"
-	tooLongString     = "12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"
-	userAgent         = "test-user-agent"
+	dbName                 = "profile_test"
+	dbUser                 = "profile_user"
+	dbPass                 = "profile_pass"
+	userAgent              = "test-user-agent"
+	lookupUpdatedUserQuery = `
+		SELECT p.person_id, 
+			h.household_id,
+			p.first_name, 
+			p.last_name, 
+			p.display_name, 
+			p.email,
+			h.name
+		FROM person p 
+			INNER JOIN session s ON p.person_id = s.person_id 
+			INNER JOIN household_person hp ON hp.person_id = p.person_id
+			INNER JOIN household h ON h.household_id = hp.household_id
+		WHERE s.session_id = $1`
 )
 
 // Test-specific values
@@ -95,12 +116,13 @@ func TestMain(m *testing.M) {
 func TestProfilePage(t *testing.T) {
 
 	testData := []struct {
-		displayName string
-		elements    map[string]test.ElementValidation
-		email       string
-		firstName   string
-		lastName    string
-		testName    string
+		displayName   string
+		elements      map[string]test.ElementValidation
+		email         string
+		firstName     string
+		householdName string
+		lastName      string
+		testName      string
 	}{
 		{
 			displayName: "root",
@@ -126,16 +148,22 @@ func TestProfilePage(t *testing.T) {
 					Value:   "displayName@localhost.com",
 					Visible: true,
 				},
+				"household-name": {
+					Value:   "Disp",
+					Visible: true,
+				},
 				"profile-submit":   {Visible: true},
 				"first-name-error": {Visible: false},
+				"household-error":  {Visible: false},
 				"last-name-error":  {Visible: false},
 				"email-error":      {Visible: false},
 				"profile-error":    {Visible: false},
 			},
-			email:     "displayName@localhost.com",
-			firstName: "Display",
-			lastName:  "Named",
-			testName:  "Successful profile load with display name",
+			email:         "displayName@localhost.com",
+			firstName:     "Display",
+			householdName: "Disp",
+			lastName:      "Named",
+			testName:      "Successful profile load with display name",
 		},
 		{
 			elements: map[string]test.ElementValidation{
@@ -160,16 +188,21 @@ func TestProfilePage(t *testing.T) {
 					Value:   "nodisplayname@localhost.com",
 					Visible: true,
 				},
+				"household-name": {
+					Value:   "Display",
+					Visible: true,
+				},
 				"profile-submit":   {Visible: true},
 				"first-name-error": {Visible: false},
 				"last-name-error":  {Visible: false},
 				"email-error":      {Visible: false},
 				"profile-error":    {Visible: false},
 			},
-			email:     "nodisplayname@localhost.com",
-			firstName: "Display",
-			lastName:  "Nameless",
-			testName:  "Successful profile load with no display name",
+			email:         "nodisplayname@localhost.com",
+			firstName:     "Display",
+			householdName: "Display",
+			lastName:      "Nameless",
+			testName:      "Successful profile load with no display name",
 		},
 	}
 
@@ -180,10 +213,11 @@ func TestProfilePage(t *testing.T) {
 			t.Parallel()
 
 			userData := test.UserData{
-				DisplayName: data.displayName,
-				Email:       data.email,
-				FirstName:   data.firstName,
-				LastName:    data.lastName,
+				DisplayName:   data.displayName,
+				Email:         data.email,
+				FirstName:     data.firstName,
+				HouseholdName: data.householdName,
+				LastName:      data.lastName,
 			}
 
 			token, err := test.CreateSession(ctx, logger, db, userData, time.Minute*5, userAgent)
@@ -350,7 +384,9 @@ func TestProfileUpdates(t *testing.T) {
 		elements        map[string]test.ElementValidation
 		email           string
 		firstName       string
+		householdName   string
 		lastName        string
+		success         bool
 		testName        string
 		updatedUserData test.UserData
 		userData        test.UserData
@@ -378,25 +414,33 @@ func TestProfileUpdates(t *testing.T) {
 					Value:   "completedupdate@localhost.com",
 					Visible: true,
 				},
+				"household-name": {
+					Value:   "New House Success",
+					Visible: true,
+				},
 				"profile-submit":   {Visible: true},
 				"first-name-error": {Visible: false},
+				"household-error":  {Visible: false},
 				"last-name-error":  {Visible: false},
 				"email-error":      {Visible: false},
 				"profile-error":    {Visible: false},
 			},
+			success:  true,
 			testName: "Successful profile update changed",
 			updatedUserData: test.UserData{
-				DisplayName: "Sudo",
-				Email:       "completedupdate@localhost.com",
-				FirstName:   "Completed",
-				LastName:    "Modification",
+				DisplayName:   "Sudo",
+				Email:         "completedupdate@localhost.com",
+				FirstName:     "Completed",
+				HouseholdName: "New House Success",
+				LastName:      "Modification",
 			},
 			userData: test.UserData{
-				DisplayName: "Root",
-				Email:       "successfulupdate@localhost.com",
-				ExternalID:  "success_update",
-				FirstName:   "Successful",
-				LastName:    "Update",
+				DisplayName:   "Root",
+				Email:         "successfulupdate@localhost.com",
+				ExternalID:    "success_update",
+				FirstName:     "Successful",
+				HouseholdName: "Existing Household Success",
+				LastName:      "Update",
 			},
 		},
 		{
@@ -422,25 +466,33 @@ func TestProfileUpdates(t *testing.T) {
 					Value:   "failedupdatenofirstname@localhost.com",
 					Visible: true,
 				},
+				"household-name": {
+					Value:   "Failed update first name house",
+					Visible: true,
+				},
 				"profile-submit":   {Visible: true},
 				"first-name-error": {Visible: true},
+				"household-error":  {Visible: false},
 				"last-name-error":  {Visible: false},
 				"email-error":      {Visible: false},
 				"profile-error":    {Visible: false},
 			},
+			success:  false,
 			testName: "Failed update no first name",
 			updatedUserData: test.UserData{
-				DisplayName: "Sudo",
-				Email:       "failedupdatenofirstname@localhost.com",
-				FirstName:   "",
-				LastName:    "Name",
+				DisplayName:   "Sudo",
+				Email:         "failedupdatenofirstname@localhost.com",
+				FirstName:     "",
+				HouseholdName: "Failed update first name house",
+				LastName:      "Name",
 			},
 			userData: test.UserData{
-				DisplayName: "Root",
-				Email:       "failedupdatenofirstname@localhost.com",
-				ExternalID:  "bad_first_name",
-				FirstName:   "Nofirst",
-				LastName:    "Name",
+				DisplayName:   "Root",
+				Email:         "failedupdatenofirstname@localhost.com",
+				ExternalID:    "bad_first_name",
+				FirstName:     "Nofirst",
+				HouseholdName: "Failed update first name house",
+				LastName:      "Name",
 			},
 		},
 		{
@@ -466,25 +518,33 @@ func TestProfileUpdates(t *testing.T) {
 					Value:   "",
 					Visible: true,
 				},
+				"household-name": {
+					Value:   "Failed update last name and email house",
+					Visible: true,
+				},
 				"profile-submit":   {Visible: true},
 				"first-name-error": {Visible: false},
+				"household-error":  {Visible: false},
 				"last-name-error":  {Visible: true},
 				"email-error":      {Visible: true},
 				"profile-error":    {Visible: false},
 			},
+			success:  false,
 			testName: "Failed profile update last name and email",
 			updatedUserData: test.UserData{
-				DisplayName: "Root",
-				Email:       "",
-				FirstName:   "Completed",
-				LastName:    "",
+				DisplayName:   "Root",
+				Email:         "",
+				FirstName:     "Completed",
+				HouseholdName: "Failed update last name and email house",
+				LastName:      "",
 			},
 			userData: test.UserData{
-				DisplayName: "Root",
-				Email:       "failedupdatemultipleFields@localhost.com",
-				ExternalID:  "bad_last_email",
-				FirstName:   "Successful",
-				LastName:    "Update",
+				DisplayName:   "Root",
+				Email:         "failedupdatemultipleFields@localhost.com",
+				ExternalID:    "bad_last_email",
+				FirstName:     "Successful",
+				HouseholdName: "Failed update last name and email house",
+				LastName:      "Update",
 			},
 		},
 		{
@@ -510,25 +570,84 @@ func TestProfileUpdates(t *testing.T) {
 					Value:   "cleardisplayname@localhost.com",
 					Visible: true,
 				},
+				"household-name": {
+					Value:   "Clear display name success house",
+					Visible: true,
+				},
 				"profile-submit":   {Visible: true},
 				"first-name-error": {Visible: false},
+				"household-error":  {Visible: false},
 				"last-name-error":  {Visible: false},
 				"email-error":      {Visible: false},
 				"profile-error":    {Visible: false},
 			},
+			success:  true,
 			testName: "Clear display name",
 			updatedUserData: test.UserData{
-				DisplayName: "",
-				Email:       "cleardisplayname@localhost.com",
-				FirstName:   "Clear",
-				LastName:    "Displayname",
+				DisplayName:   "",
+				Email:         "cleardisplayname@localhost.com",
+				FirstName:     "Clear",
+				HouseholdName: "Clear display name success house",
+				LastName:      "Displayname",
 			},
 			userData: test.UserData{
-				DisplayName: "Blanked",
-				Email:       "cleardisplayname@localhost.com",
-				ExternalID:  "clear_display",
-				FirstName:   "Clear",
-				LastName:    "Displayname",
+				DisplayName:   "Blanked",
+				Email:         "cleardisplayname@localhost.com",
+				ExternalID:    "clear_display",
+				FirstName:     "Clear",
+				HouseholdName: "Clear display name success house",
+				LastName:      "Displayname",
+			},
+		},
+		{
+			elements: map[string]test.ElementValidation{
+				"profile-form": {Visible: true},
+				"profile-header": {
+					Value:   "Valid Household Profile Page",
+					Visible: true,
+				},
+				"first-name": {
+					Value:   "Valid",
+					Visible: true,
+				},
+				"last-name": {
+					Value:   "Household",
+					Visible: true,
+				},
+				"display-name": {
+					Value:   "Valid",
+					Visible: true,
+				},
+				"email": {
+					Value:   "validhouseholdname@localhost.com",
+					Visible: true,
+				},
+				"household-name": {
+					Value:   "New valid household name",
+					Visible: true,
+				},
+				"profile-submit":   {Visible: true},
+				"first-name-error": {Visible: false},
+				"household-error":  {Visible: false},
+				"last-name-error":  {Visible: false},
+				"email-error":      {Visible: false},
+				"profile-error":    {Visible: false},
+			},
+			success:  false,
+			testName: "Update household name",
+			updatedUserData: test.UserData{
+				DisplayName:   "Valid",
+				Email:         "validhouseholdname@localhost.com",
+				FirstName:     "Valid",
+				HouseholdName: "New valid household name",
+				LastName:      "Household",
+			},
+			userData: test.UserData{
+				DisplayName:   "Valid",
+				Email:         "validhouseholdname@localhost.com",
+				FirstName:     "Valid",
+				HouseholdName: "Valid household",
+				LastName:      "Household",
 			},
 		},
 	}
@@ -557,6 +676,7 @@ func TestProfileUpdates(t *testing.T) {
 			form.Add("firstName", data.updatedUserData.FirstName)
 			form.Add("lastName", data.updatedUserData.LastName)
 			form.Add("displayName", data.updatedUserData.DisplayName)
+			form.Add("householdName", data.updatedUserData.HouseholdName)
 
 			req, err := http.NewRequestWithContext(ctx, "POST", testServer.URL+"/profile", strings.NewReader(form.Encode()))
 			if err != nil {
@@ -586,6 +706,41 @@ func TestProfileUpdates(t *testing.T) {
 			err = test.ValidatePage(doc, data.elements)
 			if err != nil {
 				t.Fatal(err)
+			}
+
+			if data.success {
+
+				var updatedRecord person
+				db.QueryRow(ctx, lookupUpdatedUserQuery, token).
+					Scan(
+						&updatedRecord.personID,
+						&updatedRecord.householdID,
+						&updatedRecord.firstName,
+						&updatedRecord.lastName,
+						&updatedRecord.displayName,
+						&updatedRecord.email,
+						&updatedRecord.householdName,
+					)
+
+				/* Confirm the database has the updated values */
+				if updatedRecord.firstName != data.updatedUserData.FirstName {
+					t.Fatal("Updated first name doesn't match the expected value! DB", updatedRecord.firstName, " expected", data.updatedUserData.FirstName)
+				}
+				if updatedRecord.lastName != data.updatedUserData.LastName {
+					t.Fatal("Updated last name doesn't match the expected value!  DB", updatedRecord.lastName, " expected", data.updatedUserData.LastName)
+				}
+				if updatedRecord.displayName != data.updatedUserData.DisplayName {
+					/*
+						Clearing the display name causes the field to default to the first name
+					*/
+					if data.updatedUserData.DisplayName == "" && updatedRecord.displayName != updatedRecord.firstName {
+						t.Fatal("Updated display name name doesn't match the expected value!DB", updatedRecord.displayName, " expected", data.updatedUserData.DisplayName)
+					}
+				}
+				if updatedRecord.email != data.updatedUserData.Email {
+					t.Fatal("Updated email adress doesn't match the expected value! DB", updatedRecord.email, " expected", data.updatedUserData.Email)
+				}
+
 			}
 
 		})
