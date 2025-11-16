@@ -21,14 +21,21 @@ import (
 	"golang.org/x/net/html"
 )
 
+type person struct {
+	personID    int64
+	firstName   string
+	lastName    string
+	displayName string
+	email       string
+}
+
 // Connection details for the test database
 const (
-	dbName            = "profile_test"
-	dbUser            = "profile_user"
-	dbPass            = "profile_pass"
-	insertPersonQuery = "INSERT INTO person (display_name, email, external_id, first_name, last_name) VALUES ($1, $2, $3, $4, $5)"
-	tooLongString     = "12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"
-	userAgent         = "test-user-agent"
+	dbName                 = "profile_test"
+	dbUser                 = "profile_user"
+	dbPass                 = "profile_pass"
+	lookupUpdatedUserQuery = "SELECT p.person_id, p.first_name, p.last_name, p.display_name, p.email FROM person p INNER JOIN session s ON p.person_id = s.person_id WHERE s.session_id = $1"
+	userAgent              = "test-user-agent"
 )
 
 // Test-specific values
@@ -351,6 +358,7 @@ func TestProfileUpdates(t *testing.T) {
 		email           string
 		firstName       string
 		lastName        string
+		success         bool
 		testName        string
 		updatedUserData test.UserData
 		userData        test.UserData
@@ -384,6 +392,7 @@ func TestProfileUpdates(t *testing.T) {
 				"email-error":      {Visible: false},
 				"profile-error":    {Visible: false},
 			},
+			success:  true,
 			testName: "Successful profile update changed",
 			updatedUserData: test.UserData{
 				DisplayName: "Sudo",
@@ -428,6 +437,7 @@ func TestProfileUpdates(t *testing.T) {
 				"email-error":      {Visible: false},
 				"profile-error":    {Visible: false},
 			},
+			success:  false,
 			testName: "Failed update no first name",
 			updatedUserData: test.UserData{
 				DisplayName: "Sudo",
@@ -472,6 +482,7 @@ func TestProfileUpdates(t *testing.T) {
 				"email-error":      {Visible: true},
 				"profile-error":    {Visible: false},
 			},
+			success:  false,
 			testName: "Failed profile update last name and email",
 			updatedUserData: test.UserData{
 				DisplayName: "Root",
@@ -516,6 +527,7 @@ func TestProfileUpdates(t *testing.T) {
 				"email-error":      {Visible: false},
 				"profile-error":    {Visible: false},
 			},
+			success:  true,
 			testName: "Clear display name",
 			updatedUserData: test.UserData{
 				DisplayName: "",
@@ -586,6 +598,39 @@ func TestProfileUpdates(t *testing.T) {
 			err = test.ValidatePage(doc, data.elements)
 			if err != nil {
 				t.Fatal(err)
+			}
+
+			if data.success {
+
+				var updatedRecord person
+				db.QueryRow(ctx, lookupUpdatedUserQuery, token).
+					Scan(
+						&updatedRecord.personID,
+						&updatedRecord.firstName,
+						&updatedRecord.lastName,
+						&updatedRecord.displayName,
+						&updatedRecord.email,
+					)
+
+				/* Confirm the database has the updated values */
+				if updatedRecord.firstName != data.updatedUserData.FirstName {
+					t.Fatal("Updated first name doesn't match the expected value! DB", updatedRecord.firstName, " expected", data.updatedUserData.FirstName)
+				}
+				if updatedRecord.lastName != data.updatedUserData.LastName {
+					t.Fatal("Updated last name doesn't match the expected value!  DB", updatedRecord.lastName, " expected", data.updatedUserData.LastName)
+				}
+				if updatedRecord.displayName != data.updatedUserData.DisplayName {
+					/*
+						Clearing the display name causes the field to default to the first name
+					*/
+					if data.updatedUserData.DisplayName == "" && updatedRecord.displayName != updatedRecord.firstName {
+						t.Fatal("Updated display name name doesn't match the expected value!DB", updatedRecord.displayName, " expected", data.updatedUserData.DisplayName)
+					}
+				}
+				if updatedRecord.email != data.updatedUserData.Email {
+					t.Fatal("Updated email adress doesn't match the expected value! DB", updatedRecord.email, " expected", data.updatedUserData.Email)
+				}
+
 			}
 
 		})
