@@ -33,11 +33,12 @@ type EmailMock struct {
 
 // Holds the details needed to make a test user in the database
 type UserData struct {
-	DisplayName string
-	Email       string
-	ExternalID  string
-	FirstName   string
-	LastName    string
+	DisplayName   string
+	Email         string
+	ExternalID    string
+	FirstName     string
+	HouseholdName string
+	LastName      string
 }
 
 const (
@@ -107,6 +108,65 @@ func CheckElement(root html.Node, id string) (html.Node, bool) {
 
 }
 
+func CreateHousehold(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData, personID int64) (int64, error) {
+
+	/*
+		I don't want to have to make external IDs for every test, just use a string
+		timestamp as a "good enough" placeholder
+	*/
+	if userData.ExternalID == "" {
+
+		externalID := time.Now().String()
+		userData.ExternalID = externalID[0:externalIDLength]
+
+	}
+
+	/*
+		Create the household
+	*/
+	res, err := db.Execute(
+		ctx,
+		"INSERT INTO HOUSEHOLD (external_id, name) VALUES ($1, $2)",
+		userData.ExternalID,
+		userData.HouseholdName,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("could not create a household record for testing: %v", err)
+	} else if added, err := res.RowsAffected(); err != nil {
+		log.Println("Error getting the last inserted ID from the test household creation.")
+		return 0, err
+	} else if added < 1 {
+		log.Println("Don't have an ID value for the newly-created household!")
+		return 0, err
+	}
+
+	var householdID int64
+	db.QueryRow(ctx, "SELECT household_id FROM household WHERE name = $1",
+		userData.HouseholdName).Scan(&householdID)
+
+	/*
+		Add the test user to the household
+	*/
+	res, err = db.Execute(
+		ctx,
+		"INSERT INTO household_person (household_id, person_id) VALUES($1, $2)",
+		householdID,
+		personID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("could not add test user to newly-created household %v: %v", householdID, err)
+	} else if added, err := res.RowsAffected(); err != nil {
+		log.Println("Error getting the last inserted ID from the test household creation.")
+		return 0, err
+	} else if added < 1 {
+		log.Println("Don't have an ID value for the newly-created household!")
+		return 0, err
+	}
+
+	return householdID, nil
+
+}
+
 func CreateSession(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData, timeLeft time.Duration, userAgent string) (string, error) {
 
 	personID, err := CreateUser(ctx, logger, db, userData)
@@ -167,6 +227,16 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 	if err != nil {
 		log.Println("Error reading the created user's ID")
 		return 0, fmt.Errorf("error reading the created user's id: %v", err)
+	}
+
+	/* Household information is not required for all tests.*/
+	if userData.HouseholdName != "" {
+
+		_, err = CreateHousehold(ctx, logger, db, userData, id)
+		if err != nil {
+			return 0, fmt.Errorf("error adding the new test user to a household: %v", err)
+		}
+
 	}
 
 	return id, nil

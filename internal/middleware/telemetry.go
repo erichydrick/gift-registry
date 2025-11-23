@@ -82,7 +82,7 @@ func Telemetry(svr *util.ServerUtils, next http.Handler) http.Handler {
 		}
 
 		svr.Logger.InfoContext(ctx,
-			fmt.Sprintf("Finished the operation %s", req.URL.Path),
+			fmt.Sprintf("Finished the %s operation %s", req.Method, req.URL.Path),
 			logAttrs...,
 		)
 
