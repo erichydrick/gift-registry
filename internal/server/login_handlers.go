@@ -460,12 +460,6 @@ func deleteVerification(ctx context.Context, svr *util.ServerUtils, personID int
 			slog.String("errorMessage", err.Error()),
 		)
 	} else {
-		/*
-			TODO: CHANGING THIS FROM EMAIL TO PERSONID RAISES A BIGGER QUESTION - DO I
-			NEED TO BE CAPTURING THINGS LIKE USER EMAIL IN LOG MESSAGES, OR CAN I
-			CAPTURE THAT ONCE AND THEN FOLLOW THE TRACE TO GET ALL ASSOCIATED LOGS
-			WITH A PARTICULAR LOGIN OPERATION?
-		*/
 		svr.Logger.InfoContext(ctx,
 			"Cleaned up the verification table",
 			slog.Int64("count", cnt),

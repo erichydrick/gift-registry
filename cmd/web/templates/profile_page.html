@@ -18,9 +18,11 @@
         </h1>
     </div>
 
-    <div id="page-content" class="centered content flex-column shadowed">
+    {{range .Profiles}}
+    <div id="profile-{{.ExternalID}}" class="centered content flex-column shadowed">
         {{template "profile-form" .}}
     </div>
+    {{end}}
 
 </body>
 

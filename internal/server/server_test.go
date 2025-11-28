@@ -174,8 +174,6 @@ func TestBadTemplates(t *testing.T) {
 
 			}
 
-			// TODO: VERIFY I HAVE A MESSAGE IN HERE?
-
 		})
 
 	}

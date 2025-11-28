@@ -158,7 +158,7 @@ func (dbConn DBConn) ExecuteBatch(
 			results = append(results, EmptyResult{})
 			errors = append(errors, err)
 			span.End()
-			continue
+			return
 		}
 
 		/* Capture the number of rows modified */
@@ -298,18 +298,23 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 	}
 
 	connection.db = db
-	err = connection.runMigrations(ctx, logger, getenv)
-	if err != nil {
-		logger.ErrorContext(ctx, "Error applying migrations to database connection",
-			slog.String("connectionDetails", connection.String()),
-			slog.String("errorMessage", err.Error()))
-		/*
-			I'm going to allow a connection to be returned (with the error) if the
-			migration fails in the assumption that I'm in a degraded, but not
-			unusable, state. For everything else we should just fail completely.
-		*/
+	errs := connection.runMigrations(ctx, logger, getenv)
+	onlyMigrationErrors := true
+	if len(errs) > 0 {
+		for _, err := range errs {
+			logger.ErrorContext(ctx, "Error applying migrations to database connection",
+				slog.String("connectionDetails", connection.String()),
+				slog.String("errorMessage", err.Error()))
+			/*
+				I'm going to allow a connection to be returned (with the error) if the
+				migration fails in the assumption that I'm in a degraded, but not
+				unusable, state. For everything else we should just fail completely.
+			*/
 
-		if !errors.Is(err, ErrMigration) {
+			onlyMigrationErrors = onlyMigrationErrors && errors.Is(err, ErrMigration)
+
+		}
+		if !onlyMigrationErrors {
 			return DBConn{}, err
 		}
 

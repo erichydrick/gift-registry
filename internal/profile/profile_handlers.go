@@ -1,12 +1,16 @@
+// Package profile handles all the user profile interations, from updating
+// names and emails as well as viewing the profiles for people being managed
+// by household members (like small children).
 package profile
 
 import (
 	"fmt"
-	"gift-registry/internal/middleware"
-	"gift-registry/internal/util"
 	"html/template"
 	"log/slog"
 	"net/http"
+
+	"gift-registry/internal/middleware"
+	"gift-registry/internal/util"
 
 	"go.opentelemetry.io/otel/attribute"
 )
@@ -23,81 +27,78 @@ type userData struct {
 	DisplayName   string
 	Errors        profileErrors
 	Email         string
+	ExternalID    string
 	FirstName     string
 	HouseholdName string
 	LastName      string
+	Type          string
 	householdID   int64
 	personID      int64
 	valid         bool
 }
 
+type pageData struct {
+	DisplayName string
+	LastName    string
+	Profiles    []userData
+}
+
 const (
-	lookupPersonQuery = `
-		SELECT p.person_id, 
+	/*
+		The second part of the WHERE clause here ensures that the external ID either
+		belongs to the logged in user or an account that user manages.
+	*/
+	externalIDLookupQuery = `SELECT p.person_id, 
+			p.external_id,
+			p.type
+		FROM person p
+			INNER JOIN household_person hp on hp.person_id = p.person_id
+		WHERE p.external_id = $1
+			AND (hp.person_id = $2 OR (p.type = 'MANAGED' AND hp.household_id = (SELECT household_id FROM household_person WHERE person_id = $3)))`
+	lookupManagedProfilesQuery = `SELECT p.person_id, 
 			h.household_id,
-			p.email, 
+			p.external_id,
 			p.first_name, 
 			p.last_name, 
 			p.display_name, 
+			p.type,
 			h.name
 		FROM person p
 			INNER JOIN household_person hp ON p.person_id = hp.person_id
 			INNER JOIN household h ON hp.household_id = h.household_id
-		WHERE p.person_id = $1
-	`
-	updatePersonQuery = `
-		UPDATE person SET email = $1, first_name = $2, last_name = $3, display_name = $4 
-		WHERE person_id = $5
-	`
-	updateHouseholdQuery = `
-		UPDATE household AS h  
+		WHERE h.household_id = $1
+			AND p.type = 'MANAGED'`
+	lookupPersonQuery = `SELECT p.person_id, 
+			h.household_id,
+			p.external_id,
+			p.email, 
+			p.first_name, 
+			p.last_name, 
+			p.display_name, 
+			p.type,
+			h.name
+		FROM person p
+			INNER JOIN household_person hp ON p.person_id = hp.person_id
+			INNER JOIN household h ON hp.household_id = h.household_id
+		WHERE p.person_id = $1`
+	updatePersonQuery = `UPDATE person SET email = $1, first_name = $2, last_name = $3, display_name = $4 
+		WHERE external_id = $5`
+	updateHouseholdQuery = `UPDATE household AS h  
 		SET name = $1	
 		FROM household_person AS hp
 			JOIN person AS p ON hp.person_id = p.person_id
 		WHERE hp.household_id = h.household_id
-			AND p.person_id = $2
-	`
+			AND p.person_id = $2`
 	varcharMaxLength = 255
 )
 
-// Looks up the person information and returns it.
+// ProfileHandler looks up the person information and returns it, along with
+// any other managed profiles in the household.
 func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx := req.Context()
-
-		var user userData
-		personID := middleware.PersonID(res, req)
-		svr.DB.QueryRow(ctx, lookupPersonQuery, personID).
-			Scan(
-				&user.personID,
-				&user.householdID,
-				&user.Email,
-				&user.FirstName,
-				&user.LastName,
-				&user.DisplayName,
-				&user.HouseholdName,
-			)
-
-		/*
-			By default we display people by first name, but that can be overridden in
-			the database with something like a "grandparent name"
-		*/
-		if user.DisplayName == "" {
-			user.DisplayName = user.FirstName
-		}
-
-		attributes := middleware.TelemetryAttributes(ctx)
-		attributes = append(attributes, attribute.Int64("personID", user.personID))
-		attributes = append(attributes, attribute.Int64("householdID", user.householdID))
-		attributes = append(attributes, attribute.String("firstName", user.FirstName))
-		attributes = append(attributes, attribute.String("lastName", user.LastName))
-		attributes = append(attributes, attribute.String("displayName", user.DisplayName))
-		attributes = append(attributes, attribute.String("householdName", user.HouseholdName))
-		ctx = middleware.WriteTelemetry(ctx, attributes)
-		_ = req.WithContext(ctx)
-
 		templatesDir := svr.Getenv("TEMPLATES_DIR")
 		tmpl, err := template.ParseFiles(templatesDir+"/profile_page.html", templatesDir+"/profile_form.html")
 		if err != nil {
@@ -111,8 +112,109 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 			return
 		}
 
+		profile := pageData{
+			Profiles: []userData{},
+		}
+
+		var person userData
+		personID := middleware.PersonID(res, req)
+		err = svr.DB.QueryRow(ctx, lookupPersonQuery, personID).
+			Scan(
+				&person.personID,
+				&person.householdID,
+				&person.ExternalID,
+				&person.Email,
+				&person.FirstName,
+				&person.LastName,
+				&person.DisplayName,
+				&person.Type,
+				&person.HouseholdName,
+			)
+		if err != nil {
+			person = userData{
+				Errors: profileErrors{
+					ErrorMessage: "Could not look up profile information.",
+				},
+			}
+			res.WriteHeader(500)
+			err = tmpl.ExecuteTemplate(res, "profile-page", profile)
+			if err != nil {
+				svr.Logger.ErrorContext(
+					ctx,
+					"Error writing template!",
+					slog.String("errorMessage", err.Error()),
+				)
+				res.WriteHeader(500)
+				res.Write([]byte("Error loading your profile page"))
+				return
+			}
+		}
+
+		/*
+			By default we display people by first name, but that can be overridden in
+			the database with something like a "grandparent name"
+		*/
+		if person.DisplayName == "" {
+			person.DisplayName = person.FirstName
+		}
+
+		/*
+			The calling user's profile should always be first, and be form the page
+			title
+		*/
+		if person.Type != "MANAGED" &&
+			(profile.DisplayName == "" || profile.LastName == "") {
+
+			profile.DisplayName = person.DisplayName
+			profile.LastName = person.LastName
+
+		}
+
+		profile.Profiles = append(profile.Profiles, person)
+
+		/*
+			Append any managed profiles to response so the logged-in user can manage
+			dependent profiles as well.
+		*/
+		rows, err := svr.DB.Query(ctx, lookupManagedProfilesQuery, person.householdID)
+		if err != nil {
+			/*
+				This is technically an error (because querying failed), and we should show
+				it to the user, but we should still return normally because we have the
+				user's profile at least
+			*/
+			profile.Profiles[0].Errors.ErrorMessage = "Could not look up associated managed profiles."
+		}
+
+		for rows.Next() {
+
+			err = rows.Scan(
+				&person.personID,
+				&person.householdID,
+				&person.ExternalID,
+				&person.FirstName,
+				&person.LastName,
+				&person.DisplayName,
+				&person.Type,
+				&person.HouseholdName,
+			)
+			if err != nil {
+				svr.Logger.ErrorContext(ctx, "Error scanning data!", slog.String("errorMessage", err.Error()))
+				continue
+			}
+
+			profile.Profiles = append(profile.Profiles, person)
+
+		}
+
+		attributes := middleware.TelemetryAttributes(ctx)
+		attributes = append(attributes,
+			attribute.String("profilesReturned", fmt.Sprintf("%v", profile.Profiles)))
+		ctx = middleware.WriteTelemetry(ctx, attributes)
+		_ = req.WithContext(ctx)
+
 		res.WriteHeader(200)
-		err = tmpl.ExecuteTemplate(res, "profile-page", user)
+		err = tmpl.ExecuteTemplate(res, "profile-page", profile)
 		if err != nil {
 			svr.Logger.ErrorContext(
 				ctx,
@@ -135,11 +237,14 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 
 		ctx := req.Context()
 		attributes := middleware.TelemetryAttributes(ctx)
+
 		personID := middleware.PersonID(res, req)
+		externalID := req.PathValue("externalID")
 		svr.Logger.DebugContext(
 			ctx,
 			"Found the person ID from the session",
 			slog.Int64("personID", personID),
+			slog.String("externalID", externalID),
 		)
 
 		err := req.ParseForm()
@@ -157,6 +262,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 		user := userData{
 			DisplayName:   req.FormValue("displayName"),
 			Email:         req.FormValue("email"),
+			ExternalID:    req.FormValue("externalID"),
 			FirstName:     req.FormValue("firstName"),
 			HouseholdName: req.FormValue("householdName"),
 			LastName:      req.FormValue("lastName"),
@@ -168,6 +274,8 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 		)
 
 		attributes = append(attributes, attribute.Int64("personID", personID))
+		attributes = append(attributes, attribute.String("externalID", externalID))
+		attributes = append(attributes, attribute.String("type", user.Type))
 		attributes = append(attributes, attribute.String("updatedDisplayName", user.DisplayName))
 		attributes = append(attributes, attribute.String("updatedEmail", user.Email))
 		attributes = append(attributes, attribute.String("updatedFirstName", user.FirstName))
@@ -186,13 +294,39 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			return
 		}
 
+		err = svr.DB.QueryRow(ctx, externalIDLookupQuery, externalID, personID, personID).
+			Scan(
+				&user.personID,
+				&user.ExternalID,
+				&user.Type,
+			)
+
+		/* We can't validate the profile details, so we can't do an update */
+		if err != nil {
+			svr.Logger.ErrorContext(ctx,
+				"Error looking up profile to update",
+				slog.String("errorMessage", err.Error()),
+			)
+			user.Errors.ErrorMessage = "Could not update profile"
+			err = tmpl.ExecuteTemplate(res, "profile-form", user)
+			if err != nil {
+				svr.Logger.ErrorContext(
+					ctx,
+					"Error returning error to user",
+					slog.String("errorMessage", err.Error()),
+				)
+				res.WriteHeader(500)
+				res.Write([]byte("Error saving profile information"))
+				return
+			}
+
+		}
+
 		/*
 			We should always have a display name, so when in doubt use first name
 		*/
 		if user.DisplayName == "" {
-
 			user.DisplayName = user.FirstName
-
 		}
 
 		user.validate()
@@ -218,14 +352,37 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 				/*
 					We're returning early error or no, so don't need a return statement here
 				*/
-
 			}
 
 			return
 		}
 
-		sqlStatements := []string{updatePersonQuery, updateHouseholdQuery}
-		sqlParams := [][]any{{user.Email, user.FirstName, user.LastName, user.DisplayName, personID}, {user.HouseholdName, personID}}
+		sqlStatements := []string{updatePersonQuery}
+		sqlParams := [][]any{{user.Email, user.FirstName, user.LastName, user.DisplayName, externalID}}
+
+		/*
+			TODO:
+			THIS BEGS THE QUESTION OF IF UPDATING THE HOUSEHOLD NAME SHOULD BE A
+			SEPARATE ACTION HITTING A SEPARATE ENDPOINT
+		*/
+		/*
+			If the profile being updated isn't a managed profile (e.g. a child),
+			there's a chance they may have edited the househole name, so we need to
+			persist those changes too.
+		*/
+		if user.Type != "MANAGED" {
+
+			sqlStatements = append(sqlStatements, updateHouseholdQuery)
+			sqlParams = append(sqlParams, []any{user.HouseholdName, personID})
+
+		}
+
+		svr.Logger.DebugContext(
+			ctx,
+			"About to batch execute SQL",
+			slog.Any("statements", sqlStatements),
+			slog.Any("paramSets", sqlParams),
+		)
 		_, errs := svr.DB.ExecuteBatch(ctx, sqlStatements, sqlParams)
 		for _, err := range errs {
 			if err != nil {
@@ -236,29 +393,24 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 				)
 
 				user.Errors.ErrorMessage = "Could not save the profile update"
-				err = tmpl.ExecuteTemplate(res, "profile-page", user)
+				err = tmpl.ExecuteTemplate(res, "profile-form", user)
 				if err != nil {
 					svr.Logger.ErrorContext(
 						ctx,
 						"Error writing the profile page error messages",
 						slog.String("errorMessage", err.Error()),
 					)
-					/*
-						We're returning early error or no, so don't need a return statement here
-					*/
+					res.WriteHeader(500)
+					res.Write([]byte("Error loading your profile page"))
+					return
 				}
-				return
 			}
 		}
 
-		/* On save, return the form with the updated database values */
-		var otherUser userData
-		svr.DB.QueryRow(ctx, lookupPersonQuery, personID).Scan(&otherUser.personID, &otherUser.householdID, &otherUser.Email, &otherUser.FirstName, &otherUser.LastName, &otherUser.DisplayName, &otherUser.HouseholdName)
 		svr.Logger.DebugContext(
 			ctx,
-			"Looked up the user profile data from the database",
+			"Finished profile update",
 			slog.Any("user", user),
-			slog.Any("otherUser", otherUser),
 		)
 		err = tmpl.ExecuteTemplate(res, "profile-form", user)
 		if err != nil {
@@ -277,20 +429,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 }
 
 func (user *userData) validate() {
-
 	user.valid = true
-
-	if user.Email == "" {
-
-		user.Errors.Email = "Email address is required"
-		user.valid = false
-
-	} else if len(user.Email) > varcharMaxLength {
-
-		user.Errors.Email = fmt.Sprintf("Email address can't be more than %d characters", varcharMaxLength)
-		user.valid = false
-
-	}
 
 	if user.FirstName == "" {
 
@@ -323,7 +462,20 @@ func (user *userData) validate() {
 
 	}
 
-	if user.HouseholdName == "" {
+	/* The below fields aren't part of the profile cards for managed profiles */
+	if user.Email == "" && user.Type != "MANAGED" {
+
+		user.Errors.Email = "Email address is required for non-managed person accounts"
+		user.valid = false
+
+	} else if len(user.Email) > varcharMaxLength {
+
+		user.Errors.Email = fmt.Sprintf("Email address can't be more than %d characters", varcharMaxLength)
+		user.valid = false
+
+	}
+
+	if user.HouseholdName == "" && user.Type != "MANAGED" {
 
 		user.Errors.Household = "Household name is required"
 		user.valid = false
@@ -334,5 +486,4 @@ func (user *userData) validate() {
 		user.valid = false
 
 	}
-
 }

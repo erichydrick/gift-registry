@@ -37,7 +37,7 @@ func registerRoutes() (http.Handler, error) {
 
 	/* Profile routes */
 	handleFunc("GET /profile", profile.ProfileHandler(appSrv))
-	handleFunc("POST /profile", profile.ProfileUpdateHandler(appSrv))
+	handleFunc("POST /profile/{externalID}", profile.ProfileUpdateHandler(appSrv))
 
 	/* Registry routes */
 	handleFunc("GET /registry", registry.RegistryHandler(appSrv))
