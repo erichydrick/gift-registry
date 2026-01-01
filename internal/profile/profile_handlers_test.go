@@ -46,18 +46,16 @@ const (
 			p.email,
 			h.name
 		FROM person p 
-			INNER JOIN session s ON p.person_id = s.person_id 
 			INNER JOIN household_person hp ON hp.person_id = p.person_id
 			INNER JOIN household h ON h.household_id = hp.household_id
-		WHERE s.session_id = $1`
+		WHERE p.external_id = $1`
 )
 
 // Test-specific values
 var (
-	ctx    context.Context
-	db     database.Database
-	dbPath string
-	/*emailer    server.Emailer*/
+	ctx        context.Context
+	db         database.Database
+	dbPath     string
 	getenv     func(string) string
 	logger     *slog.Logger
 	testServer *httptest.Server
@@ -116,93 +114,208 @@ func TestMain(m *testing.M) {
 func TestProfilePage(t *testing.T) {
 
 	testData := []struct {
-		displayName   string
-		elements      map[string]test.ElementValidation
-		email         string
-		firstName     string
-		householdName string
-		lastName      string
-		testName      string
+		userData    test.UserData
+		managedData []test.UserData
+		elements    map[string]test.ElementValidation
+		testName    string
 	}{
 		{
-			displayName: "root",
 			elements: map[string]test.ElementValidation{
-				"profile-header": {
-					Value:   "Display Named Profile Page",
+				"profile-header-succ-disp-name": {
+					Value:   "Root Named Profile",
 					Visible: true,
 				},
-				"profile-form": {Visible: true},
-				"first-name": {
+				"profile-form-succ-disp-name": {Visible: true},
+				"first-name-succ-disp-name": {
 					Value:   "Display",
 					Visible: true,
 				},
-				"last-name": {
+				"last-name-succ-disp-name": {
 					Value:   "Named",
 					Visible: true,
 				},
-				"display-name": {
-					Value:   "root",
+				"display-name-succ-disp-name": {
+					Value:   "Root",
 					Visible: true,
 				},
-				"email": {
+				"email-succ-disp-name": {
 					Value:   "displayName@localhost.com",
 					Visible: true,
 				},
-				"household-name": {
+				"household-name-succ-disp-name": {
 					Value:   "Disp",
 					Visible: true,
 				},
-				"profile-submit":   {Visible: true},
-				"first-name-error": {Visible: false},
-				"household-error":  {Visible: false},
-				"last-name-error":  {Visible: false},
-				"email-error":      {Visible: false},
-				"profile-error":    {Visible: false},
+				"profile-submit-succ-disp-name":   {Visible: true},
+				"first-name-error-succ-disp-name": {Visible: false},
+				"household-error-succ-disp-name":  {Visible: false},
+				"last-name-error-succ-disp-name":  {Visible: false},
+				"email-error-succ-disp-name":      {Visible: false},
+				"profile-error-succ-disp-name":    {Visible: false},
 			},
-			email:         "displayName@localhost.com",
-			firstName:     "Display",
-			householdName: "Disp",
-			lastName:      "Named",
-			testName:      "Successful profile load with display name",
+			userData: test.UserData{
+				CreateHousehold: true,
+				DisplayName:     "Root",
+				Email:           "displayName@localhost.com",
+				ExternalID:      "succ-disp-name",
+				FirstName:       "Display",
+				HouseholdName:   "Disp",
+				LastName:        "Named",
+			},
+			testName: "Successful profile load with display name",
 		},
 		{
 			elements: map[string]test.ElementValidation{
-				"profile-form": {Visible: true},
-				"profile-header": {
-					Value:   "Display Nameless Profile Page",
+				"profile-form-succ-def-disp-name": {Visible: true},
+				"profile-header-succ-def-disp-name": {
+					Value:   "Display Nameless Profile",
 					Visible: true,
 				},
-				"first-name": {
+				"first-name-succ-def-disp-name": {
 					Value:   "Display",
 					Visible: true,
 				},
-				"last-name": {
+				"last-name-succ-def-disp-name": {
 					Value:   "Nameless",
 					Visible: true,
 				},
-				"display-name": {
+				"display-name-succ-def-disp-name": {
 					Value:   "Display",
 					Visible: true,
 				},
-				"email": {
+				"email-succ-def-disp-name": {
 					Value:   "nodisplayname@localhost.com",
 					Visible: true,
 				},
-				"household-name": {
+				"household-name-succ-def-disp-name": {
 					Value:   "Display",
 					Visible: true,
 				},
-				"profile-submit":   {Visible: true},
-				"first-name-error": {Visible: false},
-				"last-name-error":  {Visible: false},
-				"email-error":      {Visible: false},
-				"profile-error":    {Visible: false},
+				"profile-submit-succ-def-disp-name":   {Visible: true},
+				"first-name-error-succ-def-disp-name": {Visible: false},
+				"last-name-error-succ-def-disp-name":  {Visible: false},
+				"email-error-succ-def-disp-name":      {Visible: false},
+				"profile-error-succ-def-disp-name":    {Visible: false},
 			},
-			email:         "nodisplayname@localhost.com",
-			firstName:     "Display",
-			householdName: "Display",
-			lastName:      "Nameless",
-			testName:      "Successful profile load with no display name",
+			userData: test.UserData{
+				CreateHousehold: true,
+				Email:           "nodisplayname@localhost.com",
+				ExternalID:      "succ-def-disp-name",
+				FirstName:       "Display",
+				HouseholdName:   "Display",
+				LastName:        "Nameless",
+			},
+			testName: "Successful profile load with no display name",
+		},
+		{
+			elements: map[string]test.ElementValidation{
+				// Main profile
+				"profile-header-manager-profile": {
+					Value:   "Root Named Profile",
+					Visible: true,
+				},
+				"profile-form-manager-profile": {Visible: true},
+				"first-name-manager-profile": {
+					Value:   "Display",
+					Visible: true,
+				},
+				"last-name-manager-profile": {
+					Value:   "Named",
+					Visible: true,
+				},
+				"display-name-manager-profile": {
+					Value:   "Root",
+					Visible: true,
+				},
+				"email-manager-profile": {
+					Value:   "profilewithkids@localhost.com",
+					Visible: true,
+				},
+				"household-name-manager-profile": {
+					Value:   "With Kids",
+					Visible: true,
+				},
+				"profile-submit-manager-profile":   {Visible: true},
+				"first-name-error-manager-profile": {Visible: false},
+				"household-error-manager-profile":  {Visible: false},
+				"last-name-error-manager-profile":  {Visible: false},
+				"email-error-manager-profile":      {Visible: false},
+				"profile-error-manager-profile":    {Visible: false},
+				// First child profile
+				"profile-header-child-1-profile": {
+					Value:   "Junior Named Profile",
+					Visible: true,
+				},
+				"profile-form-child-1-profile": {Visible: true},
+				"first-name-child-1-profile": {
+					Value:   "Firstborn",
+					Visible: true,
+				},
+				"last-name-child-1-profile": {
+					Value:   "Named",
+					Visible: true,
+				},
+				"display-name-child-1-profile": {
+					Value:   "Junior",
+					Visible: true,
+				},
+				"profile-submit-child-1-profile":   {Visible: true},
+				"first-name-error-child-1-profile": {Visible: false},
+				"last-name-error-child-1-profile":  {Visible: false},
+				"profile-error-child-1-profile":    {Visible: false},
+				// Second child profile
+				"profile-header-child-2-profile": {
+					Value:   "Baby Named Profile",
+					Visible: true,
+				},
+				"profile-form-child-2-profile": {Visible: true},
+				"first-name-child-2-profile": {
+					Value:   "Secondborn",
+					Visible: true,
+				},
+				"last-name-child-2-profile": {
+					Value:   "Named",
+					Visible: true,
+				},
+				"display-name-child-2-profile": {
+					Value:   "Baby",
+					Visible: true,
+				},
+				"profile-submit-child-2-profile":   {Visible: true},
+				"first-name-error-child-2-profile": {Visible: false},
+				"last-name-error-child-2-profile":  {Visible: false},
+				"profile-error-child-2-profile":    {Visible: false},
+			},
+			userData: test.UserData{
+				CreateHousehold: true,
+				DisplayName:     "Root",
+				Email:           "profilewithkids@localhost.com",
+				ExternalID:      "manager-profile",
+				FirstName:       "Display",
+				HouseholdName:   "With Kids",
+				LastName:        "Named",
+			},
+			managedData: []test.UserData{
+				{
+					CreateHousehold: false,
+					DisplayName:     "Junior",
+					ExternalID:      "child-1-profile",
+					FirstName:       "Firstborn",
+					HouseholdName:   "With Kids",
+					LastName:        "Named",
+					Type:            "MANAGED",
+				},
+				{
+					CreateHousehold: false,
+					DisplayName:     "Baby",
+					ExternalID:      "child-2-profile",
+					FirstName:       "Secondborn",
+					HouseholdName:   "With Kids",
+					LastName:        "Named",
+					Type:            "MANAGED",
+				},
+			},
+			testName: "Profile load with associated managed profiles",
 		},
 	}
 
@@ -212,18 +325,24 @@ func TestProfilePage(t *testing.T) {
 
 			t.Parallel()
 
-			userData := test.UserData{
-				DisplayName:   data.displayName,
-				Email:         data.email,
-				FirstName:     data.firstName,
-				HouseholdName: data.householdName,
-				LastName:      data.lastName,
-			}
-
-			token, err := test.CreateSession(ctx, logger, db, userData, time.Minute*5, userAgent)
+			token, err := test.CreateSession(ctx, logger, db, data.userData, time.Minute*5, userAgent)
 			if err != nil {
 				t.Fatal("Could not create a test sesssion for ", data.testName, err)
 			}
+
+			if len(data.managedData) > 0 {
+
+				for _, managedProfile := range data.managedData {
+
+					_, err := test.CreateUser(ctx, logger, db, managedProfile)
+					if err != nil {
+						t.Fatal("Could not create child profile", err)
+					}
+
+				}
+
+			}
+
 			sessCookie := http.Cookie{
 				HttpOnly: true,
 				MaxAge:   time.Now().UTC().Add(time.Minute * 1).Second(),
@@ -294,9 +413,10 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 			path:     "/profile",
 			testName: "Get Profile",
 			userData: test.UserData{
-				Email:     "getprofilebadtemplate@localhost.com",
-				FirstName: "Get",
-				LastName:  "Profile",
+				Email:      "getprofilebadtemplate@localhost.com",
+				ExternalID: "profile-load-bad-temp",
+				FirstName:  "Get",
+				LastName:   "Profile",
 			},
 		},
 		{
@@ -307,12 +427,13 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 				"lastName":    []string{"Profile"},
 			},
 			method:   "POST",
-			path:     "/profile",
+			path:     "/profile/profile-update-bad-temp",
 			testName: "Update Profile",
 			userData: test.UserData{
-				Email:     "updateprofilebadtemplate@localhost.com",
-				FirstName: "Update",
-				LastName:  "Profile",
+				Email:      "updateprofilebadtemplate@localhost.com",
+				ExternalID: "profile-update-bad-temp",
+				FirstName:  "Update",
+				LastName:   "Profile",
 			},
 		},
 	}
@@ -368,7 +489,7 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 			if err != nil {
 				t.Fatal("Error getting the updated profile page!", err)
 			} else if res.StatusCode != http.StatusInternalServerError {
-				t.Fatal("Expected a 500 from the server")
+				t.Fatal("Expected a 500 from the server, but got", res.StatusCode)
 			}
 
 		})
@@ -383,9 +504,11 @@ func TestProfileUpdates(t *testing.T) {
 		displayName     string
 		elements        map[string]test.ElementValidation
 		email           string
+		externalID      string
 		firstName       string
 		householdName   string
 		lastName        string
+		managedData     []test.UserData
 		success         bool
 		testName        string
 		updatedUserData test.UserData
@@ -393,261 +516,336 @@ func TestProfileUpdates(t *testing.T) {
 	}{
 		{
 			elements: map[string]test.ElementValidation{
-				"profile-form": {Visible: true},
-				"profile-header": {
-					Value:   "Completed Modification Profile Page",
+				"profile-form-success-update": {Visible: true},
+				"profile-header-success-update": {
+					Value:   "Sudo Modification Profile",
 					Visible: true,
 				},
-				"first-name": {
+				"first-name-success-update": {
 					Value:   "Completed",
 					Visible: true,
 				},
-				"last-name": {
+				"last-name-success-update": {
 					Value:   "Modification",
 					Visible: true,
 				},
-				"display-name": {
+				"display-name-success-update": {
 					Value:   "Sudo",
 					Visible: true,
 				},
-				"email": {
+				"email-success-update": {
 					Value:   "completedupdate@localhost.com",
 					Visible: true,
 				},
-				"household-name": {
+				"household-name-success-update": {
 					Value:   "New House Success",
 					Visible: true,
 				},
-				"profile-submit":   {Visible: true},
-				"first-name-error": {Visible: false},
-				"household-error":  {Visible: false},
-				"last-name-error":  {Visible: false},
-				"email-error":      {Visible: false},
-				"profile-error":    {Visible: false},
+				"profile-submit-success-update":   {Visible: true},
+				"first-name-error-success-update": {Visible: false},
+				"household-error-success-update":  {Visible: false},
+				"last-name-error-success-update":  {Visible: false},
+				"email-error-success-update":      {Visible: false},
+				"profile-error-success-update":    {Visible: false},
 			},
 			success:  true,
 			testName: "Successful profile update changed",
 			updatedUserData: test.UserData{
 				DisplayName:   "Sudo",
 				Email:         "completedupdate@localhost.com",
+				ExternalID:    "success-update",
 				FirstName:     "Completed",
 				HouseholdName: "New House Success",
 				LastName:      "Modification",
 			},
 			userData: test.UserData{
-				DisplayName:   "Root",
-				Email:         "successfulupdate@localhost.com",
-				ExternalID:    "success_update",
-				FirstName:     "Successful",
-				HouseholdName: "Existing Household Success",
-				LastName:      "Update",
+				CreateHousehold: true,
+				DisplayName:     "Root",
+				Email:           "successfulupdate@localhost.com",
+				ExternalID:      "success-update",
+				FirstName:       "Successful",
+				HouseholdName:   "Existing Household Success",
+				LastName:        "Update",
 			},
 		},
 		{
 			elements: map[string]test.ElementValidation{
-				"profile-form": {Visible: true},
-				"profile-header": {
-					Value:   " Name Profile Page",
+				"profile-form-bad-first-name": {Visible: true},
+				"profile-header-bad-first-name": {
+					Value:   "Sudo Name Profile",
 					Visible: true,
 				},
-				"first-name": {
+				"first-name-bad-first-name": {
 					Value:   "",
 					Visible: true,
 				},
-				"last-name": {
+				"last-name-bad-first-name": {
 					Value:   "Name",
 					Visible: true,
 				},
-				"display-name": {
+				"display-name-bad-first-name": {
 					Value:   "Sudo",
 					Visible: true,
 				},
-				"email": {
+				"email-bad-first-name": {
 					Value:   "failedupdatenofirstname@localhost.com",
 					Visible: true,
 				},
-				"household-name": {
+				"household-name-bad-first-name": {
 					Value:   "Failed update first name house",
 					Visible: true,
 				},
-				"profile-submit":   {Visible: true},
-				"first-name-error": {Visible: true},
-				"household-error":  {Visible: false},
-				"last-name-error":  {Visible: false},
-				"email-error":      {Visible: false},
-				"profile-error":    {Visible: false},
+				"profile-submit-bad-first-name":   {Visible: true},
+				"first-name-error-bad-first-name": {Visible: true},
+				"household-error-bad-first-name":  {Visible: false},
+				"last-name-error-bad-first-name":  {Visible: false},
+				"email-error-bad-first-name":      {Visible: false},
+				"profile-error-bad-first-name":    {Visible: false},
 			},
 			success:  false,
 			testName: "Failed update no first name",
 			updatedUserData: test.UserData{
 				DisplayName:   "Sudo",
 				Email:         "failedupdatenofirstname@localhost.com",
+				ExternalID:    "bad-first-name",
 				FirstName:     "",
 				HouseholdName: "Failed update first name house",
 				LastName:      "Name",
 			},
 			userData: test.UserData{
-				DisplayName:   "Root",
-				Email:         "failedupdatenofirstname@localhost.com",
-				ExternalID:    "bad_first_name",
-				FirstName:     "Nofirst",
-				HouseholdName: "Failed update first name house",
-				LastName:      "Name",
+				CreateHousehold: true,
+				DisplayName:     "Root",
+				Email:           "failedupdatenofirstname@localhost.com",
+				ExternalID:      "bad-first-name",
+				FirstName:       "Nofirst",
+				HouseholdName:   "Failed update first name house",
+				LastName:        "Name",
 			},
 		},
 		{
 			elements: map[string]test.ElementValidation{
-				"profile-form": {Visible: true},
-				"profile-header": {
-					Value:   "Completed  Profile Page",
+				"profile-form-bad-last-email": {Visible: true},
+				"profile-header-bad-last-email": {
+					Value:   "Root  Profile",
 					Visible: true,
 				},
-				"first-name": {
-					Value:   "Completed",
+				"first-name-bad-last-email": {
+					Value:   "FailedLastAndEmail",
 					Visible: true,
 				},
-				"last-name": {
+				"last-name-bad-last-email": {
 					Value:   "",
 					Visible: true,
 				},
-				"display-name": {
+				"display-name-bad-last-email": {
 					Value:   "Root",
 					Visible: true,
 				},
-				"email": {
+				"email-bad-last-email": {
 					Value:   "",
 					Visible: true,
 				},
-				"household-name": {
+				"household-name-bad-last-email": {
 					Value:   "Failed update last name and email house",
 					Visible: true,
 				},
-				"profile-submit":   {Visible: true},
-				"first-name-error": {Visible: false},
-				"household-error":  {Visible: false},
-				"last-name-error":  {Visible: true},
-				"email-error":      {Visible: true},
-				"profile-error":    {Visible: false},
+				"profile-submit-bad-last-email":   {Visible: true},
+				"first-name-error-bad-last-email": {Visible: false},
+				"household-error-bad-last-email":  {Visible: false},
+				"last-name-error-bad-last-email":  {Visible: true},
+				"email-error-bad-last-email":      {Visible: true},
+				"profile-error-bad-last-email":    {Visible: false},
 			},
 			success:  false,
 			testName: "Failed profile update last name and email",
 			updatedUserData: test.UserData{
 				DisplayName:   "Root",
 				Email:         "",
-				FirstName:     "Completed",
+				ExternalID:    "bad-last-email",
+				FirstName:     "FailedLastAndEmail",
 				HouseholdName: "Failed update last name and email house",
 				LastName:      "",
 			},
 			userData: test.UserData{
-				DisplayName:   "Root",
-				Email:         "failedupdatemultipleFields@localhost.com",
-				ExternalID:    "bad_last_email",
-				FirstName:     "Successful",
-				HouseholdName: "Failed update last name and email house",
-				LastName:      "Update",
+				CreateHousehold: true,
+				DisplayName:     "Root",
+				Email:           "failedupdatemultipleFields@localhost.com",
+				ExternalID:      "bad-last-email",
+				FirstName:       "FailedLastAndEmail",
+				HouseholdName:   "Failed update last name and email house",
+				LastName:        "Update",
 			},
 		},
 		{
 			elements: map[string]test.ElementValidation{
-				"profile-form": {Visible: true},
-				"profile-header": {
-					Value:   "Clear Displayname Profile Page",
+				"profile-form-clear-display": {Visible: true},
+				"profile-header-clear-display": {
+					Value:   "Clear Displayname Profile",
 					Visible: true,
 				},
-				"first-name": {
+				"first-name-clear-display": {
 					Value:   "Clear",
 					Visible: true,
 				},
-				"last-name": {
+				"last-name-clear-display": {
 					Value:   "Displayname",
 					Visible: true,
 				},
-				"display-name": {
+				"display-name-clear-display": {
 					Value:   "Clear",
 					Visible: true,
 				},
-				"email": {
+				"email-clear-display": {
 					Value:   "cleardisplayname@localhost.com",
 					Visible: true,
 				},
-				"household-name": {
+				"household-name-clear-display": {
 					Value:   "Clear display name success house",
 					Visible: true,
 				},
-				"profile-submit":   {Visible: true},
-				"first-name-error": {Visible: false},
-				"household-error":  {Visible: false},
-				"last-name-error":  {Visible: false},
-				"email-error":      {Visible: false},
-				"profile-error":    {Visible: false},
+				"profile-submit-clear-display":   {Visible: true},
+				"first-name-error-clear-display": {Visible: false},
+				"household-error-clear-display":  {Visible: false},
+				"last-name-error-clear-display":  {Visible: false},
+				"email-error-clear-display":      {Visible: false},
+				"profile-error-clear-display":    {Visible: false},
 			},
 			success:  true,
 			testName: "Clear display name",
 			updatedUserData: test.UserData{
 				DisplayName:   "",
 				Email:         "cleardisplayname@localhost.com",
+				ExternalID:    "clear-display",
 				FirstName:     "Clear",
 				HouseholdName: "Clear display name success house",
 				LastName:      "Displayname",
 			},
 			userData: test.UserData{
-				DisplayName:   "Blanked",
-				Email:         "cleardisplayname@localhost.com",
-				ExternalID:    "clear_display",
-				FirstName:     "Clear",
-				HouseholdName: "Clear display name success house",
-				LastName:      "Displayname",
+				CreateHousehold: true,
+				DisplayName:     "Blanked",
+				Email:           "cleardisplayname@localhost.com",
+				ExternalID:      "clear-display",
+				FirstName:       "Clear",
+				HouseholdName:   "Clear display name success house",
+				LastName:        "Displayname",
 			},
 		},
 		{
 			elements: map[string]test.ElementValidation{
-				"profile-form": {Visible: true},
-				"profile-header": {
-					Value:   "Valid Household Profile Page",
+				"profile-form-valid-household": {Visible: true},
+				"profile-header-valid-household": {
+					Value:   "Valid Household Profile",
 					Visible: true,
 				},
-				"first-name": {
+				"first-name-valid-household": {
 					Value:   "Valid",
 					Visible: true,
 				},
-				"last-name": {
+				"last-name-valid-household": {
 					Value:   "Household",
 					Visible: true,
 				},
-				"display-name": {
+				"display-name-valid-household": {
 					Value:   "Valid",
 					Visible: true,
 				},
-				"email": {
+				"email-valid-household": {
 					Value:   "validhouseholdname@localhost.com",
 					Visible: true,
 				},
-				"household-name": {
+				"household-name-valid-household": {
 					Value:   "New valid household name",
 					Visible: true,
 				},
-				"profile-submit":   {Visible: true},
-				"first-name-error": {Visible: false},
-				"household-error":  {Visible: false},
-				"last-name-error":  {Visible: false},
-				"email-error":      {Visible: false},
-				"profile-error":    {Visible: false},
+				"profile-submit-valid-household":   {Visible: true},
+				"first-name-error-valid-household": {Visible: false},
+				"household-error-valid-household":  {Visible: false},
+				"last-name-error-valid-household":  {Visible: false},
+				"email-error-valid-household":      {Visible: false},
+				"profile-error-valid-household":    {Visible: false},
 			},
 			success:  false,
 			testName: "Update household name",
 			updatedUserData: test.UserData{
 				DisplayName:   "Valid",
 				Email:         "validhouseholdname@localhost.com",
+				ExternalID:    "valid-household",
 				FirstName:     "Valid",
 				HouseholdName: "New valid household name",
 				LastName:      "Household",
 			},
 			userData: test.UserData{
-				DisplayName:   "Valid",
-				Email:         "validhouseholdname@localhost.com",
-				FirstName:     "Valid",
-				HouseholdName: "Valid household",
-				LastName:      "Household",
+				CreateHousehold: true,
+				DisplayName:     "Valid",
+				Email:           "validhouseholdname@localhost.com",
+				ExternalID:      "valid-household",
+				FirstName:       "Valid",
+				HouseholdName:   "Valid household",
+				LastName:        "Household",
+			},
+		},
+		{
+			elements: map[string]test.ElementValidation{
+				"profile-form-update-managed-profile-2": {Visible: true},
+				"profile-header-update-managed-profile-2": {
+					Value:   "HasBeen Modified Profile",
+					Visible: true,
+				},
+				"first-name-update-managed-profile-2": {
+					Value:   "HasBeen",
+					Visible: true,
+				},
+				"last-name-update-managed-profile-2": {
+					Value:   "Modified",
+					Visible: true,
+				},
+				"display-name-update-managed-profile-2": {
+					Value:   "HasBeen",
+					Visible: true,
+				},
+				"profile-submit-update-managed-profile-2":   {Visible: true},
+				"first-name-error-update-managed-profile-2": {Visible: false},
+				"last-name-error-update-managed-profile-2":  {Visible: false},
+				"profile-error-update-managed-profile-2":    {Visible: false},
+			},
+			success:  true,
+			testName: "Update managed profile",
+			updatedUserData: test.UserData{
+				DisplayName: "HasBeen",
+				ExternalID:  "update-managed-profile-2",
+				FirstName:   "HasBeen",
+				LastName:    "Modified",
+				Type:        "MANAGED",
+			},
+			userData: test.UserData{
+				CreateHousehold: true,
+				DisplayName:     "Root",
+				Email:           "managedprofileupdate@localhost.com",
+				ExternalID:      "update-manager-profile",
+				FirstName:       "Successful",
+				HouseholdName:   "Managed Household Success",
+				LastName:        "Update",
+				Type:            "NORMAL",
+			},
+			managedData: []test.UserData{
+				{
+					CreateHousehold: false,
+					DisplayName:     "NotToBe",
+					ExternalID:      "update-managed-profile-1",
+					FirstName:       "NotToBe",
+					HouseholdName:   "Managed Household Success",
+					LastName:        "Modified",
+					Type:            "MANAGED",
+				},
+				{
+					CreateHousehold: false,
+					DisplayName:     "NotYet",
+					ExternalID:      "update-managed-profile-2",
+					FirstName:       "HasBeen",
+					HouseholdName:   "Managed Household Success",
+					LastName:        "Modified",
+					Type:            "MANAGED",
+				},
 			},
 		},
 	}
@@ -662,6 +860,20 @@ func TestProfileUpdates(t *testing.T) {
 			if err != nil {
 				t.Fatal("Could not create a test sesssion for ", data.testName, err)
 			}
+
+			if len(data.managedData) > 0 {
+
+				for _, managedProfile := range data.managedData {
+
+					_, err := test.CreateUser(ctx, logger, db, managedProfile)
+					if err != nil {
+						t.Fatal("Could not create child profile", err)
+					}
+
+				}
+
+			}
+
 			sessCookie := http.Cookie{
 				HttpOnly: true,
 				MaxAge:   time.Now().UTC().Add(time.Minute * 1).Second(),
@@ -673,12 +885,14 @@ func TestProfileUpdates(t *testing.T) {
 
 			form := url.Values{}
 			form.Add("email", data.updatedUserData.Email)
+			form.Add("externalID", data.updatedUserData.ExternalID)
 			form.Add("firstName", data.updatedUserData.FirstName)
 			form.Add("lastName", data.updatedUserData.LastName)
 			form.Add("displayName", data.updatedUserData.DisplayName)
 			form.Add("householdName", data.updatedUserData.HouseholdName)
+			form.Add("type", data.updatedUserData.Type)
 
-			req, err := http.NewRequestWithContext(ctx, "POST", testServer.URL+"/profile", strings.NewReader(form.Encode()))
+			req, err := http.NewRequestWithContext(ctx, "POST", testServer.URL+"/profile/"+data.updatedUserData.ExternalID, strings.NewReader(form.Encode()))
 			if err != nil {
 				t.Fatal("Error building profile update request", err)
 			}
@@ -711,7 +925,7 @@ func TestProfileUpdates(t *testing.T) {
 			if data.success {
 
 				var updatedRecord person
-				db.QueryRow(ctx, lookupUpdatedUserQuery, token).
+				db.QueryRow(ctx, lookupUpdatedUserQuery, data.updatedUserData.ExternalID).
 					Scan(
 						&updatedRecord.personID,
 						&updatedRecord.householdID,
@@ -737,10 +951,14 @@ func TestProfileUpdates(t *testing.T) {
 						t.Fatal("Updated display name name doesn't match the expected value!DB", updatedRecord.displayName, " expected", data.updatedUserData.DisplayName)
 					}
 				}
-				if updatedRecord.email != data.updatedUserData.Email {
-					t.Fatal("Updated email adress doesn't match the expected value! DB", updatedRecord.email, " expected", data.updatedUserData.Email)
-				}
 
+				/* The following fields only get changed for non-managed profiles */
+				if data.updatedUserData.Type != "MANAGED" && updatedRecord.email != data.updatedUserData.Email {
+					t.Fatal("Updated email address doesn't match the expected value! DB", updatedRecord.email, " expected", data.updatedUserData.Email)
+				}
+				if data.updatedUserData.Type != "MANAGED" && updatedRecord.householdName != data.updatedUserData.HouseholdName {
+					t.Fatal("Updated household doesn't match the expected value! DB", updatedRecord.householdName, " expected", data.updatedUserData.HouseholdName)
+				}
 			}
 
 		})
