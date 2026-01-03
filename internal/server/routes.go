@@ -33,6 +33,7 @@ func registerRoutes() (http.Handler, error) {
 	/* Authentication routes */
 	handleFunc("GET /login", LoginFormHandler(appSrv))
 	handleFunc("POST /login", LoginHandler(appSrv))
+	handleFunc("GET /logout", LogoutHandler(appSrv))
 	handleFunc("POST /verify", VerificationHandler(appSrv))
 
 	/* Profile routes */

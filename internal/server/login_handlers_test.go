@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"log/slog"
@@ -14,8 +15,13 @@ import (
 	"golang.org/x/net/html"
 
 	"gift-registry/internal/database"
+	"gift-registry/internal/middleware"
 	"gift-registry/internal/server"
 	"gift-registry/internal/test"
+)
+
+const (
+	userAgent = "test-user-agent"
 )
 
 func TestLoginEmailValidationForm(t *testing.T) {
@@ -446,6 +452,138 @@ func TestVerification(t *testing.T) {
 					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
 
 				}
+			}
+
+		})
+
+	}
+
+}
+
+func TestLogout(t *testing.T) {
+
+	testData := []struct {
+		createSession    bool
+		expectedElements map[string]test.ElementValidation
+		testName         string
+		userData         test.UserData
+	}{
+		{
+			createSession: true,
+			expectedElements: map[string]test.ElementValidation{
+				"login-form":        {Visible: true},
+				"login-email":       {Visible: true},
+				"login-email-error": {Visible: false},
+			},
+			testName: "Successful logout",
+			userData: test.UserData{
+				CreateHousehold: false,
+				Email:           "testsuccessfullogout@localhost.com",
+				ExternalID:      "successful-logout-test",
+				FirstName:       "Test",
+				LastName:        "User",
+				Type:            "NORMAL",
+			},
+		},
+		{
+			createSession: false,
+			expectedElements: map[string]test.ElementValidation{
+				"login-form":        {Visible: true},
+				"login-email":       {Visible: true},
+				"login-email-error": {Visible: false},
+			},
+			testName: "Logout with no session",
+			userData: test.UserData{
+				CreateHousehold: false,
+				Email:           "testlogoutwithoutsession@localhost.com",
+				ExternalID:      "logout-no-session-test",
+				FirstName:       "Test",
+				LastName:        "User",
+				Type:            "NORMAL",
+			},
+		},
+	}
+
+	for _, data := range testData {
+
+		t.Run(data.testName, func(t *testing.T) {
+
+			t.Parallel()
+
+			/* This allows for testing logout eithout an active session */
+			token := ""
+			if data.createSession {
+				if sessionID, err := test.CreateSession(ctx, logger, db, data.userData, 5*time.Minute, userAgent); err != nil {
+					t.Fatal("Could not create session for testing logout")
+				} else {
+					token = sessionID
+				}
+			}
+
+			sessCookie := http.Cookie{
+				HttpOnly: true,
+				MaxAge:   time.Now().UTC().Add(time.Minute * 5).Second(),
+				Name:     middleware.SessionCookie,
+				SameSite: http.SameSiteStrictMode,
+				Secure:   true,
+				Value:    token,
+			}
+
+			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/logout", nil)
+			if err != nil {
+				t.Fatal("Could not create HTTP request for logout testing.")
+			}
+
+			req.AddCookie(&sessCookie)
+			req.Header.Set("User-Agent", userAgent)
+
+			res, err := http.DefaultClient.Do(req)
+			defer func() {
+				if res != nil && res.Body != nil {
+					res.Body.Close()
+				}
+			}()
+			if err != nil {
+				t.Fatal("Error making logout request.")
+			}
+
+			if res.StatusCode != 200 {
+				t.Fatal("Logout failed! Expected a 200, got", res.StatusCode)
+			}
+
+			/* Logging out should clear the session cookie. Confirm that. */
+			sessCookieReturned := false
+			for _, cookie := range res.Cookies() {
+
+				if cookie.Name == middleware.SessionCookie &&
+					!cookie.Expires.Before(time.Now()) {
+
+					sessCookieReturned = true
+					break
+
+				}
+
+			}
+			if sessCookieReturned {
+				t.Fatal("Session cookie not cleared out")
+			}
+
+			var foundSessionID string
+			var foundPersonID int64
+			err = db.QueryRow(ctx, "SELECT session_id, person_id FROM session WHERE session_id = $1", token).
+				Scan(&foundSessionID, foundPersonID)
+			if err == nil || err != sql.ErrNoRows {
+				t.Fatal("Error confirming logout")
+			}
+
+			/* Confirm we loaded the login page */
+			doc, err := html.Parse(res.Body)
+			if err != nil {
+				t.Fatal("Error parsing response body!", err)
+			}
+			err = test.ValidatePage(doc, data.expectedElements)
+			if err != nil {
+				t.Fatal(err)
 			}
 
 		})
