@@ -55,6 +55,12 @@ type verificationRecord struct {
 }
 
 const (
+	DeleteSessionStatement = `DELETE
+		FROM session
+		WHERE session_id = $1`
+	DeleteSessionForPersonStatement = `DELETE
+		FROM session
+		WHERE person_id = $1`
 	DeleteVerificationTokenStatement = `DELETE 
 		FROM verification 
 		WHERE person_id = $1`
@@ -209,6 +215,45 @@ func LoginFormHandler(svr *util.ServerUtils) http.Handler {
 			res.Write([]byte("Error loading gift registry login form"))
 			return
 		}
+
+	})
+
+}
+
+// Logs the currently logged in user out of their current session. Clears the
+// session cookie from the response. If there is no active session for the
+// user, the logout method just returns.
+func LogoutHandler(svr *util.ServerUtils) http.Handler {
+
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
+		ctx := req.Context()
+
+		/* Clear the session cookie */
+		cookie, err := req.Cookie(middleware.SessionCookie)
+		if err != nil {
+			svr.Logger.ErrorContext(
+				ctx,
+				"Error looking up session cookie",
+				slog.String("errorMessage", err.Error()),
+			)
+			res.WriteHeader(500)
+			return
+		}
+		cookie.Expires = time.Unix(0, 0)
+		cookie.MaxAge = 0
+
+		if _, err := svr.DB.Execute(ctx, DeleteSessionStatement, cookie.Value); err != nil {
+			svr.Logger.ErrorContext(
+				ctx,
+				"Error cleaning up the session table",
+				slog.String("errorMessage", err.Error()),
+			)
+			res.WriteHeader(500)
+			return
+		}
+
+		http.Redirect(res, req, "/login", http.StatusSeeOther)
 
 	})
 
@@ -394,6 +439,17 @@ func createSession(
 	expires := time.Now().Add(5 * time.Minute).UTC()
 	sessionID := rand.Text()
 	userAgent := req.UserAgent()
+
+	/*
+		I'm not going to return this error, since it's not a requirement to being
+		able to create a new session, but I do want to capture it just in case.
+	*/
+	if _, err := svr.DB.Execute(ctx, DeleteSessionForPersonStatement, personID); err != nil {
+		svr.Logger.ErrorContext(ctx,
+			"Error cleaning up old sessions",
+			slog.String("errorMessage", err.Error()),
+		)
+	}
 
 	res, err := svr.DB.Execute(ctx, InsertSessionStatement, sessionID, personID, expires, userAgent)
 	if err != nil {

@@ -135,14 +135,6 @@ func TestRunMigrations(t *testing.T) {
 		validationQuery      string
 		validationResCnt     int
 	}{
-		/*
-			TODO:
-			1. UPDATE THE MIGRATION FAILED TEST TO CONFIRM FILES AFTER STILL RAN
-			2. ADD A TEST MIGRATION WITH MULTIPLE VALID STATEMENTS IN A FILE.
-			CONFIRM THEY ALL APPLIED.
-			3. ADD A TEST MIGRATION WITH MULTIPLE STATMENTS, 1 INVALID.
-			CONFIRM IT DID NOT APPLY.
-		*/
 		{
 			errorExpected: false,
 			expectedFilesApplied: []string{
@@ -159,23 +151,25 @@ func TestRunMigrations(t *testing.T) {
 			expectedFilesApplied: []string{
 				"20250401_000000_create_test_table.sql",
 				"20250401_000100_insert_test_person.sql",
+				"20250401_000300_create_test_table.sql",
 			},
 			migrationsDir:    "migrations_test/rollback",
 			testName:         "Migration rollback",
 			validationQuery:  "SELECT filename FROM migrations",
-			validationResCnt: 1,
+			validationResCnt: 2,
 		},
 		{
 			errorExpected: false,
 			expectedFilesApplied: []string{
 				"20250401_000000_create_test_table.sql",
 				"20250401_000100_insert_test_person.sql",
-				"20250401_000300_alter_test_table.sql",
+				"20250401_000300_create_test_table.sql",
+				"20250401_000400_alter_test_table.sql",
 			},
 			migrationsDir:    "migrations_test/alter_table",
 			testName:         "Update existing table",
 			validationQuery:  "SELECT * FROM information_schema.columns WHERE table_name = 'person' ",
-			validationResCnt: 6,
+			validationResCnt: 7,
 		},
 	}
 
