@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Submitter interface {
@@ -92,6 +93,8 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx := req.Context()
+		span := trace.SpanFromContext(ctx)
+		span.SetName("login_handler")
 
 		userData := loginForm{
 			success: true,
@@ -102,7 +105,8 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 			svr.Logger.ErrorContext(ctx, "Error parsing the form data!", slog.String("errorMessage", err.Error()))
 			userData.Errors.ErrorMessage = "Error parsing the form data"
 			userData.success = false
-			writeResponse(ctx, res, req, svr, userData, "/verify-login.html", "verify-login-form")
+			writeResponse(ctx, res, svr, span, userData, "/verify-login.html", "verify-login-form")
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
 
@@ -119,7 +123,7 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 		if userData.Errors.Email != "" {
 
 			userData.success = false
-			writeResponse(ctx, res, req, svr, userData, "/login-form.html", "login-form")
+			writeResponse(ctx, res, svr, span, userData, "/login-form.html", "login-form")
 			return
 
 		}
@@ -137,7 +141,8 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 
 			modified, token, err = setVerificationCode(ctx, svr, personID, &userData)
 			if err != nil {
-				writeResponse(ctx, res, req, svr, userData, "/login-form.html", "login-form")
+				span.SetAttributes(attribute.String("error_message", err.Error()))
+				writeResponse(ctx, res, svr, span, userData, "/login-form.html", "login-form")
 				return
 			}
 
@@ -152,11 +157,10 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 		}
 
 		/* Capture if the login attempt matched a user in the database */
-		attributes := middleware.TelemetryAttributes(ctx)
-		attributes = append(attributes, attribute.Bool("emailFound", modified == 1))
-		attributes = append(attributes, attribute.Bool("emailSuccess", emailErr == nil))
-		ctx = middleware.WriteTelemetry(ctx, attributes)
-		_ = req.WithContext(ctx)
+		span.SetAttributes(
+			attribute.Bool("email_found", modified == 1),
+			attribute.Bool("email_success", emailErr == nil),
+		)
 
 		tmplPath := fmt.Sprintf("%s/%s", svr.Getenv("TEMPLATES_DIR"), "/verify-login.html")
 		tmpl, err := template.ParseFiles(tmplPath)
@@ -168,6 +172,7 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 			)
 			res.WriteHeader(500)
 			res.Write([]byte("Error loading the login page template!"))
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
 
@@ -181,6 +186,7 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 				slog.String("errorMessage", err.Error()))
 			res.WriteHeader(500)
 			res.Write([]byte("Error loading gift registry login submission form"))
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
 
@@ -269,6 +275,8 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx := req.Context()
+		span := trace.SpanFromContext(ctx)
+		span.SetName("verification_handler")
 
 		submission := verificationForm{
 			success: true,
@@ -279,14 +287,16 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 			svr.Logger.ErrorContext(ctx, "Error parsing the form data!", slog.String("errorMessage", err.Error()))
 			submission.Errors.ErrorMessage = "Error parsing the form data"
 			submission.success = false
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
 
 		submission.Code = req.FormValue("code")
 		submission.Email = req.FormValue("email")
+		span.SetAttributes(attribute.String("email_address", submission.Email))
 		submission.validate(ctx, svr)
 		if !submission.success {
-			writeResponse(ctx, res, req, svr, submission, "/verify-login.html", "verify-login-form")
+			writeResponse(ctx, res, svr, span, submission, "/verify-login.html", "verify-login-form")
 		}
 
 		/* Look up the verification record */
@@ -302,7 +312,8 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 
 			if err == sql.ErrNoRows {
 				svr.Logger.ErrorContext(ctx, "Could not find verification record", slog.String("userEmail", submission.Email))
-				writeResponse(ctx, res, req, svr, loginWithError(LoginFailed), "/login-form.html", "login-form")
+				writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login-form.html", "login-form")
+				span.SetAttributes(attribute.String("error_message", err.Error()))
 				return
 			}
 
@@ -321,10 +332,11 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 				)
 				submission.success = false
 				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
-				writeResponse(ctx, res, req, svr, submission, "/login-form.html", "login-form")
+				span.SetAttributes(attribute.String("error_message", err.Error()))
+				writeResponse(ctx, res, svr, span, submission, "/login-form.html", "login-form")
 				return
 			}
-			writeResponse(ctx, res, req, svr, loginWithError(LoginFailed), "/login-form.html", "login-form")
+			writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login-form.html", "login-form")
 			return
 
 		} else {
@@ -332,6 +344,11 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 		}
 
 		codesMatch, attemptsRemaining, beforeExpiration := compareValidation(recData, submission)
+		span.SetAttributes(
+			attribute.Bool("codes_match", codesMatch),
+			attribute.Bool("attempts_remaining", attemptsRemaining),
+			attribute.Bool("before_expiration", beforeExpiration),
+		)
 		svr.Logger.DebugContext(ctx,
 			"Checked verification fields",
 			slog.Bool("codesMatch", codesMatch),
@@ -350,9 +367,11 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 				)
 				submission.success = false
 				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
-				writeResponse(ctx, res, req, svr, submission, "/verify-login.html", "verify-login-form")
+				writeResponse(ctx, res, svr, span, submission, "/verify-login.html", "verify-login-form")
+				span.SetAttributes(attribute.String("error_message", err.Error()))
 			}
-			writeResponse(ctx, res, req, svr, loginWithError(LoginFailed), "/login-form.html", "login-form")
+			span.SetAttributes(attribute.String("error_message", "verification code expired"))
+			writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login-form.html", "login-form")
 
 		case !codesMatch:
 			if attemptsRemaining {
@@ -360,7 +379,8 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 				submission.success = false
 				submission.Errors.ErrorMessage = "There was a problem confirming your verification code, please re-enter the code and try again"
 				updateAttemptCount(ctx, svr, submission.Email, recData.personID, recData.attempts)
-				writeResponse(ctx, res, req, svr, submission, "/verify-login.html", "verify-login-form")
+				span.SetAttributes(attribute.String("error_message", "codes don't match"))
+				writeResponse(ctx, res, svr, span, submission, "/verify-login.html", "verify-login-form")
 
 			} else {
 
@@ -373,9 +393,12 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 					)
 					submission.success = false
 					submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
-					writeResponse(ctx, res, req, svr, submission, "/verify-login.html", "verify-login-form")
+					span.SetAttributes(attribute.String("error_message", err.Error()))
+					writeResponse(ctx, res, svr, span, submission, "/verify-login.html", "verify-login-form")
 				}
-				writeResponse(ctx, res, req, svr, loginWithError(LoginFailed), "/login-form.html", "login-form")
+
+				span.SetAttributes(attribute.String("error_message", "codes don't match and the user has no more attempts"))
+				writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login-form.html", "login-form")
 
 			}
 
@@ -392,7 +415,8 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 				)
 				submission.success = false
 				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
-				writeResponse(ctx, res, req, svr, submission, "/verify-login.html", "verify-login-form")
+				span.SetAttributes(attribute.String("error_message", err.Error()))
+				writeResponse(ctx, res, svr, span, submission, "/verify-login.html", "verify-login-form")
 			}
 
 			sessionID, sessionExpires, err := createSession(ctx, svr, req, recData.personID, submission.Email)
@@ -404,8 +428,11 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 				)
 				submission.success = false
 				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
-				writeResponse(ctx, res, req, svr, submission, "/verify-login.html", "verify-login-form")
+				span.SetAttributes(attribute.String("error_message", err.Error()))
+				writeResponse(ctx, res, svr, span, submission, "/verify-login.html", "verify-login-form")
 			}
+
+			submission.success = true
 
 			cookie := http.Cookie{
 				Name:     middleware.SessionCookie,
@@ -417,6 +444,7 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 			}
 			http.SetCookie(res, &cookie)
 			res.Header().Add("HX-Redirect", "/registry")
+			span.SetAttributes(attribute.Bool("submission_success", submission.success))
 
 		}
 
@@ -636,19 +664,17 @@ func compareValidation(record verificationRecord, submission verificationForm) (
 
 func writeResponse(ctx context.Context,
 	res http.ResponseWriter,
-	req *http.Request,
 	svr *util.ServerUtils,
+	span trace.Span,
 	submission Submitter,
 	templateFile string,
 	templateDef string,
 ) {
 
-	attributes := middleware.TelemetryAttributes(ctx)
-
-	attributes = append(attributes, attribute.Bool("successful", submission.succeeded()))
-	attributes = append(attributes, attribute.String("email", submission.emailAddress()))
-	ctx = middleware.WriteTelemetry(ctx, attributes)
-	_ = req.WithContext(ctx)
+	span.SetAttributes(
+		attribute.Bool("successful", submission.succeeded()),
+		attribute.String("email_address", submission.emailAddress()),
+	)
 
 	tmplPath := fmt.Sprintf("%s/%s", svr.Getenv("TEMPLATES_DIR"), templateFile)
 
@@ -656,6 +682,7 @@ func writeResponse(ctx context.Context,
 	if tmplErr != nil {
 		res.WriteHeader(500)
 		res.Write([]byte("Error loading the login page template!"))
+		span.SetAttributes(attribute.String("error_message", tmplErr.Error()))
 		return
 	}
 
@@ -666,6 +693,7 @@ func writeResponse(ctx context.Context,
 			slog.String("errorMessage", err.Error()))
 		res.WriteHeader(500)
 		res.Write([]byte("Error loading gift registry login form"))
+		span.SetAttributes(attribute.String("error_message", err.Error()))
 		return
 	}
 

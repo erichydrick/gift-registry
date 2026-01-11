@@ -13,6 +13,7 @@ import (
 	"gift-registry/internal/util"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type profileErrors struct {
@@ -99,6 +100,9 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx := req.Context()
+		span := trace.SpanFromContext(ctx)
+		defer span.End()
+
 		templatesDir := svr.Getenv("TEMPLATES_DIR")
 		tmpl, err := template.ParseFiles(templatesDir+"/profile_page.html", templatesDir+"/profile_form.html")
 		if err != nil {
@@ -109,6 +113,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 			)
 			res.WriteHeader(500)
 			res.Write([]byte("Error rendering the profile page"))
+			span.SetAttributes(attribute.String("errorMessage", err.Error()))
 			return
 		}
 
@@ -146,6 +151,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 				)
 				res.WriteHeader(500)
 				res.Write([]byte("Error loading your profile page"))
+				span.SetAttributes(attribute.String("errorMessage", err.Error()))
 				return
 			}
 		}
@@ -207,11 +213,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 
 		}
 
-		attributes := middleware.TelemetryAttributes(ctx)
-		attributes = append(attributes,
-			attribute.String("profilesReturned", fmt.Sprintf("%v", profile.Profiles)))
-		ctx = middleware.WriteTelemetry(ctx, attributes)
-		_ = req.WithContext(ctx)
+		span.SetAttributes(attribute.String("profilesReturned", fmt.Sprintf("%v", profile.Profiles)))
 
 		res.WriteHeader(200)
 		err = tmpl.ExecuteTemplate(res, "profile-page", profile)
@@ -223,6 +225,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 			)
 			res.WriteHeader(500)
 			res.Write([]byte("Error loading your profile page"))
+			span.SetAttributes(attribute.String("errorMessage", err.Error()))
 			return
 		}
 
@@ -236,7 +239,8 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx := req.Context()
-		attributes := middleware.TelemetryAttributes(ctx)
+		span := trace.SpanFromContext(ctx)
+		defer span.End()
 
 		personID := middleware.PersonID(res, req)
 		externalID := req.PathValue("externalID")
@@ -256,6 +260,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			)
 			res.WriteHeader(400)
 			res.Write([]byte("Could not user data"))
+			span.SetAttributes(attribute.String("errorMessage", err.Error()))
 			return
 		}
 
@@ -273,14 +278,19 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			slog.Any("submittedData", user),
 		)
 
-		attributes = append(attributes, attribute.Int64("personID", personID))
-		attributes = append(attributes, attribute.String("externalID", externalID))
-		attributes = append(attributes, attribute.String("type", user.Type))
-		attributes = append(attributes, attribute.String("updatedDisplayName", user.DisplayName))
-		attributes = append(attributes, attribute.String("updatedEmail", user.Email))
-		attributes = append(attributes, attribute.String("updatedFirstName", user.FirstName))
-		attributes = append(attributes, attribute.String("updatedHouseholdName", user.HouseholdName))
-		attributes = append(attributes, attribute.String("updatedLastName", user.LastName))
+		/*
+			I'm capturing more than I normally would here, but if I need to debug an update failure, I will want to know what the values were.
+		*/
+		span.SetAttributes(
+			attribute.Int64("personID", personID),
+			attribute.String("externalID", externalID),
+			attribute.String("type", user.Type),
+			attribute.String("updatedDisplayName", user.DisplayName),
+			attribute.String("updatedEmail", user.Email),
+			attribute.String("updatedFirstName", user.FirstName),
+			attribute.String("updatedHouseholdName", user.HouseholdName),
+			attribute.String("updatedLastName", user.LastName),
+		)
 
 		tmpl, err := template.ParseFiles(svr.Getenv("TEMPLATES_DIR") + "/profile_form.html")
 		if err != nil {
@@ -291,6 +301,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			)
 			res.WriteHeader(500)
 			res.Write([]byte("Error loading the profile page template!"))
+			span.SetAttributes(attribute.String("errorMessage", err.Error()))
 			return
 		}
 
@@ -317,6 +328,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 				)
 				res.WriteHeader(500)
 				res.Write([]byte("Error saving profile information"))
+				span.SetAttributes(attribute.String("errorMessage", err.Error()))
 				return
 			}
 
@@ -335,9 +347,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			"Validated submitted user data",
 			slog.Any("userData", user),
 		)
-		attributes = append(attributes, attribute.Bool("dataValid", user.valid))
-		ctx = middleware.WriteTelemetry(ctx, attributes)
-		_ = req.WithContext(ctx)
+		span.SetAttributes(attribute.Bool("dataValid", user.valid))
 
 		if !user.valid {
 
@@ -352,6 +362,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 				/*
 					We're returning early error or no, so don't need a return statement here
 				*/
+				span.SetAttributes(attribute.String("errorMessage", err.Error()))
 			}
 
 			return
@@ -402,6 +413,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 					)
 					res.WriteHeader(500)
 					res.Write([]byte("Error loading your profile page"))
+					span.SetAttributes(attribute.String("errorMessage", err.Error()))
 					return
 				}
 			}
@@ -421,6 +433,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			)
 			res.WriteHeader(500)
 			res.Write([]byte("Error loading your profile page"))
+			span.SetAttributes(attribute.String("errorMessage", err.Error()))
 			return
 		}
 
