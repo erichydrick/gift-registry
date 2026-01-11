@@ -46,8 +46,8 @@ func registerRoutes() (http.Handler, error) {
 	handler := otelhttp.NewHandler(
 		middleware.Cors(
 			appSrv,
-			middleware.Auth(appSrv,
-				middleware.Telemetry(appSrv, mux),
+			middleware.Telemetry(appSrv,
+				middleware.Auth(appSrv, mux),
 			),
 		),
 		"/",
