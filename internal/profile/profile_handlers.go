@@ -13,6 +13,7 @@ import (
 	"gift-registry/internal/util"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type profileErrors struct {
@@ -99,6 +100,9 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx := req.Context()
+		span := trace.SpanFromContext(ctx)
+		span.SetName("profile_handler")
+
 		templatesDir := svr.Getenv("TEMPLATES_DIR")
 		tmpl, err := template.ParseFiles(templatesDir+"/profile_page.html", templatesDir+"/profile_form.html")
 		if err != nil {
@@ -109,6 +113,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 			)
 			res.WriteHeader(500)
 			res.Write([]byte("Error rendering the profile page"))
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
 
@@ -118,6 +123,8 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 
 		var person userData
 		personID := middleware.PersonID(res, req)
+		profileIDs := []int64{personID}
+		span.SetAttributes(attribute.Int64("person_id", personID))
 		err = svr.DB.QueryRow(ctx, lookupPersonQuery, personID).
 			Scan(
 				&person.personID,
@@ -146,6 +153,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 				)
 				res.WriteHeader(500)
 				res.Write([]byte("Error loading your profile page"))
+				span.SetAttributes(attribute.String("error_message", err.Error()))
 				return
 			}
 		}
@@ -204,14 +212,11 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 			}
 
 			profile.Profiles = append(profile.Profiles, person)
+			profileIDs = append(profileIDs, person.personID)
 
 		}
 
-		attributes := middleware.TelemetryAttributes(ctx)
-		attributes = append(attributes,
-			attribute.String("profilesReturned", fmt.Sprintf("%v", profile.Profiles)))
-		ctx = middleware.WriteTelemetry(ctx, attributes)
-		_ = req.WithContext(ctx)
+		span.SetAttributes(attribute.String("profiles_returned", fmt.Sprintf("%v", profileIDs)))
 
 		res.WriteHeader(200)
 		err = tmpl.ExecuteTemplate(res, "profile-page", profile)
@@ -223,6 +228,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 			)
 			res.WriteHeader(500)
 			res.Write([]byte("Error loading your profile page"))
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
 
@@ -236,16 +242,11 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx := req.Context()
-		attributes := middleware.TelemetryAttributes(ctx)
+		span := trace.SpanFromContext(ctx)
+		span.SetName("profile_update")
 
 		personID := middleware.PersonID(res, req)
 		externalID := req.PathValue("externalID")
-		svr.Logger.DebugContext(
-			ctx,
-			"Found the person ID from the session",
-			slog.Int64("personID", personID),
-			slog.String("externalID", externalID),
-		)
 
 		err := req.ParseForm()
 		if err != nil {
@@ -256,6 +257,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			)
 			res.WriteHeader(400)
 			res.Write([]byte("Could not user data"))
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
 
@@ -267,20 +269,20 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			HouseholdName: req.FormValue("householdName"),
 			LastName:      req.FormValue("lastName"),
 		}
-		svr.Logger.DebugContext(
-			ctx,
-			"Received a profile update request",
-			slog.Any("submittedData", user),
-		)
 
-		attributes = append(attributes, attribute.Int64("personID", personID))
-		attributes = append(attributes, attribute.String("externalID", externalID))
-		attributes = append(attributes, attribute.String("type", user.Type))
-		attributes = append(attributes, attribute.String("updatedDisplayName", user.DisplayName))
-		attributes = append(attributes, attribute.String("updatedEmail", user.Email))
-		attributes = append(attributes, attribute.String("updatedFirstName", user.FirstName))
-		attributes = append(attributes, attribute.String("updatedHouseholdName", user.HouseholdName))
-		attributes = append(attributes, attribute.String("updatedLastName", user.LastName))
+		/*
+			I'm capturing more than I normally would here, but if I need to debug an update failure, I will want to know what the values were.
+		*/
+		span.SetAttributes(
+			attribute.Int64("person_id", personID),
+			attribute.String("updated_external_id", externalID),
+			attribute.String("updated_type", user.Type),
+			attribute.String("updated_display_name", user.DisplayName),
+			attribute.String("updated_email", user.Email),
+			attribute.String("updated_first_name", user.FirstName),
+			attribute.String("updated_household_name", user.HouseholdName),
+			attribute.String("updated_last_name", user.LastName),
+		)
 
 		tmpl, err := template.ParseFiles(svr.Getenv("TEMPLATES_DIR") + "/profile_form.html")
 		if err != nil {
@@ -291,6 +293,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			)
 			res.WriteHeader(500)
 			res.Write([]byte("Error loading the profile page template!"))
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
 
@@ -317,10 +320,14 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 				)
 				res.WriteHeader(500)
 				res.Write([]byte("Error saving profile information"))
+				span.SetAttributes(attribute.String("error_message", err.Error()))
 				return
 			}
 
 		}
+		span.SetAttributes(attribute.Int64("updated_person_id", user.personID))
+		span.SetAttributes(attribute.String("updated_external_id", user.ExternalID))
+		span.SetAttributes(attribute.String("updated_type", user.Type))
 
 		/*
 			We should always have a display name, so when in doubt use first name
@@ -330,14 +337,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 		}
 
 		user.validate()
-		svr.Logger.DebugContext(
-			ctx,
-			"Validated submitted user data",
-			slog.Any("userData", user),
-		)
-		attributes = append(attributes, attribute.Bool("dataValid", user.valid))
-		ctx = middleware.WriteTelemetry(ctx, attributes)
-		_ = req.WithContext(ctx)
+		span.SetAttributes(attribute.Bool("data_valid", user.valid))
 
 		if !user.valid {
 
@@ -352,6 +352,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 				/*
 					We're returning early error or no, so don't need a return statement here
 				*/
+				span.SetAttributes(attribute.String("error_message", err.Error()))
 			}
 
 			return
@@ -377,12 +378,6 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 
 		}
 
-		svr.Logger.DebugContext(
-			ctx,
-			"About to batch execute SQL",
-			slog.Any("statements", sqlStatements),
-			slog.Any("paramSets", sqlParams),
-		)
 		_, errs := svr.DB.ExecuteBatch(ctx, sqlStatements, sqlParams)
 		for _, err := range errs {
 			if err != nil {
@@ -402,16 +397,12 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 					)
 					res.WriteHeader(500)
 					res.Write([]byte("Error loading your profile page"))
+					span.SetAttributes(attribute.String("error_message", err.Error()))
 					return
 				}
 			}
 		}
 
-		svr.Logger.DebugContext(
-			ctx,
-			"Finished profile update",
-			slog.Any("user", user),
-		)
 		err = tmpl.ExecuteTemplate(res, "profile-form", user)
 		if err != nil {
 			svr.Logger.ErrorContext(
@@ -421,6 +412,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			)
 			res.WriteHeader(500)
 			res.Write([]byte("Error loading your profile page"))
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
 
@@ -486,4 +478,37 @@ func (user *userData) validate() {
 		user.valid = false
 
 	}
+}
+
+func (user userData) String() string {
+
+	errors := "{}"
+	if user.Errors.ErrorMessage != "" ||
+		user.Errors.FirstName != "" ||
+		user.Errors.LastName != "" ||
+		user.Errors.Email != "" ||
+		user.Errors.Household != "" {
+
+		errors = fmt.Sprintf(
+			"{ErrorMessage: %s, FirstName: %s, LastName: %s, Email: %s, Household: %s}",
+			user.Errors.ErrorMessage,
+			user.Errors.FirstName,
+			user.Errors.LastName,
+			user.Errors.Email,
+			user.Errors.Household,
+		)
+
+	}
+
+	return fmt.Sprintf(
+		"{DisplayName: %s, Email: %s, ExternalID: %s, FirstName: %s, LastName: %s, Type: %s, HouseholdName: %s, Errors: %s}",
+		user.DisplayName,
+		user.Email,
+		user.ExternalID,
+		user.FirstName,
+		user.LastName,
+		user.Type,
+		user.HouseholdName,
+		errors,
+	)
 }

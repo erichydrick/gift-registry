@@ -1,9 +1,7 @@
 package middleware
 
 import (
-	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 
 	"gift-registry/internal/util"
@@ -13,20 +11,18 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-type attributesKey int
+// type attributesKey int
 
+// TODO: DO I NEED THIS?
+/*
 type responseWithStatus struct {
 	responseWriter http.ResponseWriter
 	statusCode     int
 }
+*/
 
 const (
 	name = "net.hydrick.gift-registry"
-)
-
-const (
-	_ attributesKey = iota
-	attrKey
 )
 
 var (
@@ -52,57 +48,42 @@ func Telemetry(svr *util.ServerUtils, next http.Handler) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
-		ctx, span := tracer.Start(req.Context(),
-			fmt.Sprintf("HTTP %s %s", req.Method, req.URL.Path))
+		ctx, span := tracer.Start(req.Context(), "TelemetryMiddleware")
 		defer span.End()
 
-		attributes := []attribute.KeyValue{}
-		ctx = context.WithValue(ctx, attrKey, attributes)
+		span.SetAttributes(attribute.String("path", req.URL.Path))
 		req = req.WithContext(ctx)
 
-		statRes := wrapResponseWriter(res)
+		// TODO: DO I WANT THIS?
+		// statRes := wrapResponseWriter(res)
 
-		next.ServeHTTP(statRes, req)
+		next.ServeHTTP(res, req)
+		// next.ServeHTTP(statRes, req)
 
-		// attributes, _ = ctx.Value(attrKey).([]attribute.KeyValue)
-		attributes = append(attributes,
-			attribute.Bool("successful", statRes.statusCode >= 200 && statRes.statusCode < 300))
-		attributes = append(attributes, attribute.String("path", req.URL.Path))
-		attributes = append(attributes, attribute.Int("statusCode", statRes.statusCode))
+		// span.SetAttributes(attribute.Int("statusCode", statRes.statusCode))
 
-		counter.Add(ctx, 1, metric.WithAttributes(attributes...))
+		// TODO: WHAT ATTRIBUTES DO I WANT TO THROW ON HERE?
+		counter.Add(ctx, 1)
+		// counter.Add(ctx, 1, metric.WithAttributes(attributes...))
 
-		span.SetAttributes(attributes...)
+		/*
+			Convert our span attributes to other types of attributes for a canonical log line
+		*/
+		/*
+			logAttrs := make([]any, len(attributes))
 
-		/* Convert our span attributes to other types of attributes for a canonical log line */
-		logAttrs := make([]any, len(attributes))
-
-		for _, attr := range attributes {
-			logAttrs = append(logAttrs, slog.Any(string(attr.Key), attr.Value))
-		}
-
+			for _, attr := range attributes {
+				logAttrs = append(logAttrs, slog.Any(string(attr.Key), attr.Value))
+			}
+		*/
 		svr.Logger.InfoContext(ctx,
-			fmt.Sprintf("Finished the %s operation %s", req.Method, req.URL.Path),
-			logAttrs...,
+			fmt.Sprintf("Finished the operation %s %s", req.Method, req.URL.Path),
 		)
 
 	})
 }
 
-func TelemetryAttributes(ctx context.Context) []attribute.KeyValue {
-	attributes, ok := ctx.Value(attrKey).([]attribute.KeyValue)
-
-	/* Default to an empty attribute list instead of returning that there aren't any attributes */
-	if !ok {
-		attributes = []attribute.KeyValue{}
-	}
-	return attributes
-}
-
-func WriteTelemetry(ctx context.Context, attributes []attribute.KeyValue) context.Context {
-	return context.WithValue(ctx, attrKey, attributes)
-}
-
+/*
 func wrapResponseWriter(res http.ResponseWriter) *responseWithStatus {
 	return &responseWithStatus{
 		responseWriter: res,
@@ -111,7 +92,7 @@ func wrapResponseWriter(res http.ResponseWriter) *responseWithStatus {
 }
 
 func (rs *responseWithStatus) Done() {
-	/* Default the status to a 200 OK */
+	// Default the status to a 200 OK
 	if rs.statusCode == 0 {
 		rs.statusCode = 200
 	}
@@ -129,3 +110,4 @@ func (rs *responseWithStatus) WriteHeader(statusCode int) {
 	rs.statusCode = statusCode
 	rs.responseWriter.WriteHeader(statusCode)
 }
+*/

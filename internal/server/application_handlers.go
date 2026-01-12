@@ -5,6 +5,8 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Returns the landing page for the application
@@ -13,6 +15,8 @@ func IndexHandler(svr *util.ServerUtils) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx := req.Context()
+		span := trace.SpanFromContext(ctx)
+		span.SetName("index_handler")
 
 		dir := svr.Getenv("TEMPLATES_DIR")
 		tmpl, tmplErr := template.ParseFiles(dir + "/index.html")
