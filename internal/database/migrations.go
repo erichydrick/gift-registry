@@ -14,6 +14,11 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
+type migrationFile struct {
+	fs   fs.FS
+	name string
+}
+
 const (
 	FindMigrationsQuery      = "SELECT filename FROM migrations ORDER BY filename ASC"
 	InsertMigrationStatement = "INSERT INTO migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))"
@@ -67,38 +72,51 @@ func (dbConn DBConn) runMigrations(
 	}
 	logger.DebugContext(ctx, "Have the list of migrations applied", slog.Any("migrationsApplied", migrationsApplied))
 
-	/* Check the filesystem for migrations to run */
+	/*
+		Check the filesystem for migrations to run. Because the migration files
+		start with a timestamp, sorting them will create an ordered list of
+		migrations, the assumption being that at there's 1 point separating
+		migrations that were applied from the ones that need to be applied
+		(if a migration file failed earlier, the assumption breaks, but the code will
+		still recover if that's the case)
+	*/
 	logger.DebugContext(ctx, "Listing the migrations files", slog.String("migrationsDirectory", getenv("MIGRATIONS_DIR")))
-	migrationsFS := os.DirFS(getenv("MIGRATIONS_DIR"))
-	sqlFiles, err := listMigrations(migrationsFS, ".", logger)
-	if err != nil {
-		logger.ErrorContext(ctx, "Error listing database migration files", slog.String("errorMessage", err.Error()))
-		errs = append(errs, fmt.Errorf("error reading applied migrations from the database: %s", err.Error()))
-		return
+	dirList := strings.Split(getenv("MIGRATIONS_DIR"), ",")
+	migrationFiles := []migrationFile{}
+
+	/* Build a list of migration files across all templates */
+	for _, dirName := range dirList {
+
+		migrationsFS := os.DirFS(strings.TrimSpace(dirName))
+		filesFound, err := listMigrations(migrationsFS, ".")
+		if err != nil {
+			logger.ErrorContext(ctx, "Error listing database migration files", slog.String("errorMessage", err.Error()))
+			errs = append(errs, fmt.Errorf("error reading applied migrations from the database: %s", err.Error()))
+			return
+		}
+
+		migrationFiles = append(migrationFiles, filesFound...)
+
 	}
 
-	if len(sqlFiles) < 1 {
+	if len(migrationFiles) < 1 {
 		logger.InfoContext(ctx, "No SQL migrations to apply.", slog.String("migrationsDir", getenv("MIGRATIONS_DIR")))
 		return
 	}
 
+	/* Sort alphabetically by filename */
+	slices.SortFunc(migrationFiles, sortDirEntries)
+
 	fileToRowsAffected := make(map[string]int64)
-	for _, sqlFile := range sqlFiles {
-
-		if sqlFile.IsDir() {
-
-			logger.InfoContext(ctx, "Skipping directory", slog.String("dirName", sqlFile.Name()))
-			continue
-
-		}
+	for _, migration := range migrationFiles {
 
 		/*
 			The length of migrationsApplied is 0 when no migrations have been run yet,
 			so we obviously need to apply anything we have in that case.
 		*/
-		if slices.Contains(migrationsApplied, sqlFile.Name()) {
+		if slices.Contains(migrationsApplied, migration.name) {
 
-			logger.InfoContext(ctx, "Already applied migration, skipping...", slog.String("filename", sqlFile.Name()))
+			logger.InfoContext(ctx, "Already applied migration, skipping...", slog.String("filename", migration.name))
 			continue
 
 		}
@@ -113,29 +131,34 @@ func (dbConn DBConn) runMigrations(
 			return
 		}
 
-		logger.InfoContext(ctx, "Applying migration file", slog.String("filename", sqlFile.Name()))
-		rowsAffected, err := dbConn.applyMigration(ctx, logger, migrationsFS, sqlFile)
+		logger.InfoContext(ctx, "Applying migration file", slog.String("filename", migration.name))
+		rowsAffected, err := dbConn.applyMigration(ctx, logger, migration)
 		if err != nil {
 			logger.ErrorContext(ctx, "Migration failed", slog.String("errorMessage", err.Error()))
-			rollback(ctx, tx, logger, sqlFile.Name())
-			errs = append(errs, fmt.Errorf("%w could not apply migration file: %s %w", ErrMigration, sqlFile, err))
+			rollback(ctx, tx, logger, migration.name)
+			errs = append(errs, fmt.Errorf("%w could not apply migration file: %s %w", ErrMigration, migration, err))
 			continue
 		}
 
-		fileToRowsAffected[sqlFile.Name()] = rowsAffected
+		fileToRowsAffected[migration.name] = rowsAffected
 
 		/* Log the migration to the database so we don't repeat it */
-		logger.DebugContext(ctx, fmt.Sprintf("Adding %s to the database", sqlFile.Name()))
-		_, err = dbConn.Execute(ctx, InsertMigrationStatement, sqlFile.Name())
+		logger.DebugContext(ctx, fmt.Sprintf("Adding %s to the database", migration.name))
+		_, err = dbConn.Execute(ctx, InsertMigrationStatement, migration.name)
 		if err != nil {
-			logger.ErrorContext(ctx, "Error adding migration file to migrations table!", slog.String("filenam", sqlFile.Name()), slog.String("errorMessage", err.Error()))
-			errs = append(errs, fmt.Errorf("%w: could not add migration file: %s to the list of migrations run", ErrMigration, sqlFile))
+			logger.ErrorContext(
+				ctx,
+				"Error adding migration file to migrations table!",
+				slog.String("filenam", migration.name),
+				slog.String("errorMessage", err.Error()),
+			)
+			errs = append(errs, fmt.Errorf("%w: could not add migration file: %s to the list of migrations run", ErrMigration, migration.name))
 			break
 		}
 
 		err = tx.Commit()
 		if err != nil {
-			rollback(ctx, tx, logger, sqlFile.Name())
+			rollback(ctx, tx, logger, migration.name)
 			errs = append(errs, fmt.Errorf("error committing the migrations to the database: %w", err))
 			break
 		}
@@ -173,21 +196,21 @@ func (dbConn DBConn) runMigrations(
 func (dbConn DBConn) applyMigration(
 	ctx context.Context,
 	logger *slog.Logger,
-	migrations fs.FS,
-	migrationFile fs.DirEntry) (int64, error) {
+	migration migrationFile,
+) (int64, error) {
 
 	var totalRowsAffected int64 = 0
-	sqlBytes, err := fs.ReadFile(migrations, migrationFile.Name())
+	sqlBytes, err := fs.ReadFile(migration.fs, migration.name)
 	if err != nil {
 		logger.ErrorContext(ctx, "Error reading data from migration file",
-			slog.String("migrationFile", migrationFile.Name()),
+			slog.String("migrationFile", migration.name),
 			slog.String("errorMessage", err.Error()))
 		return 0, fmt.Errorf("error reading migration data: %s", err.Error())
 	}
 
 	rawMigration := string(sqlBytes)
-	statements := strings.Split(rawMigration, ";")
-	for _, sqlStatement := range statements {
+	statements := strings.SplitSeq(rawMigration, ";")
+	for sqlStatement := range statements {
 
 		/*
 			If the file ends with a ";", Go picks up an empty string as a "final" token.
@@ -220,23 +243,34 @@ func (dbConn DBConn) applyMigration(
 		ctx,
 		"Migration applied",
 		slog.Int64("rowsAffected", totalRowsAffected),
-		slog.String("filename", migrationFile.Name()),
+		slog.String("filename", migration.name),
 		slog.String("statement", rawMigration),
 	)
 	return totalRowsAffected, nil
 
 }
 
-func listMigrations(migrationsDir fs.FS, root string, logger *slog.Logger) ([]fs.DirEntry, error) {
+func listMigrations(migrationsDir fs.FS, root string) ([]migrationFile, error) {
+
+	sqlFiles := []migrationFile{}
 
 	migrationFiles, err := fs.ReadDir(migrationsDir, root)
 	if err != nil {
-		return []fs.DirEntry{}, fmt.Errorf("error building the list of migration files: %s", err)
+		return sqlFiles, fmt.Errorf("error building the list of migration files: %s", err)
 	}
 
-	/* Sort alphabetically by filename */
-	slices.SortFunc(migrationFiles, sortDirEntries)
-	return migrationFiles, nil
+	for _, entry := range migrationFiles {
+
+		/* Skip sub-directories */
+		if entry.IsDir() {
+			continue
+		}
+
+		sqlFiles = append(sqlFiles, migrationFile{fs: migrationsDir, name: entry.Name()})
+
+	}
+
+	return sqlFiles, nil
 
 }
 
@@ -274,17 +308,8 @@ func rollback(ctx context.Context, tx *sql.Tx, logger *slog.Logger, migrationFil
 
 }
 
-func sortDirEntries(left fs.DirEntry, right fs.DirEntry) int {
+func sortDirEntries(left migrationFile, right migrationFile) int {
 
-	switch {
-
-	case left.IsDir() && !right.IsDir():
-		return -1
-	case !left.IsDir() && right.IsDir():
-		return 1
-	default:
-		return strings.Compare(left.Name(), right.Name())
-
-	}
+	return strings.Compare(left.name, right.name)
 
 }

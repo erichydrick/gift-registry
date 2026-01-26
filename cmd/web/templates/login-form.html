@@ -1,6 +1,6 @@
 {{define "login-form"}}
 <div id="login">
-    <h3 class="center-text">Login to view your registry</h3>
+    <h3 class="center-text">Log in to view the family gift registry</h3>
     <form id="login-form" hx-disabled-elt="#login-submit" hx-post="/login" hx-target="#login" class="flex-column">
         <div id="login-error" class="danger mt-2 flex-row" {{if ne .Errors.ErrorMessage "" }}{{else}}hidden{{end}}>
             {{.Errors.ErrorMessage}}
