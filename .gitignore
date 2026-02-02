@@ -21,11 +21,12 @@ main
 # Go workspace file
 go.work
 go.work.sum
+pkg
 
 # env files (these hold IDs/passwords until I can get them replaced with D
 # ocker secrets)
-.env
-.env_*
+**/.env
+**/.env_*
 
 # Generated Docker compose files
 docker-compose-local.yml

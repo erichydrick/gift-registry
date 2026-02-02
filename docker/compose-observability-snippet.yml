@@ -5,7 +5,7 @@ services:
   observability:
     container_name: gift-registry-observability
     image: grafana/otel-lgtm:0.11.7
-    pull_policy: missing
+    pull_policy: if_not_present
     volumes:
       - type: bind
         source: ${GRAFANA_DATA}

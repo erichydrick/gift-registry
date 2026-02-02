@@ -1,0 +1,14 @@
+name: gift-registry
+
+services:
+  
+  app: 
+    container_name: gift-registry-app
+    build: 
+      context: .
+    volumes: !reset []
+    environment: 
+      MIGRATIONS_DIR: "migrations"
+      STATIC_FILES_DIR: "."
+      TEMPLATES_DIR: "templates"
+
