@@ -33,6 +33,7 @@ func registerRoutes() (http.Handler, error) {
 	/* Authentication routes */
 	handleFunc("GET /login", LoginFormHandler(appSrv))
 	handleFunc("POST /login", LoginHandler(appSrv))
+	handleFunc("GET /logout", LogoutHandler(appSrv))
 	handleFunc("POST /verify", VerificationHandler(appSrv))
 
 	/* Profile routes */
@@ -45,8 +46,8 @@ func registerRoutes() (http.Handler, error) {
 	handler := otelhttp.NewHandler(
 		middleware.Cors(
 			appSrv,
-			middleware.Auth(appSrv,
-				middleware.Telemetry(appSrv, mux),
+			middleware.Telemetry(appSrv,
+				middleware.Auth(appSrv, mux),
 			),
 		),
 		"/",

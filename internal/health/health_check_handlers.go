@@ -9,12 +9,8 @@ import (
 	"text/template"
 	"time"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-)
-
-const (
-	name = "net.hydrick.gift-registry/server/health"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type healthStatus struct {
@@ -27,23 +23,21 @@ type healthInfo struct {
 	Healthy bool
 }
 
-var (
-	tracer = otel.Tracer(name)
-)
-
 // Checks the health of the application and returns some relevant statistics
 func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
-		ctx, span := tracer.Start(req.Context(), "health")
-		defer span.End()
+		ctx := req.Context()
+		span := trace.SpanFromContext(ctx)
+		span.SetName("health_check")
 
 		dbStatus, err := dbHealth(ctx, svr)
 		svr.Logger.DebugContext(ctx, "DB status info obtained", slog.Any("statusObj", dbStatus))
 		if err != nil {
 			svr.Logger.ErrorContext(ctx, "Error getting database health data", slog.String("errorMessage", err.Error()))
 			dbStatus.Error = err.Error()
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 		}
 
 		status := healthStatus{
@@ -58,13 +52,13 @@ func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 			}
 		}()
 
-		tmpl, tmplErr := template.ParseFiles(svr.Getenv("TEMPLATES_DIR") + "/health.html")
-
 		span.SetAttributes(
 			attribute.Bool("healthy", status.Healthy),
 			attribute.Bool("dbHealthy", status.DBHealth.Healthy),
 			attribute.String("dbError", status.DBHealth.Error),
 		)
+
+		tmpl, tmplErr := template.ParseFiles(svr.Getenv("TEMPLATES_DIR") + "/health.html")
 
 		svr.Logger.InfoContext(ctx,
 			fmt.Sprintf("Finished the operation %s", req.URL.Path),
@@ -81,6 +75,7 @@ func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 			)
 			res.WriteHeader(500)
 			res.Write([]byte("Error rendering the health check page"))
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
 
@@ -96,6 +91,7 @@ func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 				slog.String("errorMessage", err.Error()))
 			res.WriteHeader(500)
 			res.Write([]byte("Error loading health dashboard"))
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
 

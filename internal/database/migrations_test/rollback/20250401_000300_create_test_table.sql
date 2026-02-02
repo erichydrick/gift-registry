@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS test_person (person_id SERIAL PRIMARY KEY, email VARCHAR(255) NOT NULL UNIQUE, first_name VARCHAR(255) NOT NULL, last_name VARCHAR(255) NOT NULL, display_name VARCHAR(255));

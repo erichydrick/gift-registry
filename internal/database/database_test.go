@@ -159,23 +159,25 @@ func TestRunMigrations(t *testing.T) {
 			expectedFilesApplied: []string{
 				"20250401_000000_create_test_table.sql",
 				"20250401_000100_insert_test_person.sql",
+				"20250401_000300_create_test_table.sql",
 			},
 			migrationsDir:    "migrations_test/rollback",
 			testName:         "Migration rollback",
 			validationQuery:  "SELECT filename FROM migrations",
-			validationResCnt: 1,
+			validationResCnt: 2,
 		},
 		{
 			errorExpected: false,
 			expectedFilesApplied: []string{
 				"20250401_000000_create_test_table.sql",
 				"20250401_000100_insert_test_person.sql",
-				"20250401_000300_alter_test_table.sql",
+				"20250401_000300_create_test_table.sql",
+				"20250401_000400_alter_test_table.sql",
 			},
 			migrationsDir:    "migrations_test/alter_table",
 			testName:         "Update existing table",
 			validationQuery:  "SELECT * FROM information_schema.columns WHERE table_name = 'person' ",
-			validationResCnt: 6,
+			validationResCnt: 7,
 		},
 	}
 
