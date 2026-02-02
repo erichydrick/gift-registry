@@ -135,6 +135,14 @@ func TestRunMigrations(t *testing.T) {
 		validationQuery      string
 		validationResCnt     int
 	}{
+		/*
+			TODO:
+			1. UPDATE THE MIGRATION FAILED TEST TO CONFIRM FILES AFTER STILL RAN
+			2. ADD A TEST MIGRATION WITH MULTIPLE VALID STATEMENTS IN A FILE.
+			CONFIRM THEY ALL APPLIED.
+			3. ADD A TEST MIGRATION WITH MULTIPLE STATMENTS, 1 INVALID.
+			CONFIRM IT DID NOT APPLY.
+		*/
 		{
 			errorExpected: false,
 			expectedFilesApplied: []string{
