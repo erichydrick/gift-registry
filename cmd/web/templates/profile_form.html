@@ -33,10 +33,8 @@
     <div id="email-group-{{.ExternalID}}" class="form-input-group">
         <label for="email-{{.ExternalID}}">Email address</label>
         <div class="flex-column">
-            <input type="text" id="email-{{.ExternalID}}" name="email" value="{{.Email}}" />
+            <input type="text" id="email-{{.ExternalID}}" name="email" value="{{.Email}}" disabled /> 
             <small>This is where the login verification code is sent</small>
-            <small id="email-error-{{.ExternalID}}" class="danger" {{if eq .Errors.Email ""
-                }}hidden{{end}}>{{.Errors.Email}}</small>
         </div>
     </div>
     <div id="household-name-group-{{.ExternalID}}" class="form-input-group" {{ if eq .Type "MANAGED" }}hidden{{end}}>

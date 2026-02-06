@@ -17,7 +17,6 @@ import (
 )
 
 type profileErrors struct {
-	Email        string
 	ErrorMessage string
 	FirstName    string
 	Household    string
@@ -454,19 +453,6 @@ func (user *userData) validate() {
 
 	}
 
-	/* The below fields aren't part of the profile cards for managed profiles */
-	if user.Email == "" && user.Type != "MANAGED" {
-
-		user.Errors.Email = "Email address is required for non-managed person accounts"
-		user.valid = false
-
-	} else if len(user.Email) > varcharMaxLength {
-
-		user.Errors.Email = fmt.Sprintf("Email address can't be more than %d characters", varcharMaxLength)
-		user.valid = false
-
-	}
-
 	if user.HouseholdName == "" && user.Type != "MANAGED" {
 
 		user.Errors.Household = "Household name is required"
@@ -486,15 +472,13 @@ func (user userData) String() string {
 	if user.Errors.ErrorMessage != "" ||
 		user.Errors.FirstName != "" ||
 		user.Errors.LastName != "" ||
-		user.Errors.Email != "" ||
 		user.Errors.Household != "" {
 
 		errors = fmt.Sprintf(
-			"{ErrorMessage: %s, FirstName: %s, LastName: %s, Email: %s, Household: %s}",
+			"{ErrorMessage: %s, FirstName: %s, LastName: %s, Household: %s}",
 			user.Errors.ErrorMessage,
 			user.Errors.FirstName,
 			user.Errors.LastName,
-			user.Errors.Email,
 			user.Errors.Household,
 		)
 

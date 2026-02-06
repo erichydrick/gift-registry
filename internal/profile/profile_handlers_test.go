@@ -150,7 +150,6 @@ func TestProfilePage(t *testing.T) {
 				"first-name-error-succ-disp-name": {Visible: false},
 				"household-error-succ-disp-name":  {Visible: false},
 				"last-name-error-succ-disp-name":  {Visible: false},
-				"email-error-succ-disp-name":      {Visible: false},
 				"profile-error-succ-disp-name":    {Visible: false},
 			},
 			userData: test.UserData{
@@ -194,7 +193,6 @@ func TestProfilePage(t *testing.T) {
 				"profile-submit-succ-def-disp-name":   {Visible: true},
 				"first-name-error-succ-def-disp-name": {Visible: false},
 				"last-name-error-succ-def-disp-name":  {Visible: false},
-				"email-error-succ-def-disp-name":      {Visible: false},
 				"profile-error-succ-def-disp-name":    {Visible: false},
 			},
 			userData: test.UserData{
@@ -239,7 +237,6 @@ func TestProfilePage(t *testing.T) {
 				"first-name-error-manager-profile": {Visible: false},
 				"household-error-manager-profile":  {Visible: false},
 				"last-name-error-manager-profile":  {Visible: false},
-				"email-error-manager-profile":      {Visible: false},
 				"profile-error-manager-profile":    {Visible: false},
 				// First child profile
 				"profile-header-child-1-profile": {
@@ -545,7 +542,6 @@ func TestProfileUpdates(t *testing.T) {
 				"first-name-error-success-update": {Visible: false},
 				"household-error-success-update":  {Visible: false},
 				"last-name-error-success-update":  {Visible: false},
-				"email-error-success-update":      {Visible: false},
 				"profile-error-success-update":    {Visible: false},
 			},
 			success:  true,
@@ -599,7 +595,6 @@ func TestProfileUpdates(t *testing.T) {
 				"first-name-error-bad-first-name": {Visible: true},
 				"household-error-bad-first-name":  {Visible: false},
 				"last-name-error-bad-first-name":  {Visible: false},
-				"email-error-bad-first-name":      {Visible: false},
 				"profile-error-bad-first-name":    {Visible: false},
 			},
 			success:  false,
@@ -653,7 +648,6 @@ func TestProfileUpdates(t *testing.T) {
 				"first-name-error-bad-last-email": {Visible: false},
 				"household-error-bad-last-email":  {Visible: false},
 				"last-name-error-bad-last-email":  {Visible: true},
-				"email-error-bad-last-email":      {Visible: true},
 				"profile-error-bad-last-email":    {Visible: false},
 			},
 			success:  false,
@@ -707,7 +701,6 @@ func TestProfileUpdates(t *testing.T) {
 				"first-name-error-clear-display": {Visible: false},
 				"household-error-clear-display":  {Visible: false},
 				"last-name-error-clear-display":  {Visible: false},
-				"email-error-clear-display":      {Visible: false},
 				"profile-error-clear-display":    {Visible: false},
 			},
 			success:  true,
@@ -761,7 +754,6 @@ func TestProfileUpdates(t *testing.T) {
 				"first-name-error-valid-household": {Visible: false},
 				"household-error-valid-household":  {Visible: false},
 				"last-name-error-valid-household":  {Visible: false},
-				"email-error-valid-household":      {Visible: false},
 				"profile-error-valid-household":    {Visible: false},
 			},
 			success:  false,
