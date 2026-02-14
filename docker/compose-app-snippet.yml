@@ -1,15 +1,14 @@
 name: gift-registry
 
 services:
-  
-  postgres: 
+  postgres:
     container_name: gift-registry-postgres
     image: postgres:17.2
     pull_policy: if_not_present
-    ports: 
+    ports:
       - 5432:5432
     volumes:
-      - ${POSTGRES_DATA}:/var/lib/postgresql/data/ 
+      - ${POSTGRES_DATA}:/var/lib/postgresql/data/
       - ./postgres_scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "sh -c 'pg_isready -U ${DB_USER} -d ${DB_NAME}'"]
@@ -19,27 +18,27 @@ services:
     environment:
       # Set up your DB credentials in environment variables
       POSTGRES_DB: ${DB_NAME}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASS}
       POSTGRES_USER: ${DB_USER}
     networks:
       - gift-registry-network
 
-  app: 
+  app:
     container_name: gift-registry-app
     image: golang
     command: go run ./cmd/api/main.go
     working_dir: /app
-    depends_on: 
+    depends_on:
       postgres:
-          condition: service_healthy
+        condition: service_healthy
     volumes:
       - ..:/app
-    ports: 
-      - "8080:8080" 
+    ports:
+      - "8080:8080"
     environment:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS}
       DB_USER: ${DB_USER}
-      DB_PASS: ${DB_PASSWORD}
+      DB_PASS: ${DB_PASS}
       DB_PORT: ${DB_PORT}
       DB_HOST: ${DB_HOST}
       DB_NAME: ${DB_NAME}
@@ -48,10 +47,10 @@ services:
       EMAIL_PASS: ${EMAIL_PASS}
       EMAIL_PORT: ${EMAIL_PORT}
       MIGRATIONS_DIR: "internal/database/migrations, internal/database/private_migrations"
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://gift-registry-collector:4318 
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
       OTEL_METRIC_EXPORT_INTERVAL: "5000" # so we don't have to wait 60s for metrics
       STATIC_FILES_DIR: cmd/web
-      PORT: ${PORT}
+      PORT: ${GR_PORT}
       TEMPLATES_DIR: "cmd/web/templates"
     networks:
       - gift-registry-network

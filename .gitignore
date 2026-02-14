@@ -33,6 +33,6 @@ docker-compose-local.yml
 docker-compose-test.yml
 docker-compose-prod.yml
 
-# Data schema changes
+# DB data changes
 **/private_migrations/*
 **/data_migrations/*
