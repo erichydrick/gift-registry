@@ -1,7 +1,6 @@
 name: gift-registry
 
 services:
-  
   observability:
     container_name: gift-registry-observability
     image: grafana/otel-lgtm:0.11.7
@@ -10,19 +9,19 @@ services:
       - type: bind
         source: ${GRAFANA_DATA}
         target: /data
-    ports: 
-      - 3000:3000 
+    ports:
+      - 3000:3000
     healthcheck:
       test: ["CMD-SHELL", "curl http://localhost:3000/api/health"]
       interval: 10s
       timeout: 3s
       retries: 3
-    environment: 
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_USERNAME}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASS}
     networks:
       - gift-registry-network
-  
+
   collector:
     container_name: gift-registry-collector
     image: otel/opentelemetry-collector-contrib:0.136.0
@@ -34,14 +33,14 @@ services:
     networks:
       - gift-registry-network
 
-  postgres: 
+  postgres:
     container_name: gift-registry-postgres
     image: postgres:17.2
     pull_policy: missing
-    ports: 
+    ports:
       - 5432:5432
     volumes:
-      - ${POSTGRES_DATA}:/var/lib/postgresql/data/ 
+      - ${POSTGRES_DATA}:/var/lib/postgresql/data/
       - ./postgres_scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "sh -c 'pg_isready -U ${DB_USER} -d ${DB_NAME}'"]
@@ -51,26 +50,26 @@ services:
     environment:
       # Set up your DB credentials in environment variables
       POSTGRES_DB: ${DB_NAME}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASS}
       POSTGRES_USER: ${DB_USER}
     networks:
       - gift-registry-network
 
-  app: 
+  app:
     container_name: gift-registry-app
     image: gift-registry
     pull_policy: missing
-    depends_on: 
+    depends_on:
       postgres:
-          condition: service_healthy
+        condition: service_healthy
       observability:
-          condition: service_healthy
-    ports: 
-      - "8080:8080" 
+        condition: service_healthy
+    ports:
+      - "8080:8080"
     environment:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS}
       DB_USER: ${DB_USER}
-      DB_PASS: ${DB_PASSWORD}
+      DB_PASS: ${DB_PASS}
       DB_PORT: ${DB_PORT}
       DB_HOST: ${DB_HOST}
       DB_NAME: ${DB_NAME}
@@ -79,7 +78,7 @@ services:
       EMAIL_PASS: ${EMAIL_PASS}
       EMAIL_PORT: ${EMAIL_PORT}
       MIGRATIONS_DIR: "migrations"
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://gift-registry-collector:4318 
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://gift-registry-collector:4318
       OTEL_METRIC_EXPORT_INTERVAL: "5000" # so we don't have to wait 60s for metrics
       STATIC_FILES_DIR: "."
       PORT: ${PORT}

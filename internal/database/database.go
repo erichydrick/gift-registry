@@ -50,7 +50,6 @@ var (
 )
 
 func init() {
-
 	var err error
 	histogram, err = meter.Float64Histogram(
 		name,
@@ -60,7 +59,6 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-
 }
 
 // A placeholder to use when I need an empty sql.Result object to represents
@@ -77,7 +75,6 @@ func (dbConn DBConn) Execute(
 	statement string,
 	params ...any,
 ) (sql.Result, error) {
-
 	start := time.Now()
 
 	ctx, span := tracer.Start(ctx, "DatabaseExecute")
@@ -113,7 +110,6 @@ func (dbConn DBConn) Execute(
 
 	dbConn.histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
 	return res, nil
-
 }
 
 // Wraps multiple database operations in a series of sql.DB.ExecContext
@@ -124,7 +120,6 @@ func (dbConn DBConn) ExecuteBatch(
 	statements []string,
 	params [][]any,
 ) (results []sql.Result, errors []error) {
-
 	start := time.Now()
 	results = make([]sql.Result, len(statements))
 	errors = make([]error, len(statements))
@@ -184,19 +179,16 @@ func (dbConn DBConn) ExecuteBatch(
 
 	dbConn.histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
 	return
-
 }
 
 // Wraps a call to sql.DB.Ping operation so everything is accessible from the interface. Not capturing the histogram since I'm not worried about performance on Ping().
 func (dbConn DBConn) Ping(ctx context.Context) error {
-
 	err := dbConn.db.PingContext(ctx)
 	if err != nil {
 		return fmt.Errorf("error pinging the database: %v", err)
 	}
 
 	return nil
-
 }
 
 // Wraps a sql.DB.QueryContext operation so we can capture the time it takes to
@@ -206,7 +198,6 @@ func (dbConn DBConn) Query(
 	query string,
 	params ...any,
 ) (*sql.Rows, error) {
-
 	start := time.Now()
 
 	ctx, span := tracer.Start(ctx, "DatabaseQuery")
@@ -222,7 +213,6 @@ func (dbConn DBConn) Query(
 
 	dbConn.histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
 	return rows, nil
-
 }
 
 // Wraps a sql.DB.QueryContext operation so we can capture the time it takes to
@@ -232,7 +222,6 @@ func (dbConn DBConn) QueryRow(
 	query string,
 	params ...any,
 ) *sql.Row {
-
 	start := time.Now()
 
 	ctx, span := tracer.Start(ctx, "DatabaseQueryRow")
@@ -243,12 +232,10 @@ func (dbConn DBConn) QueryRow(
 	rows := dbConn.db.QueryRowContext(ctx, query, params...)
 	dbConn.histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
 	return rows
-
 }
 
 // Returns a singleton database connection, creating a new one if it's not already initialized. getenv() will use the container environment variables when running, but can be mocked for testing.
 func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) string) (Database, error) {
-
 	/* Re-use this specific connection if we have it */
 	if dbConn.db != nil {
 
@@ -266,9 +253,7 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 			actually somehow close out from under you.
 		*/
 		if err := dbConn.Ping(ctx); err == nil {
-
 			return dbConn, nil
-
 		}
 
 	}
@@ -292,8 +277,7 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 
 	logger.DebugContext(ctx, "Need to create a new connection with the connection URL", slog.String("dbURL", connStr))
 	db, err := connection.open(ctx, logger, connStr)
-	/* We can't run the application if we can't connect to the database, so go ahead and exit */
-	if err != nil {
+	/* We can't run the application if we can't connect to the database, so go ahead and exit */ if err != nil {
 		return DBConn{}, err
 	}
 
@@ -328,12 +312,10 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 		failed (at this point we know it's a MigrationError)
 	*/
 	return connection, err
-
 }
 
 // Closes the database connection
 func (dbConn DBConn) Close() (err error) {
-
 	if dbConn.db != nil {
 
 		err = dbConn.db.Close()
@@ -344,15 +326,12 @@ func (dbConn DBConn) Close() (err error) {
 	}
 
 	return
-
 }
 
 // Make the database connection type comparable for sorting. This is calculated
 // using the connection URL for the connection.
 func (dbConn DBConn) Compare(otherConn DBConn) int {
-
 	return strings.Compare(dbConn.String(), otherConn.String())
-
 }
 
 // Make the database connection type comparable for equality. This is
@@ -360,7 +339,6 @@ func (dbConn DBConn) Compare(otherConn DBConn) int {
 // and whether the database pointer references are both nil or both
 // non-nil.
 func (dbConn DBConn) Equal(otherConn DBConn) bool {
-
 	return dbConn.Hostname == otherConn.Hostname &&
 		dbConn.Port == otherConn.Port &&
 		dbConn.password == otherConn.password &&
@@ -368,14 +346,12 @@ func (dbConn DBConn) Equal(otherConn DBConn) bool {
 		dbConn.Name == otherConn.Name &&
 		((dbConn.db == nil && otherConn.db == nil) ||
 			(dbConn.db != nil && otherConn.db != nil))
-
 }
 
 // Has the database connection type implement the Stringer interface
 // Prints all the public fields along with a boolean indicating if the
 // connection isn't nil
 func (dbConn DBConn) String() string {
-
 	return fmt.Sprintf(
 		"{hostname: \"%s\", username: \"%s\", port: %d, password: *******, databaseName: \"%s\"}",
 		dbConn.Hostname,
@@ -383,23 +359,18 @@ func (dbConn DBConn) String() string {
 		dbConn.Port,
 		dbConn.Name,
 	)
-
 }
 
 // Used to make EmptyResult compatible with sql.Result
 // Just returns 0 with no error
 func (er EmptyResult) LastInsertId() (int64, error) {
-
 	return 0, nil
-
 }
 
 // Used to make EmptyResult compatible with sql.Result
 // Just returns 0 with no error
 func (er EmptyResult) RowsAffected() (int64, error) {
-
 	return 0, nil
-
 }
 
 /*
@@ -408,8 +379,8 @@ Opens a connection to the Postgres database and returns it.
 func (dbConn DBConn) open(
 	ctx context.Context,
 	logger *slog.Logger,
-	url string) (*sql.DB, error) {
-
+	url string,
+) (*sql.DB, error) {
 	db, err := sql.Open("postgres", url)
 	if err != nil {
 		logger.ErrorContext(ctx, "Error connecting to the database", slog.String("errorMessage", err.Error()))
@@ -425,7 +396,6 @@ func (dbConn DBConn) open(
 	}
 
 	return db, nil
-
 }
 
 /*
@@ -438,14 +408,13 @@ func txFailure(
 	tx *sql.Tx,
 	histogram metric.Float64Histogram,
 	start time.Time,
-	err error) {
-
+	err error,
+) {
 	rbErr := tx.Rollback()
 	if rbErr != nil {
 		histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
 		panic(fmt.Sprintf("error roll back a transaction: %v (original error: %v)", rbErr, err))
 	}
-
 }
 
 /*
@@ -453,7 +422,6 @@ Builds a Postgres connection URL from the environment variables and returns
 it.
 */
 func url(getenv func(string) string) string {
-
 	return fmt.Sprintf(
 		"postgres://%s:%s@%s:%s/%s?sslmode=disable&timezone=UTC",
 		getenv("DB_USER"),
@@ -462,5 +430,4 @@ func url(getenv func(string) string) string {
 		getenv("DB_PORT"),
 		getenv("DB_NAME"),
 	)
-
 }

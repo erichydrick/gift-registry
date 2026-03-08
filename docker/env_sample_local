@@ -1,0 +1,9 @@
+# TODO: REPLACE WITH LIBSQL
+# Database connection 
+DB_HOST=gift-registry-postgres
+DB_NAME=gift_registry
+DB_PORT=5432
+
+# App settings
+ALLOWED_HOSTS=localhost
+GR_PORT=8080

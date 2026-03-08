@@ -4,12 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"gift-registry/internal/util"
 	"log"
 	"log/slog"
 	"net/http"
 	"regexp"
 	"time"
+
+	"gift-registry/internal/util"
 )
 
 const (
@@ -35,7 +36,7 @@ const (
 
 var (
 	publicRoutes  []*regexp.Regexp
-	routePatterns = []string{"^/$", "/css/*", "/health", "/js/*", "/login", "/verify"}
+	routePatterns = []string{"^/$", "/css/*", "/js/*", "/login", "/verify"}
 )
 
 func init() {
@@ -51,9 +52,7 @@ func init() {
 
 // Enforces valid login sessions for non-public endpoints
 func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
-
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-
 		ctx := req.Context()
 		pass := false
 
@@ -126,15 +125,11 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, loggedInUser, sessInfo.personID)
 		req = req.WithContext(ctx)
 		authNext(ctx, svr, res, req, next, pass)
-
 	})
-
 }
 
 func PersonID(res http.ResponseWriter, req *http.Request) int64 {
-
 	return req.Context().Value(loggedInUser).(int64)
-
 }
 
 func authNext(
@@ -145,9 +140,7 @@ func authNext(
 	next http.Handler,
 	pass bool,
 ) {
-
 	if pass || isPublic(ctx, svr, req) {
-
 		/*
 			Redirect straight to the registry if trying to load the login page with a
 			valid session
@@ -163,18 +156,15 @@ func authNext(
 			return
 
 		}
-
 	} else {
 
 		http.Redirect(res, req, "login", http.StatusSeeOther)
 		return
 
 	}
-
 }
 
 func deleteSession(ctx context.Context, svr *util.ServerUtils, sessionID string) error {
-
 	svr.Logger.InfoContext(
 		ctx,
 		"Deleting existing session information",
@@ -211,11 +201,9 @@ func deleteSession(ctx context.Context, svr *util.ServerUtils, sessionID string)
 	}
 
 	return nil
-
 }
 
 func extendSession(ctx context.Context, svr *util.ServerUtils, sessionID string, expires time.Time) error {
-
 	res, err := svr.DB.Execute(ctx, ExtendSessionQuery, expires, sessionID)
 	if err != nil {
 		return fmt.Errorf("error setting extended session expiration: %v", err)
@@ -245,11 +233,9 @@ func extendSession(ctx context.Context, svr *util.ServerUtils, sessionID string,
 	}
 
 	return nil
-
 }
 
 func isLogin(path string) bool {
-
 	loginPath, err := regexp.Compile("/login")
 	if err != nil {
 		return false
@@ -261,13 +247,10 @@ func isLogin(path string) bool {
 	}
 
 	return loginPath.Match([]byte(path)) || verifyPath.Match([]byte(path))
-
 }
 
 func isPublic(ctx context.Context, svr *util.ServerUtils, req *http.Request) bool {
-
 	for _, allowed := range publicRoutes {
-
 		if allowed.Match([]byte(req.URL.Path)) {
 
 			svr.Logger.InfoContext(ctx,
@@ -279,15 +262,12 @@ func isPublic(ctx context.Context, svr *util.ServerUtils, req *http.Request) boo
 			return true
 
 		}
-
 	}
 
 	return false
-
 }
 
 func lookupSession(ctx context.Context, svr *util.ServerUtils, sessionID string) (session, error) {
-
 	var sessRec session
 	err := svr.DB.
 		QueryRow(ctx, LookupSessionQuery, sessionID).
@@ -303,5 +283,4 @@ func lookupSession(ctx context.Context, svr *util.ServerUtils, sessionID string)
 	}
 
 	return sessRec, nil
-
 }

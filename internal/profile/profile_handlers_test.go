@@ -2,10 +2,6 @@ package profile_test
 
 import (
 	"context"
-	"gift-registry/internal/database"
-	"gift-registry/internal/middleware"
-	"gift-registry/internal/server"
-	"gift-registry/internal/test"
 	"log"
 	"log/slog"
 	"net/http"
@@ -16,6 +12,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gift-registry/internal/database"
+	"gift-registry/internal/middleware"
+	"gift-registry/internal/server"
+	"gift-registry/internal/test"
 
 	"github.com/testcontainers/testcontainers-go"
 	"golang.org/x/net/html"
@@ -62,7 +63,6 @@ var (
 )
 
 func TestMain(m *testing.M) {
-
 	ctx = context.Background()
 
 	options := &slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true}
@@ -108,11 +108,9 @@ func TestMain(m *testing.M) {
 
 	exitCode := m.Run()
 	os.Exit(exitCode)
-
 }
 
 func TestProfilePage(t *testing.T) {
-
 	testData := []struct {
 		userData    test.UserData
 		managedData []test.UserData
@@ -150,7 +148,6 @@ func TestProfilePage(t *testing.T) {
 				"first-name-error-succ-disp-name": {Visible: false},
 				"household-error-succ-disp-name":  {Visible: false},
 				"last-name-error-succ-disp-name":  {Visible: false},
-				"email-error-succ-disp-name":      {Visible: false},
 				"profile-error-succ-disp-name":    {Visible: false},
 			},
 			userData: test.UserData{
@@ -194,7 +191,6 @@ func TestProfilePage(t *testing.T) {
 				"profile-submit-succ-def-disp-name":   {Visible: true},
 				"first-name-error-succ-def-disp-name": {Visible: false},
 				"last-name-error-succ-def-disp-name":  {Visible: false},
-				"email-error-succ-def-disp-name":      {Visible: false},
 				"profile-error-succ-def-disp-name":    {Visible: false},
 			},
 			userData: test.UserData{
@@ -239,7 +235,6 @@ func TestProfilePage(t *testing.T) {
 				"first-name-error-manager-profile": {Visible: false},
 				"household-error-manager-profile":  {Visible: false},
 				"last-name-error-manager-profile":  {Visible: false},
-				"email-error-manager-profile":      {Visible: false},
 				"profile-error-manager-profile":    {Visible: false},
 				// First child profile
 				"profile-header-child-1-profile": {
@@ -320,9 +315,7 @@ func TestProfilePage(t *testing.T) {
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			token, err := test.CreateSession(ctx, logger, db, data.userData, time.Minute*5, userAgent)
@@ -331,7 +324,6 @@ func TestProfilePage(t *testing.T) {
 			}
 
 			if len(data.managedData) > 0 {
-
 				for _, managedProfile := range data.managedData {
 
 					_, err := test.CreateUser(ctx, logger, db, managedProfile)
@@ -340,7 +332,6 @@ func TestProfilePage(t *testing.T) {
 					}
 
 				}
-
 			}
 
 			sessCookie := http.Cookie{
@@ -362,7 +353,7 @@ func TestProfilePage(t *testing.T) {
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {
-					res.Body.Close()
+					_ = res.Body.Close()
 				}
 			}()
 			if err != nil {
@@ -380,15 +371,11 @@ func TestProfilePage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-
 		})
-
 	}
-
 }
 
 func TestProfileEndpointsBadTemplates(t *testing.T) {
-
 	env := map[string]string{
 		"STATIC_FILES_DIR": filepath.Join("..", "..", "cmd", "web"),
 		"TEMPLATES_DIR":    "templates",
@@ -439,9 +426,7 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			templatesServer := httptest.NewServer(appHandler)
@@ -483,7 +468,7 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {
-					res.Body.Close()
+					_ = res.Body.Close()
 				}
 			}()
 			if err != nil {
@@ -491,15 +476,11 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 			} else if res.StatusCode != http.StatusInternalServerError {
 				t.Fatal("Expected a 500 from the server, but got", res.StatusCode)
 			}
-
 		})
-
 	}
-
 }
 
 func TestProfileUpdates(t *testing.T) {
-
 	testData := []struct {
 		displayName     string
 		elements        map[string]test.ElementValidation
@@ -545,7 +526,6 @@ func TestProfileUpdates(t *testing.T) {
 				"first-name-error-success-update": {Visible: false},
 				"household-error-success-update":  {Visible: false},
 				"last-name-error-success-update":  {Visible: false},
-				"email-error-success-update":      {Visible: false},
 				"profile-error-success-update":    {Visible: false},
 			},
 			success:  true,
@@ -599,7 +579,6 @@ func TestProfileUpdates(t *testing.T) {
 				"first-name-error-bad-first-name": {Visible: true},
 				"household-error-bad-first-name":  {Visible: false},
 				"last-name-error-bad-first-name":  {Visible: false},
-				"email-error-bad-first-name":      {Visible: false},
 				"profile-error-bad-first-name":    {Visible: false},
 			},
 			success:  false,
@@ -653,7 +632,6 @@ func TestProfileUpdates(t *testing.T) {
 				"first-name-error-bad-last-email": {Visible: false},
 				"household-error-bad-last-email":  {Visible: false},
 				"last-name-error-bad-last-email":  {Visible: true},
-				"email-error-bad-last-email":      {Visible: true},
 				"profile-error-bad-last-email":    {Visible: false},
 			},
 			success:  false,
@@ -707,7 +685,6 @@ func TestProfileUpdates(t *testing.T) {
 				"first-name-error-clear-display": {Visible: false},
 				"household-error-clear-display":  {Visible: false},
 				"last-name-error-clear-display":  {Visible: false},
-				"email-error-clear-display":      {Visible: false},
 				"profile-error-clear-display":    {Visible: false},
 			},
 			success:  true,
@@ -761,7 +738,6 @@ func TestProfileUpdates(t *testing.T) {
 				"first-name-error-valid-household": {Visible: false},
 				"household-error-valid-household":  {Visible: false},
 				"last-name-error-valid-household":  {Visible: false},
-				"email-error-valid-household":      {Visible: false},
 				"profile-error-valid-household":    {Visible: false},
 			},
 			success:  false,
@@ -851,9 +827,7 @@ func TestProfileUpdates(t *testing.T) {
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			token, err := test.CreateSession(ctx, logger, db, data.userData, time.Minute*5, userAgent)
@@ -862,7 +836,6 @@ func TestProfileUpdates(t *testing.T) {
 			}
 
 			if len(data.managedData) > 0 {
-
 				for _, managedProfile := range data.managedData {
 
 					_, err := test.CreateUser(ctx, logger, db, managedProfile)
@@ -871,7 +844,6 @@ func TestProfileUpdates(t *testing.T) {
 					}
 
 				}
-
 			}
 
 			sessCookie := http.Cookie{
@@ -903,7 +875,7 @@ func TestProfileUpdates(t *testing.T) {
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {
-					res.Body.Close()
+					_ = res.Body.Close()
 				}
 			}()
 			if err != nil {
@@ -925,7 +897,7 @@ func TestProfileUpdates(t *testing.T) {
 			if data.success {
 
 				var updatedRecord person
-				db.QueryRow(ctx, lookupUpdatedUserQuery, data.updatedUserData.ExternalID).
+				err = db.QueryRow(ctx, lookupUpdatedUserQuery, data.updatedUserData.ExternalID).
 					Scan(
 						&updatedRecord.personID,
 						&updatedRecord.householdID,
@@ -935,6 +907,9 @@ func TestProfileUpdates(t *testing.T) {
 						&updatedRecord.email,
 						&updatedRecord.householdName,
 					)
+				if err != nil {
+					t.Fatal("Error reading the updated row back out", err)
+				}
 
 				/* Confirm the database has the updated values */
 				if updatedRecord.firstName != data.updatedUserData.FirstName {
@@ -960,9 +935,6 @@ func TestProfileUpdates(t *testing.T) {
 					t.Fatal("Updated household doesn't match the expected value! DB", updatedRecord.householdName, " expected", data.updatedUserData.HouseholdName)
 				}
 			}
-
 		})
-
 	}
-
 }

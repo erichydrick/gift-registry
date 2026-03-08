@@ -7,6 +7,25 @@ build:
 docker-build: test
 	docker build -t gift-registry -f Dockerfile .
 
+env-local: 
+	clear
+	./init.sh --local --use-secrets
+
+env-test: 
+	clear
+	./init.sh --test 
+
+env-prod: 
+	clear
+	./init.sh --prod 
+
+fmt:
+	clear
+	go fmt ./...
+
+install: 
+	go install honnef.co/go/tools/cmd/staticcheck@latest
+
 local-down:
 	clear
 	docker compose -f docker-compose-local.yml down
@@ -15,10 +34,6 @@ local-up:
 	docker compose --env-file=.env_local -f docker-compose-local.yml up -d --no-deps
 	docker ps -a
 
-fmt:
-	clear
-	go fmt ./...
-
 prod-down:
 	clear
 	docker compose -f docker-compose-prod.yml down
@@ -26,10 +41,6 @@ prod-down:
 prod-up: docker-build
 	docker compose --env-file=.env_prod -f docker-compose-prod.yml up -d --no-deps
 	docker ps -a
-
-init: 
-	clear
-	./init.sh
 
 staticcheck: fmt
 	staticcheck ./...

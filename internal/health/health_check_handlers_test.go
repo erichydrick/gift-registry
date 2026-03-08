@@ -4,9 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"gift-registry/internal/database"
-	"gift-registry/internal/server"
-	"gift-registry/internal/test"
 	"log"
 	"log/slog"
 	"net/http"
@@ -19,25 +16,32 @@ import (
 	"testing"
 	"time"
 
+	"gift-registry/internal/database"
+	"gift-registry/internal/middleware"
+	"gift-registry/internal/server"
+	"gift-registry/internal/test"
+
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"golang.org/x/net/html"
 )
 
-type testDB struct {
-	db *sql.DB
+type unhealthyDatabase struct {
+	db database.Database
 }
 
 // Connection details for the test database
 const (
-	dbName = "server_test"
-	dbUser = "server_user"
-	dbPass = "server_pass"
+	dbName    = "server_test"
+	dbUser    = "server_user"
+	dbPass    = "server_pass"
+	userAgent = "test-user-agent"
 )
 
 var (
+	badDB  database.Database
 	ctx    context.Context
-	db     database.Database
+	liveDB database.Database
 	dbURL  string
 	env    map[string]string
 	getenv func(string) string
@@ -47,11 +51,10 @@ var (
 )
 
 func TestMain(m *testing.M) {
-
 	start = time.Now().Local()
 
 	/* Sets up a testing logger */
-	options := &slog.HandlerOptions{Level: slog.LevelDebug}
+	options := &slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true}
 	handler := slog.NewTextHandler(os.Stderr, options)
 	logger = slog.New(handler)
 
@@ -84,74 +87,93 @@ func TestMain(m *testing.M) {
 	}
 	getenv = func(key string) string { return env[key] }
 
-	db, err = database.Connection(ctx, logger, func(key string) string { return env[key] })
+	liveDB, err = database.Connection(ctx, logger, func(key string) string { return env[key] })
 	if err != nil {
 		log.Fatal("database connection failure! ", err)
 	}
 
+	badDB = unhealthyDatabase{
+		db: liveDB,
+	}
+
 	exitCode := m.Run()
 	os.Exit(exitCode)
-
 }
 
 // TestHealthCheck validates the health check endpoint by connecting to the
 // testing database container, starting an application server, calling the
 // health check endpoint, and validating the output
 func TestHealthCheck(t *testing.T) {
-
 	testData := []struct {
-		dbError               bool
+		db                    database.Database
 		expectedDBStatusClass string
 		expectedHttpStatus    int
 		healthy               string
 		testName              string
+		userData              test.UserData
 	}{
 		{
-			dbError:               false,
+			db:                    liveDB,
 			expectedDBStatusClass: "healthy",
 			expectedHttpStatus:    http.StatusOK,
 			healthy:               "Healthy",
 			testName:              "Successful health check",
+			userData: test.UserData{
+				Email:         "successfulHealthCheck@localhost.com",
+				ExternalID:    "success-health-check",
+				FirstName:     "Success",
+				HouseholdName: "Health Check",
+				LastName:      "Check",
+			},
 		},
 		{
-			dbError:               true,
+			db:                    badDB,
 			expectedDBStatusClass: "unhealthy",
 			expectedHttpStatus:    http.StatusOK,
 			healthy:               "Unhealthy",
 			testName:              "Database error",
+			userData: test.UserData{
+				Email:         "badDBHealthCheck@localhost.com",
+				ExternalID:    "bad-db-health-check",
+				FirstName:     "Bad",
+				HouseholdName: "Health Check",
+				LastName:      "Database",
+			},
 		},
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			/*
-				When we need to simulate a database error, we'll close the connection.
-				Because I want to run these tests in parallel, I can't close the same
-				connection the healthy database tests use, so create a duplicate that
-				I'll close instead. For healthy database tests, use the existing
-				connection reference.
+				Not using test.db here because when I hit the test case of a "bad"
+				database connectino it fails before it starts (because that "databse"
+				isn't actually real). So always use the live DB for this part, then use
+				the test.db input for everything else.
 			*/
-			var testDB database.Database
-			var err error
-			if data.dbError {
+			token, err := test.CreateSession(
+				ctx,
+				logger,
+				liveDB,
+				data.userData,
+				time.Second*5,
+				userAgent,
+			)
+			if err != nil {
+				t.Fatal("Could not create a test session to validate health checking", err)
+			}
 
-				testDB, err = throwawayDB()
-				if err != nil {
-					t.Fatal("Error setting up a throwaway database connection for testing a database failure!", err)
-				}
-
-			} else {
-
-				testDB = db
-
+			sessCookie := http.Cookie{
+				HttpOnly: true,
+				MaxAge:   time.Now().UTC().Add(time.Second * 5).Second(),
+				Name:     middleware.SessionCookie,
+				Secure:   true,
+				Value:    token,
 			}
 
 			var emailer server.Emailer = &test.EmailMock{}
-			appHandler, err := server.NewServer(getenv, testDB, logger, emailer)
+			appHandler, err := server.NewServer(getenv, data.db, logger, emailer)
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}
@@ -163,18 +185,13 @@ func TestHealthCheck(t *testing.T) {
 			if err != nil {
 				t.Fatal("error building health check request", err)
 			}
-
-			/* Fake a database error by just closing the databse (if applicable) */
-			if data.dbError {
-
-				testDB.Close()
-
-			}
+			req.AddCookie(&sessCookie)
+			req.Header.Set("User-Agent", userAgent)
 
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {
-					res.Body.Close()
+					_ = res.Body.Close()
 				}
 			}()
 			if err != nil {
@@ -182,9 +199,7 @@ func TestHealthCheck(t *testing.T) {
 			}
 
 			if res.StatusCode != data.expectedHttpStatus {
-
 				t.Fatal("Expected a ", data.expectedHttpStatus, "status, but got a ", res.StatusCode, "response")
-
 			}
 
 			doc, err := html.Parse(res.Body)
@@ -196,9 +211,7 @@ func TestHealthCheck(t *testing.T) {
 				Don't try to validate document contents if there was an HTTP error
 			*/
 			if data.expectedHttpStatus != http.StatusOK {
-
 				return
-
 			}
 
 			/*
@@ -214,9 +227,7 @@ func TestHealthCheck(t *testing.T) {
 					dbStatusFound = true
 
 					if !slices.Contains(node.Attr, html.Attribute{Key: "class", Val: data.expectedDBStatusClass}) {
-
 						t.Fatal("invalid database health status class, expected ", data.expectedDBStatusClass)
-
 					}
 
 				}
@@ -226,56 +237,23 @@ func TestHealthCheck(t *testing.T) {
 					node.FirstChild.Data != "" {
 
 					if strings.TrimSpace(node.FirstChild.Data) != data.healthy {
-
 						t.Fatalf("Expected an overall health status of %s, but was %s", data.healthy, node.FirstChild.Data)
-
 					}
-
 				}
 
 			}
 
 			if !dbStatusFound {
-
 				t.Fatal("no database health status found!")
-
 			}
-
 		})
-
 	}
-
-}
-
-func throwawayDB() (database.Database, error) {
-
-	url := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=disable&timezone=UTC",
-		dbUser,
-		dbPass,
-		strings.Split(dbURL, ":")[0],
-		strings.Split(dbURL, ":")[1],
-		dbName,
-	)
-
-	conn, err := sql.Open("postgres", url)
-	if err != nil {
-		return nil, fmt.Errorf("error opening a throwaway database connection: %v", err)
-	}
-
-	if err = conn.Ping(); err != nil {
-		return nil, fmt.Errorf("error pinging the throwaway database connection: %v", err)
-	}
-
-	return testDB{db: conn}, nil
-
 }
 
 // TestHealthCheck validates the health check endpoint by connecting to the
 // testing database container, starting an application server, calling the
 // health check endpoint, and validating the output
 func TestHealthCheckInvalidTemplate(t *testing.T) {
-
 	env = map[string]string{
 		"DB_USER":        dbUser,
 		"DB_PASS":        dbPass,
@@ -307,13 +285,11 @@ func TestHealthCheckInvalidTemplate(t *testing.T) {
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			var emailer server.Emailer = &test.EmailMock{}
-			appHandler, err := server.NewServer(getenv, db, logger, emailer)
+			appHandler, err := server.NewServer(getenv, liveDB, logger, emailer)
 			if err != nil {
 				t.Fatal("error setting up the test handler", err)
 			}
@@ -329,7 +305,7 @@ func TestHealthCheckInvalidTemplate(t *testing.T) {
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {
-					res.Body.Close()
+					_ = res.Body.Close()
 				}
 			}()
 			if err != nil {
@@ -337,49 +313,36 @@ func TestHealthCheckInvalidTemplate(t *testing.T) {
 			}
 
 			if res.StatusCode != data.expectedHttpStatus {
-
 				t.Fatal("Expected a ", data.expectedHttpStatus, "status, but got a ", res.StatusCode, "response")
-
 			}
-
 		})
-
 	}
-
 }
 
-func (db testDB) Close() error {
-
-	return db.db.Close()
-
+/*
+Implement the database.Database interface so I can simulate a bad database
+connection during a health check
+*/
+func (badDB unhealthyDatabase) Close() error {
+	return badDB.db.Close()
 }
 
-func (db testDB) Execute(ctx context.Context, statement string, params ...any) (sql.Result, error) {
-
-	return nil, sql.ErrNoRows
-
+func (badDB unhealthyDatabase) Execute(ctx context.Context, statement string, params ...any) (sql.Result, error) {
+	return badDB.db.Execute(ctx, statement, params...)
 }
 
-func (db testDB) ExecuteBatch(ctx context.Context, statement []string, params [][]any) ([]sql.Result, []error) {
-
-	return []sql.Result{}, []error{sql.ErrNoRows}
-
+func (badDB unhealthyDatabase) ExecuteBatch(ctx context.Context, statements []string, params [][]any) ([]sql.Result, []error) {
+	return badDB.db.ExecuteBatch(ctx, statements, params)
 }
 
-func (db testDB) Ping(ctx context.Context) error {
-
-	return db.db.Ping()
-
+func (badDB unhealthyDatabase) Ping(_ context.Context) error {
+	return fmt.Errorf("assume the database is down now")
 }
 
-func (db testDB) Query(ctx context.Context, query string, params ...any) (*sql.Rows, error) {
-
-	return nil, sql.ErrNoRows
-
+func (badDB unhealthyDatabase) Query(ctx context.Context, query string, params ...any) (*sql.Rows, error) {
+	return badDB.db.Query(ctx, query, params...)
 }
 
-func (db testDB) QueryRow(ctx context.Context, query string, params ...any) *sql.Row {
-
-	return nil
-
+func (badDB unhealthyDatabase) QueryRow(ctx context.Context, query string, params ...any) *sql.Row {
+	return badDB.db.QueryRow(ctx, query, params...)
 }

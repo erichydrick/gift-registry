@@ -5,14 +5,15 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"fmt"
-	"gift-registry/internal/middleware"
-	"gift-registry/internal/util"
 	"log/slog"
 	"net/http"
 	"net/mail"
 	"strings"
 	"text/template"
 	"time"
+
+	"gift-registry/internal/middleware"
+	"gift-registry/internal/util"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -89,9 +90,7 @@ const (
 // person table. If there's an account associated with that email, triggers an
 // email with a verification token to complete the login process.
 func LoginHandler(svr *util.ServerUtils) http.Handler {
-
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-
 		ctx := req.Context()
 		span := trace.SpanFromContext(ctx)
 		span.SetName("login_handler")
@@ -105,7 +104,7 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 			svr.Logger.ErrorContext(ctx, "Error parsing the form data!", slog.String("errorMessage", err.Error()))
 			userData.Errors.ErrorMessage = "Error parsing the form data"
 			userData.success = false
-			writeResponse(ctx, res, svr, span, userData, "/verify-login.html", "verify-login-form")
+			writeResponse(ctx, res, svr, span, userData, "/verify_login.html", "verify-login-form")
 			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
@@ -123,7 +122,7 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 		if userData.Errors.Email != "" {
 
 			userData.success = false
-			writeResponse(ctx, res, svr, span, userData, "/login-form.html", "login-form")
+			writeResponse(ctx, res, svr, span, userData, "/login_form.html", "login-form")
 			return
 
 		}
@@ -142,7 +141,7 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 			modified, token, err = setVerificationCode(ctx, svr, personID, &userData)
 			if err != nil {
 				span.SetAttributes(attribute.String("error_message", err.Error()))
-				writeResponse(ctx, res, svr, span, userData, "/login-form.html", "login-form")
+				writeResponse(ctx, res, svr, span, userData, "/login_form.html", "login-form")
 				return
 			}
 
@@ -163,7 +162,7 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 			attribute.Bool("email_success", emailErr == nil),
 		)
 
-		tmplPath := fmt.Sprintf("%s/%s", svr.Getenv("TEMPLATES_DIR"), "/verify-login.html")
+		tmplPath := fmt.Sprintf("%s/%s", svr.Getenv("TEMPLATES_DIR"), "/verify_login.html")
 		tmpl, err := template.ParseFiles(tmplPath)
 		if err != nil {
 			svr.Logger.ErrorContext(
@@ -190,21 +189,17 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
-
 	})
-
 }
 
 func LoginFormHandler(svr *util.ServerUtils) http.Handler {
-
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-
 		ctx := req.Context()
 		span := trace.SpanFromContext(ctx)
 		span.SetName("login_form_handler")
 
 		templates := svr.Getenv("TEMPLATES_DIR")
-		tmpl, tmplErr := template.ParseFiles(templates+"/login-page.html", templates+"/login-form.html")
+		tmpl, tmplErr := template.ParseFiles(templates+"/login_page.html", templates+"/login_form.html")
 
 		if tmplErr != nil {
 			svr.Logger.ErrorContext(ctx, "Error loading the login form template", slog.String("errorMessage", tmplErr.Error()))
@@ -225,18 +220,14 @@ func LoginFormHandler(svr *util.ServerUtils) http.Handler {
 			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
-
 	})
-
 }
 
 // Logs the currently logged in user out of their current session. Clears the
 // session cookie from the response. If there is no active session for the
 // user, the logout method just returns.
 func LogoutHandler(svr *util.ServerUtils) http.Handler {
-
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-
 		ctx := req.Context()
 
 		/* Clear the session cookie */
@@ -264,9 +255,7 @@ func LogoutHandler(svr *util.ServerUtils) http.Handler {
 		}
 
 		http.Redirect(res, req, "/login", http.StatusSeeOther)
-
 	})
-
 }
 
 // Verifies the given token is associated with the given email address in the
@@ -275,9 +264,7 @@ func LogoutHandler(svr *util.ServerUtils) http.Handler {
 // token is removed from the database and the user is forced to re-enter their
 // email address.
 func VerificationHandler(svr *util.ServerUtils) http.Handler {
-
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-
 		ctx := req.Context()
 		span := trace.SpanFromContext(ctx)
 		span.SetName("verification_handler")
@@ -299,7 +286,7 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 		submission.Email = req.FormValue("email")
 		submission.validate(ctx, svr)
 		if !submission.success {
-			writeResponse(ctx, res, svr, span, submission, "/verify-login.html", "verify-login-form")
+			writeResponse(ctx, res, svr, span, submission, "/verify_login.html", "verify-login-form")
 		}
 
 		/* Look up the verification record */
@@ -315,7 +302,7 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 
 			if err == sql.ErrNoRows {
 				svr.Logger.ErrorContext(ctx, "Could not find verification record", slog.String("userEmail", submission.Email))
-				writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login-form.html", "login-form")
+				writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login_form.html", "login-form")
 				span.SetAttributes(attribute.String("error_message", err.Error()))
 				return
 			}
@@ -336,10 +323,10 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 				submission.success = false
 				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
 				span.SetAttributes(attribute.String("error_message", err.Error()))
-				writeResponse(ctx, res, svr, span, submission, "/login-form.html", "login-form")
+				writeResponse(ctx, res, svr, span, submission, "/login_form.html", "login-form")
 				return
 			}
-			writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login-form.html", "login-form")
+			writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login_form.html", "login-form")
 			return
 
 		} else {
@@ -370,11 +357,11 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 				)
 				submission.success = false
 				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
-				writeResponse(ctx, res, svr, span, submission, "/verify-login.html", "verify-login-form")
+				writeResponse(ctx, res, svr, span, submission, "/verify_login.html", "verify-login-form")
 				span.SetAttributes(attribute.String("error_message", err.Error()))
 			}
 			span.SetAttributes(attribute.String("error_message", "verification code expired"))
-			writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login-form.html", "login-form")
+			writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login_form.html", "login-form")
 
 		case !codesMatch:
 			if attemptsRemaining {
@@ -383,7 +370,7 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 				submission.Errors.ErrorMessage = "There was a problem confirming your verification code, please re-enter the code and try again"
 				updateAttemptCount(ctx, svr, submission.Email, recData.personID, recData.attempts)
 				span.SetAttributes(attribute.String("error_message", "codes don't match"))
-				writeResponse(ctx, res, svr, span, submission, "/verify-login.html", "verify-login-form")
+				writeResponse(ctx, res, svr, span, submission, "/verify_login.html", "verify-login-form")
 
 			} else {
 
@@ -397,11 +384,11 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 					submission.success = false
 					submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
 					span.SetAttributes(attribute.String("error_message", err.Error()))
-					writeResponse(ctx, res, svr, span, submission, "/verify-login.html", "verify-login-form")
+					writeResponse(ctx, res, svr, span, submission, "/verify_login.html", "verify-login-form")
 				}
 
 				span.SetAttributes(attribute.String("error_message", "codes don't match and the user has no more attempts"))
-				writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login-form.html", "login-form")
+				writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login_form.html", "login-form")
 
 			}
 
@@ -419,7 +406,7 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 				submission.success = false
 				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
 				span.SetAttributes(attribute.String("error_message", err.Error()))
-				writeResponse(ctx, res, svr, span, submission, "/verify-login.html", "verify-login-form")
+				writeResponse(ctx, res, svr, span, submission, "/verify_login.html", "verify-login-form")
 			}
 
 			sessionID, sessionExpires, err := createSession(ctx, svr, req, recData.personID, submission.Email)
@@ -432,7 +419,7 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 				submission.success = false
 				submission.Errors.ErrorMessage = "Error completing login, please try again shortly"
 				span.SetAttributes(attribute.String("error_message", err.Error()))
-				writeResponse(ctx, res, svr, span, submission, "/verify-login.html", "verify-login-form")
+				writeResponse(ctx, res, svr, span, submission, "/verify_login.html", "verify-login-form")
 			}
 
 			submission.success = true
@@ -450,9 +437,7 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 			span.SetAttributes(attribute.Bool("submission_success", submission.success))
 
 		}
-
 	})
-
 }
 
 func createSession(
@@ -460,8 +445,8 @@ func createSession(
 	svr *util.ServerUtils,
 	req *http.Request,
 	personID int64,
-	email string) (string, time.Time, error) {
-
+	email string,
+) (string, time.Time, error) {
 	svr.Logger.InfoContext(ctx,
 		"Starting a new authenticated session",
 		slog.String("userEmail", email),
@@ -526,11 +511,9 @@ func createSession(
 	}
 
 	return sessionID, expires, nil
-
 }
 
 func deleteVerification(ctx context.Context, svr *util.ServerUtils, personID int64) error {
-
 	/* Make sure we have a transaction so we can roll back if this doesn't work */
 	res, err := svr.DB.Execute(ctx, DeleteVerificationTokenStatement, personID)
 	if err != nil {
@@ -555,11 +538,9 @@ func deleteVerification(ctx context.Context, svr *util.ServerUtils, personID int
 	}
 
 	return nil
-
 }
 
 func updateAttemptCount(ctx context.Context, svr *util.ServerUtils, email string, personID int64, attempt int) error {
-
 	attempt++
 
 	res, err := svr.DB.Execute(ctx,
@@ -577,33 +558,29 @@ func updateAttemptCount(ctx context.Context, svr *util.ServerUtils, email string
 	}
 
 	return nil
-
 }
 
 func loginWithError(errorMessage string) loginForm {
-
 	return loginForm{
 		Errors: loginFormErrors{
 			ErrorMessage: errorMessage,
 		},
 		success: false,
 	}
-
 }
 
 func setVerificationCode(
 	ctx context.Context,
 	svr *util.ServerUtils,
 	personID int64,
-	userData *loginForm) (int64, string, error) {
-
+	userData *loginForm,
+) (int64, string, error) {
 	token := rand.Text()
 	expires := time.Now().Add(5 * time.Minute).UTC()
 	svr.Logger.DebugContext(ctx, "Created a login token", slog.String("userEmail", userData.Email))
 
 	rows, err := svr.DB.Execute(ctx, SetVerificationTokenStatement, token, expires, personID)
 	if err != nil {
-
 		switch {
 
 		/*
@@ -625,7 +602,6 @@ func setVerificationCode(
 			return 0, token, fmt.Errorf("could not write verification token information to the database: %v", err)
 
 		}
-
 	}
 
 	svr.Logger.DebugContext(
@@ -639,17 +615,14 @@ func setVerificationCode(
 		Not returning this as an error because the main objective (create a
 		verification token and store it in the database for user verification)
 		succeeded. I do want a record of this in the logs though.
-	*/
-	if err != nil {
+	*/if err != nil {
 		svr.Logger.ErrorContext(ctx, "Error getting the number of rows modified when saving a token", slog.String("errorMessage", err.Error()))
 	}
 
 	return modified, token, nil
-
 }
 
 func compareValidation(record verificationRecord, submission verificationForm) (tokensMatch bool, attemptsRemaining bool, beforeExpiration bool) {
-
 	now := time.Now().UTC()
 
 	tokensMatch = strings.EqualFold(record.token, submission.Code)
@@ -662,7 +635,6 @@ func compareValidation(record verificationRecord, submission verificationForm) (
 	attemptsRemaining = MaxAttempts-(record.attempts+1) > 0
 
 	return
-
 }
 
 func writeResponse(ctx context.Context,
@@ -673,7 +645,6 @@ func writeResponse(ctx context.Context,
 	templateFile string,
 	templateDef string,
 ) {
-
 	span.SetAttributes(
 		attribute.Bool("successful", submission.succeeded()),
 	)
@@ -698,80 +669,55 @@ func writeResponse(ctx context.Context,
 		span.SetAttributes(attribute.String("error_message", err.Error()))
 		return
 	}
-
 }
 
 func (lf *loginForm) validate(ctx context.Context, svr *util.ServerUtils) {
-
 	svr.Logger.DebugContext(ctx, "Validating the login form", slog.String("serverForm", lf.String()))
 	if _, err := mail.ParseAddress(strings.Trim(lf.Email, " ")); err != nil {
-
 		lf.Errors.Email = "Invalid email address"
-
 	}
 
 	svr.Logger.DebugContext(ctx, "Form data is now", slog.String("serverForm", lf.String()))
-
 }
 
 func (lf loginForm) emailAddress() string {
-
 	return lf.Email
-
 }
 
 func (lf loginForm) String() string {
-
 	return fmt.Sprintf("email=%s, validated=%v, errors=%v", lf.Email, lf.success, lf.Errors)
-
 }
 
 func (lf loginForm) succeeded() bool {
-
 	return lf.success
-
 }
 
 func (lf loginForm) Error() string {
-
 	return fmt.Sprintf("formErrors=%s, emailErrors=%s", lf.Errors.ErrorMessage, lf.Errors.Email)
-
 }
 
 func (vf *verificationForm) validate(ctx context.Context, svr *util.ServerUtils) {
-
 	svr.Logger.DebugContext(ctx, "Validating the verification form", slog.String("verificationForm", vf.String()))
 
 	if vf.Code == "" {
-
 		vf.Errors.Code = "Verification code is required."
-
 	}
 
 	svr.Logger.DebugContext(ctx, "Form data is now", slog.String("verificationForm", vf.String()))
-
 }
 
 func (vf verificationForm) emailAddress() string {
-
 	return vf.Email
-
 }
 
 func (vf verificationForm) String() string {
-
 	return fmt.Sprintf("email=%s, validated=%v, errors=%v", vf.Email, vf.success, vf.Errors)
-
 }
 
 func (vf verificationForm) succeeded() bool {
-
 	return vf.success
-
 }
 
 func (vf verificationForm) Error() string {
-
 	return fmt.Sprintf("formErrors=%s, codeErrors=%s", vf.Errors.ErrorMessage, vf.Errors.Code)
-
 }
