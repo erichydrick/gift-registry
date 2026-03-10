@@ -1,1 +1,13 @@
-INSERT INTO person (email, first_name, last_name) VALUES ('test.user@yopmail.com', 'Test', 'User');
+INSERT INTO person (
+    email, 
+    first_name, 
+    last_name,
+    external_id,
+    display_name
+) VALUES (
+    'test.user@yopmail.com', 
+    'Test', 
+    'User',
+    'test-success-user',
+    'Test'
+);

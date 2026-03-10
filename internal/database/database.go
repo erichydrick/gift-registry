@@ -39,7 +39,11 @@ type DBConn struct {
 }
 
 const (
-	name = "net.hydrick.gift-registry/database"
+	/* DB cleanup happens every 5 minutes by default */
+	defaultTickInterval       = 3000
+	cleanupSessions           = "DELETE FROM session WHERE expiration <= $1"
+	cleanupVerificationTokens = "DELETE FROM verification WHERE token_expiration <= $1"
+	name                      = "net.hydrick.gift-registry/database"
 )
 
 var (
@@ -66,6 +70,20 @@ func init() {
 // For example, the login server uses this to treat not finding an email
 // address the same as finding an email address
 type EmptyResult struct{}
+
+// Closes the database connection
+func (dbConn DBConn) Close() (err error) {
+	if dbConn.db != nil {
+
+		err = dbConn.db.Close()
+		if err == nil {
+			dbConn = DBConn{}
+		}
+
+	}
+
+	return
+}
 
 // Wraps a sql.DB.ExecContext operation so we can capture the time it takes to
 // perform the operation, and so other files don't have to handle the
@@ -235,7 +253,7 @@ func (dbConn DBConn) QueryRow(
 }
 
 // Returns a singleton database connection, creating a new one if it's not already initialized. getenv() will use the container environment variables when running, but can be mocked for testing.
-func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) string) (Database, error) {
+func Connect(ctx context.Context, logger *slog.Logger, getenv func(string) string) (Database, error) {
 	/* Re-use this specific connection if we have it */
 	if dbConn.db != nil {
 
@@ -308,24 +326,21 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 		slog.String("connectionDetails", connection.String()))
 
 	/*
+		Periodically remove expired sessions and verification tokens from the databse
+	*/
+	intStr := getenv("TICKER_INTERVAL")
+	interval := defaultTickInterval
+	if parsed, err := strconv.Atoi(intStr); err == nil {
+		interval = parsed
+	}
+	ticker := time.NewTicker(time.Millisecond * time.Duration(interval))
+	go cleanup(ctx, logger, connection, ticker)
+
+	/*
 		err is the error from running the migration, send that back in case it
 		failed (at this point we know it's a MigrationError)
 	*/
 	return connection, err
-}
-
-// Closes the database connection
-func (dbConn DBConn) Close() (err error) {
-	if dbConn.db != nil {
-
-		err = dbConn.db.Close()
-		if err == nil {
-			dbConn = DBConn{}
-		}
-
-	}
-
-	return
 }
 
 // Make the database connection type comparable for sorting. This is calculated
@@ -371,6 +386,34 @@ func (er EmptyResult) LastInsertId() (int64, error) {
 // Just returns 0 with no error
 func (er EmptyResult) RowsAffected() (int64, error) {
 	return 0, nil
+}
+
+func cleanup(
+	ctx context.Context,
+	logger *slog.Logger,
+	db DBConn,
+	ticker *time.Ticker,
+) {
+	for {
+		select {
+		/* Time to clean up expired session and login verification tokens */
+		case <-ticker.C:
+			timestamp := time.Now().UTC()
+			deleteQueries := []string{cleanupVerificationTokens, cleanupSessions}
+			deleteParams := [][]any{{timestamp}, {timestamp}}
+			_, errList := db.ExecuteBatch(ctx, deleteQueries, deleteParams)
+			if len(errList) > 0 {
+				logger.ErrorContext(
+					ctx,
+					"Error cleaning expired sessions and verification tokens",
+					slog.Any("errorList", errList),
+				)
+			}
+		/* The app is shutting down, stop polling to clean up old tokens */
+		case <-ctx.Done():
+			ticker.Stop()
+		}
+	}
 }
 
 /*

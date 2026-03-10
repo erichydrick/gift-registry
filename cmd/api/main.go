@@ -44,7 +44,6 @@ func Run(
 	logger *slog.Logger,
 	getenv func(string) string,
 ) error {
-
 	/* Create context that listens for the interrupt signal from the OS. */
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
 	defer cancel()
@@ -67,7 +66,7 @@ func Run(
 
 	/* Get a database connection to pass to our handlers */
 	var db database.Database
-	db, err = database.Connection(ctx, logger, getenv)
+	db, err = database.Connect(ctx, logger, getenv)
 	if err != nil {
 		logger.Error("Error getting the database connection", slog.String("errorMessage", err.Error()))
 		return fmt.Errorf("error getting the database connection: %s", err.Error())
@@ -107,12 +106,10 @@ func Run(
 	<-ctx.Done()
 
 	return nil
-
 }
 
 // Application entrypoint. Configures the logger, then runs, exiting with a non-0 status if startup fails.
 func main() {
-
 	ctx := context.Background()
 
 	/*
@@ -125,12 +122,10 @@ func main() {
 		logger.Error("error launching the application", slog.String("errorMessage", err.Error()))
 		os.Exit(-1)
 	}
-
 }
 
 /* Copied from the go-blueprint by Melkey for shutting down the server cleanly. */
 func gracefulShutdown(ctx context.Context, apiServer *http.Server, done chan bool, otelShutdown func(context.Context) error, logger *slog.Logger) {
-
 	/* Create context that listens for the interrupt signal from the OS. */
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -159,7 +154,6 @@ func gracefulShutdown(ctx context.Context, apiServer *http.Server, done chan boo
 
 /* Sets up the OTel logging provider */
 func newLoggerProvider(ctx context.Context, otelResource *resource.Resource, getenv func(string) string) (*log.LoggerProvider, error) {
-
 	var logExporter log.Exporter
 	var err error
 
@@ -184,12 +178,10 @@ func newLoggerProvider(ctx context.Context, otelResource *resource.Resource, get
 		log.WithResource(otelResource),
 	)
 	return logProvider, nil
-
 }
 
 /* Sets up the OTel meter provider */
 func newMetricProvider(ctx context.Context, otelResource *resource.Resource, getenv func(string) string) (*metric.MeterProvider, error) {
-
 	var metricExporter metric.Exporter
 	var err error
 	if getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" {
@@ -214,31 +206,25 @@ func newMetricProvider(ctx context.Context, otelResource *resource.Resource, get
 	)
 
 	return metricProvider, nil
-
 }
 
 /* Sets up the OTel propagator */
 func newPropagator() propagation.TextMapPropagator {
-
 	return propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},
 	)
-
 }
 
 func newResource() *resource.Resource {
-
 	return resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceName("gift-registry"),
 	)
-
 }
 
 /* Sets up the OTel tracing provider */
 func newTracerProvider(ctx context.Context, otelResource *resource.Resource, getenv func(string) string) (*trace.TracerProvider, error) {
-
 	var traceExporter trace.SpanExporter
 	var err error
 
@@ -264,36 +250,28 @@ func newTracerProvider(ctx context.Context, otelResource *resource.Resource, get
 		trace.WithResource(otelResource),
 	)
 	return tracerProvider, nil
-
 }
 
 /* Set up the OTel instrumentation and integration */
 func setupOTelSDK(ctx context.Context, getenv func(string) string) (shutdown func(context.Context) error, err error) {
-
 	var shutdownFuncs []func(context.Context) error
 
 	/*
 		Wrap all the registered OTel shutdown functions into 1 function call.
 	*/
 	shutdown = func(ctx context.Context) error {
-
 		var err error
 		for _, fn := range shutdownFuncs {
-
 			err = errors.Join(err, fn(ctx))
-
 		}
 
 		shutdownFuncs = nil
 		return err
-
 	}
 
 	/* Call shutdown should the Otel component setup ever return an error */
 	errReturned := func(srcErr error) {
-
 		err = errors.Join(srcErr, shutdown(ctx))
-
 	}
 
 	otel.SetTextMapPropagator(newPropagator())
@@ -324,5 +302,4 @@ func setupOTelSDK(ctx context.Context, getenv func(string) string) (shutdown fun
 	global.SetLoggerProvider(logProvider)
 
 	return
-
 }

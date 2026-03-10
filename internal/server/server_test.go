@@ -2,9 +2,6 @@ package server_test
 
 import (
 	"context"
-	"gift-registry/internal/database"
-	"gift-registry/internal/server"
-	"gift-registry/internal/test"
 	"log"
 	"log/slog"
 	"net/http"
@@ -14,6 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gift-registry/internal/database"
+	"gift-registry/internal/server"
+	"gift-registry/internal/test"
 
 	"github.com/testcontainers/testcontainers-go"
 )
@@ -39,7 +40,6 @@ var (
 // TestMain sets up the application tests by initializing a logger object to
 // use in the methods and initializing a context.
 func TestMain(m *testing.M) {
-
 	ctx = context.Background()
 
 	/* Sets up a testing logger */
@@ -70,7 +70,7 @@ func TestMain(m *testing.M) {
 	}
 	getenv = func(name string) string { return env[name] }
 
-	db, err = database.Connection(ctx, logger, getenv)
+	db, err = database.Connect(ctx, logger, getenv)
 	if err != nil {
 		log.Fatal("database connection failure! ", err)
 	}
@@ -89,12 +89,10 @@ func TestMain(m *testing.M) {
 
 	exitCode := m.Run()
 	os.Exit(exitCode)
-
 }
 
 // Confirms we get a 500 bad response if we have any error reading or populating a template, simulated by intentionally misconfiguring the templates directory.
 func TestBadTemplates(t *testing.T) {
-
 	testData := []struct {
 		formData   url.Values
 		httpMethod string
@@ -133,9 +131,7 @@ func TestBadTemplates(t *testing.T) {
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			env := map[string]string{
@@ -169,13 +165,8 @@ func TestBadTemplates(t *testing.T) {
 			}
 
 			if res.StatusCode != http.StatusInternalServerError {
-
 				t.Fatal("Expected a 500 response")
-
 			}
-
 		})
-
 	}
-
 }

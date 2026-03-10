@@ -2,8 +2,6 @@ package database_test
 
 import (
 	"context"
-	"gift-registry/internal/database"
-	"gift-registry/internal/test"
 	"log"
 	"log/slog"
 	"os"
@@ -11,15 +9,20 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"gift-registry/internal/database"
+	"gift-registry/internal/test"
 
 	"github.com/testcontainers/testcontainers-go"
 )
 
 /* Connection details for the test database */
 const (
-	dbName = "main_test"
-	dbUser = "database_user"
-	dbPass = "database_pass"
+	dbName    = "main_test"
+	dbUser    = "database_user"
+	dbPass    = "database_pass"
+	userAgent = "test-user-agent"
 )
 
 var (
@@ -36,7 +39,6 @@ func init() {
 // TestMain sets up the database package tests initializing the logger used
 // to set up the database connection.
 func TestMain(m *testing.M) {
-
 	ctx = context.Background()
 
 	/* Sets up a testing logger */
@@ -67,11 +69,105 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
+// TestCleanup validates that the database automatically cleans up expired
+// verification tokens and session IDs every ${TICKER_INTERVAL} SECONDS.
+// For testing purposes, that interval will be every second.
+func TestCleanup(t *testing.T) {
+	testData := []struct {
+		expectedRowCnt int
+		offset         int
+		testName       string
+		userData       test.UserData
+	}{
+		{
+			expectedRowCnt: 1,
+			offset:         300,
+			testName:       "Not Expired",
+			userData: test.UserData{
+				Email:      "notexpiredtokens@localhost.com",
+				ExternalID: "not-expired-tokens",
+				FirstName:  "Not",
+				LastName:   "Expired",
+				Type:       "NORMAL",
+			},
+		},
+		{
+			expectedRowCnt: 0,
+			offset:         -120,
+			testName:       "Expired",
+			userData: test.UserData{
+				Email:      "expiredtokens@localhost.com",
+				ExternalID: "expired-tokens",
+				FirstName:  "Yes",
+				LastName:   "Expired",
+				Type:       "NORMAL",
+			},
+		},
+	}
+	for _, data := range testData {
+		t.Run(data.testName, func(t *testing.T) {
+			t.Parallel()
+
+			getenv := func(name string) string {
+				if name == "TICKER_INTERVAL" {
+					return "100"
+				}
+				return env[name]
+			}
+
+			db, err := database.Connect(ctx, logger, getenv)
+			if err != nil {
+				t.Fatal("Error setting up the database connection:", err)
+			}
+
+			sessionID, err := test.CreateSession(
+				ctx,
+				logger,
+				db,
+				data.userData,
+				time.Duration(data.offset)*time.Second,
+				userAgent,
+			)
+			if err != nil {
+				t.Fatal("Error creating test session:", err)
+			}
+
+			row := db.QueryRow(ctx, "SELECT person_id FROM person WHERE email = $1", data.userData.Email)
+			var personID int64
+			if err := row.Scan(&personID); err != nil {
+				t.Fatal("Could not read the person ID", err)
+			}
+
+			expires := time.Now().Add(time.Duration(data.offset) * time.Second).UTC()
+
+			/*
+				Do the insertion and make sure it worked. We're going to t.Fatal() if this
+				fails, so I'm not going to worry about Rollback() calls erroring, the
+				database is going to be deleted anyhow
+			*/
+			if res, err := db.Execute(ctx, "INSERT INTO verification (person_id, token, token_expiration, attempts) VALUES ($1, $2, $3, $4)", personID, sessionID, expires, 0); err != nil {
+				t.Fatal("Error adding a new test verification record to the database.", err)
+			} else if added, err := res.RowsAffected(); err != nil {
+				t.Fatal("Error getting the last inserted ID from the test verification creation.", err)
+			} else if added < 1 {
+				t.Fatal("No rows were added to the verification table!", err)
+			}
+
+			// time.Sleep(1 * time.Second)
+
+			if _, err := db.Query(ctx, "SELECT expiration FROM session WHERE session_id = $1", sessionID); err != nil {
+				t.Fatal("Error checking session cleanup", err)
+			} else if _, err := db.Query(ctx, "SELECT * FROM verification WHERE token = $1", sessionID); err != nil {
+				t.Fatal("Verification token did not clean up!", err)
+			}
+		})
+	}
+}
+
 // TestConnect validates connecting to the database and confirms the
 // Connect() function behaves correctly when successful and when
 // connection fails due to a bad config.
 func TestConnect(t *testing.T) {
-
 	testData := []struct {
 		errorExpected bool
 		migrationsDir string
@@ -90,9 +186,7 @@ func TestConnect(t *testing.T) {
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			getenv := func(name string) string {
@@ -102,31 +196,25 @@ func TestConnect(t *testing.T) {
 				return env[name]
 			}
 
-			db, err := database.Connection(ctx, logger, getenv)
+			db, err := database.Connect(ctx, logger, getenv)
 			if !data.errorExpected && err != nil {
-
 				t.Fatal(t.Name(), ": successful connection attempt failed! ", err)
-
 			} else if data.errorExpected && err == nil {
 
-				db.Close()
+				_ = db.Close()
 				t.Fatal(t.Name(), ": have a connection even though it should have failed!")
 
 			}
 
-			db.Close()
-
+			_ = db.Close()
 		})
-
 	}
-
 }
 
 // TestRunMigrations validates the migrations runner and confirms the
 // migrations files are applied correctly and the transaction properly
 // rolls back in case of a problem
 func TestRunMigrations(t *testing.T) {
-
 	testData := []struct {
 		errorExpected        bool
 		expectedFilesApplied []string
@@ -191,8 +279,7 @@ func TestRunMigrations(t *testing.T) {
 		}
 
 		t.Run(data.testName, func(t *testing.T) {
-
-			db, err := database.Connection(ctx, logger, getenv)
+			db, err := database.Connect(ctx, logger, getenv)
 			if err != nil && err != database.ErrMigration {
 				t.Fatal("Error connecting to the database!", err)
 			}
@@ -202,7 +289,7 @@ func TestRunMigrations(t *testing.T) {
 			if err != nil {
 				t.Fatal("Error getting the updated list of migrations run", err)
 			}
-			defer rows.Close()
+			defer func() { _ = rows.Close() }()
 
 			for rows.Next() {
 				var filename string
@@ -218,10 +305,8 @@ func TestRunMigrations(t *testing.T) {
 				t.Fatal("Expected list of applied migrations to be ", data.expectedFilesApplied, " but was ", migrationsApplied)
 			}
 
-			db.Close()
-
+			_ = db.Close()
 		})
 
 	}
-
 }

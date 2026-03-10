@@ -87,7 +87,7 @@ func TestMain(m *testing.M) {
 	}
 	getenv = func(key string) string { return env[key] }
 
-	liveDB, err = database.Connection(ctx, logger, func(key string) string { return env[key] })
+	liveDB, err = database.Connect(ctx, logger, func(key string) string { return env[key] })
 	if err != nil {
 		log.Fatal("database connection failure! ", err)
 	}
