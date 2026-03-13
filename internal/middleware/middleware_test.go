@@ -2,9 +2,6 @@ package middleware_test
 
 import (
 	"context"
-	"gift-registry/internal/database"
-	"gift-registry/internal/server"
-	"gift-registry/internal/test"
 	"log"
 	"log/slog"
 	"net/http/httptest"
@@ -12,6 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gift-registry/internal/database"
+	"gift-registry/internal/server"
+	"gift-registry/internal/test"
 
 	"github.com/testcontainers/testcontainers-go"
 )
@@ -37,7 +38,6 @@ var (
 // to keep the tests fast, as well as define common variables that will be
 // re-used throughout tests
 func TestMain(m *testing.M) {
-
 	ctx = context.Background()
 
 	/* Sets up a testing logger */
@@ -68,7 +68,7 @@ func TestMain(m *testing.M) {
 	}
 	getenv = func(name string) string { return env[name] }
 
-	db, err = database.Connection(ctx, logger, getenv)
+	db, err = database.Connect(ctx, logger, getenv)
 	if err != nil {
 		log.Fatal("database connection failure! ", err)
 	}
@@ -89,5 +89,4 @@ func TestMain(m *testing.M) {
 
 	exitCode := m.Run()
 	os.Exit(exitCode)
-
 }

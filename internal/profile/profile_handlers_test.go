@@ -93,7 +93,7 @@ func TestMain(m *testing.M) {
 	}
 	getenv = func(name string) string { return env[name] }
 
-	db, err = database.Connection(ctx, logger, getenv)
+	db, err = database.Connect(ctx, logger, getenv)
 	if err != nil {
 		log.Fatal("database connection failure! ", err)
 	}

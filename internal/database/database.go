@@ -39,7 +39,11 @@ type DBConn struct {
 }
 
 const (
-	name = "net.hydrick.gift-registry/database"
+	/* DB cleanup happens every 5 minutes by default */
+	defaultTickInterval       = 300000
+	cleanupSessions           = "DELETE FROM session WHERE expiration <= CURRENT_TIMESTAMP"
+	cleanupVerificationTokens = "DELETE FROM verification WHERE token_expiration <= CURRENT_TIMESTAMP"
+	name                      = "net.hydrick.gift-registry/database"
 )
 
 var (
@@ -67,6 +71,20 @@ func init() {
 // address the same as finding an email address
 type EmptyResult struct{}
 
+// Closes the database connection
+func (dbConn DBConn) Close() (err error) {
+	if dbConn.db != nil {
+
+		err = dbConn.db.Close()
+		if err == nil {
+			dbConn = DBConn{}
+		}
+
+	}
+
+	return
+}
+
 // Wraps a sql.DB.ExecContext operation so we can capture the time it takes to
 // perform the operation, and so other files don't have to handle the
 // transaction logic
@@ -89,6 +107,9 @@ func (dbConn DBConn) Execute(
 
 	}
 
+	if params == nil {
+		params = []any{}
+	}
 	res, err := dbConn.db.ExecContext(ctx, statement, params...)
 	if err != nil {
 		txFailure(ctx, tx, dbConn.histogram, start, err)
@@ -122,7 +143,7 @@ func (dbConn DBConn) ExecuteBatch(
 ) (results []sql.Result, errors []error) {
 	start := time.Now()
 	results = make([]sql.Result, len(statements))
-	errors = make([]error, len(statements))
+	errors = []error{}
 
 	ctx, span := tracer.Start(ctx, "DatabaseExecute")
 	defer span.End()
@@ -235,7 +256,7 @@ func (dbConn DBConn) QueryRow(
 }
 
 // Returns a singleton database connection, creating a new one if it's not already initialized. getenv() will use the container environment variables when running, but can be mocked for testing.
-func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) string) (Database, error) {
+func Connect(ctx context.Context, logger *slog.Logger, getenv func(string) string) (Database, error) {
 	/* Re-use this specific connection if we have it */
 	if dbConn.db != nil {
 
@@ -308,6 +329,17 @@ func Connection(ctx context.Context, logger *slog.Logger, getenv func(string) st
 		slog.String("connectionDetails", connection.String()))
 
 	/*
+		Periodically remove expired sessions and verification tokens from the databse
+	*/
+	intStr := getenv("TICKER_INTERVAL")
+	interval := defaultTickInterval
+	if parsed, err := strconv.Atoi(intStr); err == nil {
+		interval = parsed
+	}
+	ticker := time.NewTicker(time.Millisecond * time.Duration(interval))
+	go cleanup(ctx, logger, connection, ticker)
+
+	/*
 		err is the error from running the migration, send that back in case it
 		failed (at this point we know it's a MigrationError)
 	*/
@@ -371,6 +403,36 @@ func (er EmptyResult) LastInsertId() (int64, error) {
 // Just returns 0 with no error
 func (er EmptyResult) RowsAffected() (int64, error) {
 	return 0, nil
+}
+
+func cleanup(
+	ctx context.Context,
+	logger *slog.Logger,
+	db DBConn,
+	ticker *time.Ticker,
+) {
+	for {
+		select {
+		/* Time to clean up expired session and login verification tokens */
+		case <-ticker.C:
+			deleteQueries := []string{cleanupVerificationTokens, cleanupSessions}
+			deleteParams := []any{}
+			_, errList := db.ExecuteBatch(ctx, deleteQueries, [][]any{deleteParams, deleteParams})
+			for _, err := range errList {
+				if err == nil {
+					continue
+				}
+				logger.ErrorContext(
+					ctx,
+					"Error cleaning expired sessions and verification tokens",
+					slog.Any("errorMessage", err.Error()),
+				)
+			}
+		/* The app is shutting down, stop polling to clean up old tokens */
+		case <-ctx.Done():
+			ticker.Stop()
+		}
+	}
 }
 
 /*
