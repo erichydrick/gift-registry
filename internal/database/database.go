@@ -40,9 +40,9 @@ type DBConn struct {
 
 const (
 	/* DB cleanup happens every 5 minutes by default */
-	defaultTickInterval       = 3000
-	cleanupSessions           = "DELETE FROM session WHERE expiration <= $1"
-	cleanupVerificationTokens = "DELETE FROM verification WHERE token_expiration <= $1"
+	defaultTickInterval       = 300000
+	cleanupSessions           = "DELETE FROM session WHERE expiration <= CURRENT_TIMESTAMP"
+	cleanupVerificationTokens = "DELETE FROM verification WHERE token_expiration <= CURRENT_TIMESTAMP"
 	name                      = "net.hydrick.gift-registry/database"
 )
 
@@ -107,6 +107,9 @@ func (dbConn DBConn) Execute(
 
 	}
 
+	if params == nil {
+		params = []any{}
+	}
 	res, err := dbConn.db.ExecContext(ctx, statement, params...)
 	if err != nil {
 		txFailure(ctx, tx, dbConn.histogram, start, err)
@@ -140,7 +143,7 @@ func (dbConn DBConn) ExecuteBatch(
 ) (results []sql.Result, errors []error) {
 	start := time.Now()
 	results = make([]sql.Result, len(statements))
-	errors = make([]error, len(statements))
+	errors = []error{}
 
 	ctx, span := tracer.Start(ctx, "DatabaseExecute")
 	defer span.End()
@@ -398,15 +401,17 @@ func cleanup(
 		select {
 		/* Time to clean up expired session and login verification tokens */
 		case <-ticker.C:
-			timestamp := time.Now().UTC()
 			deleteQueries := []string{cleanupVerificationTokens, cleanupSessions}
-			deleteParams := [][]any{{timestamp}, {timestamp}}
-			_, errList := db.ExecuteBatch(ctx, deleteQueries, deleteParams)
-			if len(errList) > 0 {
+			deleteParams := []any{}
+			_, errList := db.ExecuteBatch(ctx, deleteQueries, [][]any{deleteParams, deleteParams})
+			for _, err := range errList {
+				if err == nil {
+					continue
+				}
 				logger.ErrorContext(
 					ctx,
 					"Error cleaning expired sessions and verification tokens",
-					slog.Any("errorList", errList),
+					slog.Any("errorMessage", err.Error()),
 				)
 			}
 		/* The app is shutting down, stop polling to clean up old tokens */

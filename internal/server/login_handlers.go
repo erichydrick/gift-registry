@@ -127,14 +127,14 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 
 		}
 
-		var email string = ""
+		email := ""
 		var personID int64 = 0
 		if err := svr.DB.QueryRow(ctx, SelectUserByEmailQuery, userData.Email).Scan(&personID, &email); err != nil && err != sql.ErrNoRows {
 			svr.Logger.ErrorContext(ctx, "Could not read person from the database", slog.String("errorMessage", err.Error()), slog.String("userEmail", userData.Email))
 		}
 
 		var modified int64 = 0
-		var token string = ""
+		token := ""
 
 		if email != "" {
 
@@ -150,7 +150,7 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 		var emailErr error = nil
 		if modified == 1 {
 
-			svr.Logger.DebugContext(ctx, "Sending user email with the login token", slog.String("userEmail", userData.Email))
+			svr.Logger.DebugContext(ctx, "Sending user email with the login token", slog.String("userEmail", userData.Email), slog.Any("emailer", emailer))
 			emailErr = emailer.SendVerificationEmail(ctx, []string{userData.Email}, token, svr.Getenv)
 
 		}
@@ -615,7 +615,7 @@ func setVerificationCode(
 		Not returning this as an error because the main objective (create a
 		verification token and store it in the database for user verification)
 		succeeded. I do want a record of this in the logs though.
-	*/if err != nil {
+	*/ if err != nil {
 		svr.Logger.ErrorContext(ctx, "Error getting the number of rows modified when saving a token", slog.String("errorMessage", err.Error()))
 	}
 
