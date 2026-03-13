@@ -346,6 +346,20 @@ func Connect(ctx context.Context, logger *slog.Logger, getenv func(string) strin
 	return connection, err
 }
 
+// Closes the database connection
+func (dbConn DBConn) Close() (err error) {
+	if dbConn.db != nil {
+
+		err = dbConn.db.Close()
+		if err == nil {
+			dbConn = DBConn{}
+		}
+
+	}
+
+	return
+}
+
 // Make the database connection type comparable for sorting. This is calculated
 // using the connection URL for the connection.
 func (dbConn DBConn) Compare(otherConn DBConn) int {

@@ -615,7 +615,8 @@ func setVerificationCode(
 		Not returning this as an error because the main objective (create a
 		verification token and store it in the database for user verification)
 		succeeded. I do want a record of this in the logs though.
-	*/ if err != nil {
+	*/ 
+  if err != nil {
 		svr.Logger.ErrorContext(ctx, "Error getting the number of rows modified when saving a token", slog.String("errorMessage", err.Error()))
 	}
 
