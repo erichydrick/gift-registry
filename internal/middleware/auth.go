@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
+	"strings"
 	"time"
 
 	"gift-registry/internal/util"
@@ -35,6 +37,8 @@ const (
 )
 
 var (
+	allowedDests  = []string{"document", "empty", "font", "image", "script", "style"}
+	allowedModes  = []string{"cors", "navigate", "no-cors", "same-origin", "websocket"}
 	publicRoutes  []*regexp.Regexp
 	routePatterns = []string{"^/$", "/css/*", "/js/*", "/login", "/verify"}
 )
@@ -56,6 +60,28 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 		ctx := req.Context()
 		pass := false
 
+		/*
+			Validate the various Sec-Fetch-* headers before forwarding the request.
+		*/
+		svr.Logger.DebugContext(ctx, "Validating Sec-Fetch* headers")
+		secFetchDest := strings.ToLower(req.Header.Get("Sec-Fetch-Dest"))
+		if !slices.Contains(allowedDests, secFetchDest) {
+			// Invalid fetch mode, redirect to login
+			authNext(ctx, svr, res, req, next, pass)
+			return
+		}
+		secFetchMode := strings.ToLower(req.Header.Get("Sec-Fetch-Mode"))
+		if !slices.Contains(allowedModes, secFetchMode) {
+			// Invalid fetch mode, redirect to login
+			authNext(ctx, svr, res, req, next, pass)
+			return
+		}
+		secFetchSite := strings.ToLower(req.Header.Get("Sec-Fetch-Site"))
+		if secFetchSite != "none" && secFetchSite != "same-origin" {
+			// Invalid header value, redirect to login
+			authNext(ctx, svr, res, req, next, pass)
+			return
+		}
 		/*
 			The route is auth-protected, so query the DB to see if the session is
 			present and valid
@@ -96,7 +122,15 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 				slog.String("cookieValue", cookie.Value),
 				slog.Int64("personID", sessInfo.personID),
 			)
-			deleteSession(ctx, svr, sessInfo.sessionID)
+			err = deleteSession(ctx, svr, sessInfo.sessionID)
+			if err != nil {
+				svr.Logger.ErrorContext(
+					ctx,
+					"Error deleting the old session",
+					slog.String("errorMessage", err.Error()),
+					slog.String("sessionID", sessInfo.sessionID),
+				)
+			}
 			authNext(ctx, svr, res, req, next, pass)
 			return
 
@@ -110,7 +144,15 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 				slog.String("cookieValue", cookie.Value),
 				slog.Int64("personID", sessInfo.personID),
 			)
-			deleteSession(ctx, svr, sessInfo.sessionID)
+			err = deleteSession(ctx, svr, sessInfo.sessionID)
+			if err != nil {
+				svr.Logger.ErrorContext(
+					ctx,
+					"Error deleting the old session",
+					slog.String("errorMessage", err.Error()),
+					slog.String("sessionID", sessInfo.sessionID),
+				)
+			}
 			authNext(ctx, svr, res, req, next, pass)
 			return
 
@@ -121,7 +163,15 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 		newExp := time.Now().Add(5 * time.Minute).UTC()
 		cookie.MaxAge = int(time.Until(newExp).Seconds())
 		http.SetCookie(res, cookie)
-		extendSession(ctx, svr, sessInfo.sessionID, newExp)
+		err = extendSession(ctx, svr, sessInfo.sessionID, newExp)
+		if err != nil {
+			svr.Logger.ErrorContext(
+				ctx,
+				"Error extending the current session",
+				slog.String("errorMessage", err.Error()),
+				slog.String("sessionID", sessInfo.sessionID),
+			)
+		}
 		ctx = context.WithValue(ctx, loggedInUser, sessInfo.personID)
 		req = req.WithContext(ctx)
 		authNext(ctx, svr, res, req, next, pass)

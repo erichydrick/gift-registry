@@ -11,7 +11,6 @@ import (
 // it automatically returns with the correct status code on an HTTP OPTIONS
 // call, and returns with the appropriate headers in a valid endpoint call,
 func TestCORS(t *testing.T) {
-
 	testData := []struct {
 		expectedStatusCode int
 		methodName         string
@@ -30,9 +29,7 @@ func TestCORS(t *testing.T) {
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			req, err := http.NewRequestWithContext(ctx, data.methodName, testServer.URL+"/login", nil)
@@ -40,15 +37,17 @@ func TestCORS(t *testing.T) {
 				t.Fatal("Error building a new request for the CORS test", err)
 			}
 
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "same-origin")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
+
 			res, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatal("Error calling the login page for testing", err)
 			}
 
 			if res.StatusCode != data.expectedStatusCode {
-
 				t.Fatal("Expected to get a status code", data.expectedStatusCode, "but got", res.StatusCode, "instead.")
-
 			}
 
 			methodsHeader := res.Header.Get("Access-Control-Allow-Methods")
@@ -61,14 +60,10 @@ func TestCORS(t *testing.T) {
 
 				method = strings.Trim(method, " ")
 				if slices.Contains(allowedMethods, method) == false {
-
 					t.Fatal(method, "allowed by CORS, but not in the expected list of allowed methods:", allowedMethods)
-
 				}
 
 			}
-
 		})
-
 	}
 }

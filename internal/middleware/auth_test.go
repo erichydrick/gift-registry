@@ -1,17 +1,17 @@
 package middleware_test
 
 import (
-	"gift-registry/internal/middleware"
-	"gift-registry/internal/test"
 	"net/http"
 	"testing"
 	"time"
+
+	"gift-registry/internal/middleware"
+	"gift-registry/internal/test"
 
 	"golang.org/x/net/html"
 )
 
 func TestAuthMiddleware(t *testing.T) {
-
 	testData := []struct {
 		createSession  bool
 		elements       map[string]test.ElementValidation
@@ -21,6 +21,9 @@ func TestAuthMiddleware(t *testing.T) {
 		lastName       string
 		path           string
 		sessionAgent   string
+		sfDest         string
+		sfMode         string
+		sfSite         string
 		testName       string
 		timeLeft       time.Duration
 		userAgent      string
@@ -32,13 +35,17 @@ func TestAuthMiddleware(t *testing.T) {
 				"login-form":        {Visible: true},
 				"login-email":       {Visible: true},
 				"login-submit":      {Visible: true},
-				"login-email-error": {Visible: false}},
+				"login-email-error": {Visible: false},
+			},
 			email:          "unprotectedEndpointTest@localhost.com",
 			expectedStatus: http.StatusOK,
 			firstName:      "Unprotected",
 			lastName:       "Endpoint",
 			path:           "/login",
 			sessionAgent:   test.DefaultUserAgent,
+			sfDest:         "document",
+			sfMode:         "same-origin",
+			sfSite:         "same-origin",
 			testName:       "Unprotected endpoint",
 			userAgent:      test.DefaultUserAgent,
 			validSession:   false,
@@ -76,6 +83,9 @@ func TestAuthMiddleware(t *testing.T) {
 			lastName:       "Indb",
 			path:           "/registry",
 			sessionAgent:   test.DefaultUserAgent,
+			sfDest:         "document",
+			sfMode:         "same-origin",
+			sfSite:         "same-origin",
 			testName:       "Unauthorized access ID not in DB",
 			timeLeft:       5 * time.Minute,
 			userAgent:      test.DefaultUserAgent,
@@ -95,6 +105,9 @@ func TestAuthMiddleware(t *testing.T) {
 			lastName:       "Expired",
 			path:           "/registry",
 			sessionAgent:   test.DefaultUserAgent,
+			sfDest:         "document",
+			sfMode:         "same-origin",
+			sfSite:         "same-origin",
 			testName:       "Unauthorized access session expired",
 			timeLeft:       -1 * time.Minute,
 			userAgent:      test.DefaultUserAgent,
@@ -114,6 +127,9 @@ func TestAuthMiddleware(t *testing.T) {
 			lastName:       "Agent",
 			path:           "/registry",
 			sessionAgent:   test.DefaultUserAgent,
+			sfDest:         "document",
+			sfMode:         "same-origin",
+			sfSite:         "same-origin",
 			testName:       "Unauthorized access wrong user agent",
 			timeLeft:       5 * time.Minute,
 			userAgent:      "nottherightuseragent",
@@ -130,6 +146,9 @@ func TestAuthMiddleware(t *testing.T) {
 			lastName:       "Session",
 			path:           "/registry",
 			sessionAgent:   test.DefaultUserAgent,
+			sfDest:         "document",
+			sfMode:         "same-origin",
+			sfSite:         "same-origin",
 			testName:       "Valid session",
 			timeLeft:       5 * time.Minute,
 			userAgent:      test.DefaultUserAgent,
@@ -138,15 +157,65 @@ func TestAuthMiddleware(t *testing.T) {
 		{
 			createSession: true,
 			elements: map[string]test.ElementValidation{
-				"registry-data": {Visible: true},
+				"login-form":        {Visible: true},
+				"login-email":       {Visible: true},
+				"login-submit":      {Visible: true},
+				"login-email-error": {Visible: false},
 			},
-			email:          "loginTest@localhost.com",
+			email:          "invalidSecFetchDest@localhost.com",
 			expectedStatus: http.StatusOK,
 			firstName:      "Login",
 			lastName:       "User",
 			path:           "/login",
 			sessionAgent:   test.DefaultUserAgent,
-			testName:       "Valid session via login",
+			sfDest:         "test document",
+			sfMode:         "same-origin",
+			sfSite:         "same-origin",
+			testName:       "Invalid Sec-Fetch-Dest",
+			timeLeft:       5 * time.Minute,
+			userAgent:      test.DefaultUserAgent,
+			validSession:   true,
+		},
+		{
+			createSession: true,
+			elements: map[string]test.ElementValidation{
+				"login-form":        {Visible: true},
+				"login-email":       {Visible: true},
+				"login-submit":      {Visible: true},
+				"login-email-error": {Visible: false},
+			},
+			email:          "invalidSecFetchMode@localhost.com",
+			expectedStatus: http.StatusOK,
+			firstName:      "Login",
+			lastName:       "User",
+			path:           "/login",
+			sessionAgent:   test.DefaultUserAgent,
+			sfDest:         "document",
+			sfMode:         "haxxoring",
+			sfSite:         "same-origin",
+			testName:       "Invalid Sec-Fetch-Mode",
+			timeLeft:       5 * time.Minute,
+			userAgent:      test.DefaultUserAgent,
+			validSession:   true,
+		},
+		{
+			createSession: true,
+			elements: map[string]test.ElementValidation{
+				"login-form":        {Visible: true},
+				"login-email":       {Visible: true},
+				"login-submit":      {Visible: true},
+				"login-email-error": {Visible: false},
+			},
+			email:          "invalidSecFetchSite@localhost.com",
+			expectedStatus: http.StatusOK,
+			firstName:      "Login",
+			lastName:       "User",
+			path:           "/login",
+			sessionAgent:   test.DefaultUserAgent,
+			sfDest:         "document",
+			sfMode:         "same-origin",
+			sfSite:         "evil site, inc",
+			testName:       "Invalid Sec-Fetch-Site",
 			timeLeft:       5 * time.Minute,
 			userAgent:      test.DefaultUserAgent,
 			validSession:   true,
@@ -154,9 +223,7 @@ func TestAuthMiddleware(t *testing.T) {
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			sessCookie := http.Cookie{}
@@ -195,6 +262,9 @@ func TestAuthMiddleware(t *testing.T) {
 
 			req.AddCookie(&sessCookie)
 			req.Header.Set("User-Agent", data.userAgent)
+			req.Header.Set("Sec-Fetch-Dest", data.sfDest)
+			req.Header.Set("Sec-Fetch-Mode", data.sfMode)
+			req.Header.Set("Sec-Fetch-Site", data.sfSite)
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {
@@ -218,8 +288,6 @@ func TestAuthMiddleware(t *testing.T) {
 			if err != nil {
 				t.Fatal("Page validation failed:", err)
 			}
-
 		})
-
 	}
 }

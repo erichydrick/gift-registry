@@ -25,7 +25,6 @@ const (
 )
 
 func TestLoginEmailValidationForm(t *testing.T) {
-
 	testData := []struct {
 		expectedEmailSent  bool
 		expectedFields     map[string]bool
@@ -39,7 +38,8 @@ func TestLoginEmailValidationForm(t *testing.T) {
 				"verify-code":       true,
 				"verify-code-error": false,
 				"verify-email":      false,
-				"verify-error":      false},
+				"verify-error":      false,
+			},
 			expectedStatusCode: 200,
 			testName:           "Valid email",
 			userData: test.UserData{
@@ -84,9 +84,7 @@ func TestLoginEmailValidationForm(t *testing.T) {
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			/*
@@ -110,10 +108,13 @@ func TestLoginEmailValidationForm(t *testing.T) {
 			}
 
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "same-origin")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {
-					res.Body.Close()
+					_ = res.Body.Close()
 				}
 			}()
 			if err != nil {
@@ -121,9 +122,7 @@ func TestLoginEmailValidationForm(t *testing.T) {
 			}
 
 			if res.StatusCode != data.expectedStatusCode {
-
 				t.Fatal("Expected a response status of", data.expectedStatusCode, "but got", res.StatusCode)
-
 			}
 
 			doc, err := html.Parse(res.Body)
@@ -132,15 +131,10 @@ func TestLoginEmailValidationForm(t *testing.T) {
 			}
 
 			for id, visible := range data.expectedFields {
-
 				if pageElem, ok := test.CheckElement(*doc, id); ok == false {
-
 					t.Fatal("Could not find element", id, "on the page")
-
 				} else if elemVis := test.ElementVisible(pageElem); elemVis != test.ElementVisible(pageElem) {
-
 					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
-
 				}
 			}
 
@@ -149,22 +143,16 @@ func TestLoginEmailValidationForm(t *testing.T) {
 				than 1 browser.
 			*/
 			if sent, ok := emailer.(*test.EmailMock).EmailToSent[data.userData.Email]; ok && sent != data.expectedEmailSent {
-
 				t.Fatalf("Should the verification email have been sent? (%v) Was it? (%v)",
 					data.expectedEmailSent,
 					emailer.(*test.EmailMock).EmailToSent[data.userData.Email],
 				)
-
 			}
-
 		})
-
 	}
-
 }
 
 func TestLoginForm(t *testing.T) {
-
 	/* Sets up a testing logger */
 	options := &slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true}
 	handler := slog.NewTextHandler(os.Stderr, options)
@@ -191,9 +179,7 @@ func TestLoginForm(t *testing.T) {
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/login", nil)
@@ -203,7 +189,7 @@ func TestLoginForm(t *testing.T) {
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {
-					res.Body.Close()
+					_ = res.Body.Close()
 				}
 			}()
 			if err != nil {
@@ -211,9 +197,7 @@ func TestLoginForm(t *testing.T) {
 			}
 
 			if res.StatusCode != data.expectedStatus {
-
 				t.Fatal("Expected a response status of", data.expectedStatus, "but got", res.StatusCode)
-
 			}
 
 			doc, err := html.Parse(res.Body)
@@ -222,26 +206,17 @@ func TestLoginForm(t *testing.T) {
 			}
 
 			for id, visible := range data.expectedElements {
-
 				if pageElem, ok := test.CheckElement(*doc, id); ok == false {
-
 					t.Fatal("Could not find element", id, "on the page")
-
 				} else if elemVis := test.ElementVisible(pageElem); elemVis != test.ElementVisible(pageElem) {
-
 					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
-
 				}
 			}
-
 		})
-
 	}
-
 }
 
 func TestVerification(t *testing.T) {
-
 	testData := []struct {
 		attempts             int
 		createSession        bool
@@ -386,9 +361,7 @@ func TestVerification(t *testing.T) {
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			if data.createSession {
@@ -412,10 +385,13 @@ func TestVerification(t *testing.T) {
 			}
 
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "same-origin")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res.Body != nil {
-					res.Body.Close()
+					_ = res.Body.Close()
 				}
 			}()
 			if err != nil {
@@ -423,17 +399,13 @@ func TestVerification(t *testing.T) {
 			}
 
 			if res.StatusCode != data.expectedStatusCode {
-
 				t.Fatal("Expected a response status of", data.expectedStatusCode, "but got", res.StatusCode)
-
 			}
 
 			if res.StatusCode == http.StatusSeeOther {
-
 				if res.Header.Get("Location") != data.location {
 					t.Fatal("Expected", data.location, "but redirected to", res.Header.Get("Location"))
 				}
-
 			}
 
 			doc, err := html.Parse(res.Body)
@@ -442,26 +414,17 @@ func TestVerification(t *testing.T) {
 			}
 
 			for id, visible := range data.expectedFields {
-
 				if pageElem, ok := test.CheckElement(*doc, id); ok == false {
-
 					t.Fatal("Could not find element", id, "on the page")
-
 				} else if elemVis := test.ElementVisible(pageElem); elemVis != test.ElementVisible(pageElem) {
-
 					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
-
 				}
 			}
-
 		})
-
 	}
-
 }
 
 func TestLogout(t *testing.T) {
-
 	testData := []struct {
 		createSession    bool
 		expectedElements map[string]test.ElementValidation
@@ -505,9 +468,7 @@ func TestLogout(t *testing.T) {
 	}
 
 	for _, data := range testData {
-
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
 
 			/* This allows for testing logout eithout an active session */
@@ -536,11 +497,14 @@ func TestLogout(t *testing.T) {
 
 			req.AddCookie(&sessCookie)
 			req.Header.Set("User-Agent", userAgent)
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "same-origin")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
 
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {
-					res.Body.Close()
+					_ = res.Body.Close()
 				}
 			}()
 			if err != nil {
@@ -554,7 +518,6 @@ func TestLogout(t *testing.T) {
 			/* Logging out should clear the session cookie. Confirm that. */
 			sessCookieReturned := false
 			for _, cookie := range res.Cookies() {
-
 				if cookie.Name == middleware.SessionCookie &&
 					!cookie.Expires.Before(time.Now()) {
 
@@ -562,7 +525,6 @@ func TestLogout(t *testing.T) {
 					break
 
 				}
-
 			}
 			if sessCookieReturned {
 				t.Fatal("Session cookie not cleared out")
@@ -585,11 +547,8 @@ func TestLogout(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-
 		})
-
 	}
-
 }
 
 func createToken(
@@ -599,7 +558,6 @@ func createToken(
 	duration time.Duration,
 	attempts int,
 ) error {
-
 	personID, err := test.CreateUser(ctx, logger, dbConn, userData)
 	if err != nil {
 		return fmt.Errorf("error creating a test user to associate with the verification token: %v", err)
@@ -626,5 +584,4 @@ func createToken(
 	logger.DebugContext(ctx, "Single verification record added!")
 
 	return nil
-
 }
