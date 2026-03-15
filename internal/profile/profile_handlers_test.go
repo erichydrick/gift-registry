@@ -350,6 +350,9 @@ func TestProfilePage(t *testing.T) {
 
 			req.AddCookie(&sessCookie)
 			req.Header.Set("User-Agent", userAgent)
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "same-origin")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {
@@ -465,6 +468,9 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 
 			req.AddCookie(&sessCookie)
 			req.Header.Set("User-Agent", userAgent)
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "same-origin")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {
@@ -872,6 +878,9 @@ func TestProfileUpdates(t *testing.T) {
 			req.AddCookie(&sessCookie)
 			req.Header.Set("User-Agent", userAgent)
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "same-origin")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {

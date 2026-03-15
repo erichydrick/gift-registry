@@ -186,6 +186,9 @@ func TestHealthCheck(t *testing.T) {
 				t.Fatal("error building health check request", err)
 			}
 			req.AddCookie(&sessCookie)
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "same-origin")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
 			req.Header.Set("User-Agent", userAgent)
 
 			res, err := http.DefaultClient.Do(req)
@@ -302,6 +305,9 @@ func TestHealthCheckInvalidTemplate(t *testing.T) {
 				t.Fatal("error building health check request", err)
 			}
 
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "same-origin")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
 			res, err := http.DefaultClient.Do(req)
 			defer func() {
 				if res != nil && res.Body != nil {

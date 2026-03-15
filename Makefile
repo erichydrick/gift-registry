@@ -9,7 +9,7 @@ docker-build: test
 
 env-local: 
 	clear
-  ./init.sh --local -e .env_local
+	./init.sh --local -e .env_local
 
 env-test: 
 	clear

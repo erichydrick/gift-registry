@@ -153,7 +153,7 @@ func TestCleanup(t *testing.T) {
 				t.Fatal("No rows were added to the verification table!", err)
 			}
 
-			// time.Sleep(1 * time.Second)
+			time.Sleep(1 * time.Second)
 
 			if _, err := db.Query(ctx, "SELECT expiration FROM session WHERE session_id = $1", sessionID); err != nil {
 				t.Fatal("Error checking session cleanup", err)
