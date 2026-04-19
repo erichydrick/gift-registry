@@ -7,21 +7,16 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
 	"gift-registry/internal/database"
 	"gift-registry/internal/test"
-
-	"github.com/testcontainers/testcontainers-go"
 )
 
 /* Connection details for the test database */
 const (
-	dbName    = "main_test"
-	dbUser    = "database_user"
-	dbPass    = "database_pass"
+	dbName    = "database_test.db"
 	userAgent = "test-user-agent"
 )
 
@@ -32,13 +27,10 @@ var (
 	logger *slog.Logger
 )
 
-func init() {
-	dbPath = filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql")
-}
-
 // TestMain sets up the database package tests initializing the logger used
 // to set up the database connection.
 func TestMain(m *testing.M) {
+
 	ctx = context.Background()
 
 	/* Sets up a testing logger */
@@ -46,22 +38,30 @@ func TestMain(m *testing.M) {
 	handler := slog.NewTextHandler(os.Stderr, options)
 	logger = slog.New(handler)
 
-	dbPath := filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql")
-	dbCont, dbURL, err := test.BuildDBContainer(ctx, dbPath, dbName, dbUser, dbPass)
-	defer func() {
-		if err := testcontainers.TerminateContainer(dbCont); err != nil {
-			log.Fatal("Failed to terminate the database test container ", err)
-		}
-	}()
+	srcDB, err := filepath.Abs(filepath.Join("..", "test", "test.db"))
 	if err != nil {
-		log.Fatal("Error setting up a test database", err)
+		log.Fatal("Could not find test database source: ", err)
 	}
 
+	copied, err := test.SetupTestDatabase(srcDB, dbName)
+	if err != nil {
+		log.Fatal("Could not create test database ", dbName, ": ", err)
+	}
+	defer func() {
+		err := test.CleanupDatabase(dbName)
+		if err != nil {
+			log.Fatal("Error cleaning up the test ", err)
+		}
+
+	}()
+	logger.InfoContext(
+		ctx,
+		"Created test database",
+		slog.String("filename", dbName),
+		slog.Int64("size", copied),
+	)
+
 	env = map[string]string{
-		"DB_HOST":        strings.Split(dbURL, ":")[0],
-		"DB_USER":        dbUser,
-		"DB_PASS":        dbPass,
-		"DB_PORT":        strings.Split(dbURL, ":")[1],
 		"DB_NAME":        dbName,
 		"MIGRATIONS_DIR": filepath.Join("migrations_test", "success"),
 	}
@@ -169,29 +169,32 @@ func TestCleanup(t *testing.T) {
 // connection fails due to a bad config.
 func TestConnect(t *testing.T) {
 	testData := []struct {
+		dbName        string
 		errorExpected bool
 		migrationsDir string
-		portModifier  string
 		testName      string
 	}{
 		{
+			dbName:        dbName,
 			errorExpected: false,
 			testName:      "Successful connection",
 		},
 		{
+			dbName:        dbName + ".not_on_fs",
 			errorExpected: true,
-			portModifier:  "0",
 			testName:      "Failed connection",
 		},
 	}
 
 	for _, data := range testData {
+
 		t.Run(data.testName, func(t *testing.T) {
+
 			t.Parallel()
 
 			getenv := func(name string) string {
-				if name == "DB_PORT" {
-					return env[name] + data.portModifier
+				if name == "DB_NAME" {
+					return data.dbName
 				}
 				return env[name]
 			}
@@ -223,14 +226,6 @@ func TestRunMigrations(t *testing.T) {
 		validationQuery      string
 		validationResCnt     int
 	}{
-		/*
-			TODO:
-			1. UPDATE THE MIGRATION FAILED TEST TO CONFIRM FILES AFTER STILL RAN
-			2. ADD A TEST MIGRATION WITH MULTIPLE VALID STATEMENTS IN A FILE.
-			CONFIRM THEY ALL APPLIED.
-			3. ADD A TEST MIGRATION WITH MULTIPLE STATMENTS, 1 INVALID.
-			CONFIRM IT DID NOT APPLY.
-		*/
 		{
 			errorExpected: false,
 			expectedFilesApplied: []string{
@@ -271,14 +266,47 @@ func TestRunMigrations(t *testing.T) {
 
 	for _, data := range testData {
 
-		getenv := func(key string) string {
-			if key == "MIGRATIONS_DIR" {
-				return data.migrationsDir
-			}
-			return env[key]
-		}
-
 		t.Run(data.testName, func(t *testing.T) {
+
+			/*
+				Since I'm testing migrations, use a fresh database for each test case
+			*/
+			srcDB, err := filepath.Abs(filepath.Join("..", "test", "test.db"))
+			if err != nil {
+				t.Fatal("Could not find test database source: ", err)
+			}
+
+			testDB, err := filepath.Abs(data.testName + ".db")
+			if err != nil {
+				t.Fatal("Could not get path for the test database (", data.testName, ".db)")
+			}
+
+			copied, err := test.SetupTestDatabase(srcDB, testDB)
+			if err != nil {
+				log.Fatal("Could not create test database ", testDB, ": ", err)
+			}
+			defer func() {
+				err := test.CleanupDatabase(testDB)
+				if err != nil {
+					log.Fatal("Error cleaning up the test ", err)
+				}
+
+			}()
+			logger.InfoContext(
+				ctx,
+				"Created test database",
+				slog.String("filename", testDB),
+				slog.Int64("size", copied),
+			)
+
+			/* We're also using a fresh set of migrations per test case */
+			getenv := func(key string) string {
+				if key == "MIGRATIONS_DIR" {
+					return data.migrationsDir
+				}
+				return env[key]
+			}
+
 			db, err := database.Connect(ctx, logger, getenv)
 			if err != nil && err != database.ErrMigration {
 				t.Fatal("Error connecting to the database!", err)
