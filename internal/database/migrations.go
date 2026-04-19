@@ -21,7 +21,7 @@ type migrationFile struct {
 
 const (
 	FindMigrationsQuery      = "SELECT filename FROM migrations ORDER BY filename ASC"
-	InsertMigrationStatement = "INSERT INTO migrations (filename, appliedOn) VALUES ($1, CURRENT_TIMESTAMP(3))"
+	InsertMigrationStatement = "INSERT INTO migrations (filename, appliedOn) VALUES (?, CURRENT_TIMESTAMP)"
 )
 
 var (
@@ -31,8 +31,8 @@ var (
 // Checks for any pending database migrations and applies them
 func (dbConn DBConn) runMigrations(
 	ctx context.Context,
-	logger *slog.Logger,
-	getenv func(string) string) (errs []error) {
+	getenv func(string) string,
+) (errs []error) {
 
 	ctx, span := tracer.Start(ctx, "RunMigrations")
 	defer span.End()
@@ -44,7 +44,7 @@ func (dbConn DBConn) runMigrations(
 	select {
 
 	case <-ctx.Done():
-		logger.WarnContext(ctx, "Received a termination signal, not running the migrations")
+		dbConn.logger.WarnContext(ctx, "Received a termination signal, not running the migrations")
 	default:
 		/* Do nothing */
 
@@ -66,11 +66,11 @@ func (dbConn DBConn) runMigrations(
 	*/
 	migrationsApplied, err := dbConn.readAppliedMigrations(ctx)
 	if err != nil {
-		logger.ErrorContext(ctx, "Error reading applied migrations from the database", slog.String("errorMessage", err.Error()))
+		dbConn.logger.ErrorContext(ctx, "Error reading applied migrations from the database", slog.String("errorMessage", err.Error()))
 		errs = append(errs, fmt.Errorf("error reading applied migrations from the database: %s", err.Error()))
 		return
 	}
-	logger.DebugContext(ctx, "Have the list of migrations applied", slog.Any("migrationsApplied", migrationsApplied))
+	dbConn.logger.DebugContext(ctx, "Have the list of migrations applied", slog.Any("migrationsApplied", migrationsApplied))
 
 	/*
 		Check the filesystem for migrations to run. Because the migration files
@@ -80,7 +80,7 @@ func (dbConn DBConn) runMigrations(
 		(if a migration file failed earlier, the assumption breaks, but the code will
 		still recover if that's the case)
 	*/
-	logger.DebugContext(ctx, "Listing the migrations files", slog.String("migrationsDirectory", getenv("MIGRATIONS_DIR")))
+	dbConn.logger.DebugContext(ctx, "Listing the migrations files", slog.String("migrationsDirectory", getenv("MIGRATIONS_DIR")))
 	dirList := strings.Split(getenv("MIGRATIONS_DIR"), ",")
 	migrationFiles := []migrationFile{}
 
@@ -90,7 +90,7 @@ func (dbConn DBConn) runMigrations(
 		migrationsFS := os.DirFS(strings.TrimSpace(dirName))
 		filesFound, err := listMigrations(migrationsFS, ".")
 		if err != nil {
-			logger.ErrorContext(ctx, "Error listing database migration files", slog.String("errorMessage", err.Error()))
+			dbConn.logger.ErrorContext(ctx, "Error listing database migration files", slog.String("errorMessage", err.Error()))
 			errs = append(errs, fmt.Errorf("error reading applied migrations from the database: %s", err.Error()))
 			return
 		}
@@ -100,7 +100,7 @@ func (dbConn DBConn) runMigrations(
 	}
 
 	if len(migrationFiles) < 1 {
-		logger.InfoContext(ctx, "No SQL migrations to apply.", slog.String("migrationsDir", getenv("MIGRATIONS_DIR")))
+		dbConn.logger.InfoContext(ctx, "No SQL migrations to apply.", slog.String("migrationsDir", getenv("MIGRATIONS_DIR")))
 		return
 	}
 
@@ -116,7 +116,7 @@ func (dbConn DBConn) runMigrations(
 		*/
 		if slices.Contains(migrationsApplied, migration.name) {
 
-			logger.InfoContext(ctx, "Already applied migration, skipping...", slog.String("filename", migration.name))
+			dbConn.logger.InfoContext(ctx, "Already applied migration, skipping...", slog.String("filename", migration.name))
 			continue
 
 		}
@@ -126,16 +126,16 @@ func (dbConn DBConn) runMigrations(
 		*/
 		tx, err := dbConn.db.BeginTx(ctx, nil)
 		if err != nil {
-			logger.ErrorContext(ctx, "Error starting transaction", slog.String("errorMessage", err.Error()))
+			dbConn.logger.ErrorContext(ctx, "Error starting transaction", slog.String("errorMessage", err.Error()))
 			errs = append(errs, fmt.Errorf("error starting transaction lock on the database migrations: %s", err.Error()))
 			return
 		}
 
-		logger.InfoContext(ctx, "Applying migration file", slog.String("filename", migration.name))
-		rowsAffected, err := dbConn.applyMigration(ctx, logger, migration)
+		dbConn.logger.InfoContext(ctx, "Applying migration file", slog.String("filename", migration.name))
+		rowsAffected, err := dbConn.applyMigration(ctx, dbConn.logger, migration)
 		if err != nil {
-			logger.ErrorContext(ctx, "Migration failed", slog.String("errorMessage", err.Error()))
-			rollback(ctx, tx, logger, migration.name)
+			dbConn.logger.ErrorContext(ctx, "Migration failed", slog.String("errorMessage", err.Error()))
+			rollback(ctx, tx, dbConn.logger, migration.name)
 			errs = append(errs, fmt.Errorf("%w could not apply migration file: %s %w", ErrMigration, migration, err))
 			continue
 		}
@@ -143,10 +143,10 @@ func (dbConn DBConn) runMigrations(
 		fileToRowsAffected[migration.name] = rowsAffected
 
 		/* Log the migration to the database so we don't repeat it */
-		logger.DebugContext(ctx, fmt.Sprintf("Adding %s to the database", migration.name))
+		dbConn.logger.DebugContext(ctx, fmt.Sprintf("Adding %s to the database", migration.name))
 		_, err = dbConn.Execute(ctx, InsertMigrationStatement, migration.name)
 		if err != nil {
-			logger.ErrorContext(
+			dbConn.logger.ErrorContext(
 				ctx,
 				"Error adding migration file to migrations table!",
 				slog.String("filenam", migration.name),
@@ -158,7 +158,7 @@ func (dbConn DBConn) runMigrations(
 
 		err = tx.Commit()
 		if err != nil {
-			rollback(ctx, tx, logger, migration.name)
+			rollback(ctx, tx, dbConn.logger, migration.name)
 			errs = append(errs, fmt.Errorf("error committing the migrations to the database: %w", err))
 			break
 		}
@@ -174,7 +174,7 @@ func (dbConn DBConn) runMigrations(
 			metric.WithUnit("{affected}"),
 		)
 		if err != nil {
-			logger.ErrorContext(ctx, "Error building metric on the rows updated by migration script",
+			dbConn.logger.ErrorContext(ctx, "Error building metric on the rows updated by migration script",
 				slog.String("migrationFile", key),
 				slog.String("errorMessage", err.Error()))
 		}
