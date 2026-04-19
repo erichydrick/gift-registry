@@ -59,31 +59,31 @@ type verificationRecord struct {
 const (
 	DeleteSessionStatement = `DELETE
 		FROM session
-		WHERE session_id = $1`
+		WHERE session_id = ?`
 	DeleteSessionForPersonStatement = `DELETE
 		FROM session
-		WHERE person_id = $1`
+		WHERE person_id = ?`
 	DeleteVerificationTokenStatement = `DELETE 
 		FROM verification 
-		WHERE person_id = $1`
+		WHERE person_id = ?`
 	GetVerificationQuery = `SELECT v.person_id, v.token, v.token_expiration, v.attempts 
 		FROM verification v 
 			INNER JOIN person p ON p.person_id = v.person_id 
-		WHERE p.email = $1`
+		WHERE p.email = ?`
 	InsertSessionStatement = `INSERT INTO session(session_id, person_id, expiration, user_agent) 
-		VALUES ($1, $2, $3, $4)`
+		VALUES (?, ?, ?, ?)`
 	LoginFailed            = "Login process failed. Please try again"
 	MaxAttempts            = 3
 	SelectUserByEmailQuery = `SELECT person_id, email 
 		FROM person 
-		WHERE email = $1`
+		WHERE email = ?`
 	SetVerificationTokenStatement = `INSERT INTO verification (token, token_expiration, person_id) 
-		VALUES ($1, $2, $3) 
+		VALUES (?, ?, ?) 
 		ON CONFLICT (person_id) DO 
-			UPDATE SET token = $1, token_expiration = $2`
+			UPDATE SET token = ?, token_expiration = ?`
 	UpdateAttemptCountStatement = `UPDATE verification 
-		SET attempts = $1 
-		WHERE person_id = $2`
+		SET attempts = ? 
+		WHERE person_id = ?`
 )
 
 // Starts the login process by checking the provided email address against the
@@ -301,7 +301,7 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 		if err != nil {
 
 			if err == sql.ErrNoRows {
-				svr.Logger.ErrorContext(ctx, "Could not find verification record", slog.String("userEmail", submission.Email))
+				svr.Logger.InfoContext(ctx, "Could not find verification record", slog.String("userEmail", submission.Email))
 				writeResponse(ctx, res, svr, span, loginWithError(LoginFailed), "/login_form.html", "login-form")
 				span.SetAttributes(attribute.String("error_message", err.Error()))
 				return
@@ -579,7 +579,15 @@ func setVerificationCode(
 	expires := time.Now().Add(5 * time.Minute).UTC()
 	svr.Logger.DebugContext(ctx, "Created a login token", slog.String("userEmail", userData.Email))
 
-	rows, err := svr.DB.Execute(ctx, SetVerificationTokenStatement, token, expires, personID)
+	rows, err := svr.DB.Execute(
+		ctx,
+		SetVerificationTokenStatement,
+		token,
+		expires,
+		personID,
+		token,
+		expires,
+	)
 	if err != nil {
 		switch {
 
@@ -615,8 +623,8 @@ func setVerificationCode(
 		Not returning this as an error because the main objective (create a
 		verification token and store it in the database for user verification)
 		succeeded. I do want a record of this in the logs though.
-	*/ 
-  if err != nil {
+	*/
+	if err != nil {
 		svr.Logger.ErrorContext(ctx, "Error getting the number of rows modified when saving a token", slog.String("errorMessage", err.Error()))
 	}
 
@@ -646,6 +654,7 @@ func writeResponse(ctx context.Context,
 	templateFile string,
 	templateDef string,
 ) {
+
 	span.SetAttributes(
 		attribute.Bool("successful", submission.succeeded()),
 	)
@@ -654,6 +663,11 @@ func writeResponse(ctx context.Context,
 
 	tmpl, tmplErr := template.ParseFiles(tmplPath)
 	if tmplErr != nil {
+		svr.Logger.ErrorContext(
+			ctx,
+			"Could not load response templates",
+			slog.String("errorMessage", tmplErr.Error()),
+		)
 		res.WriteHeader(500)
 		res.Write([]byte("Error loading the login page template!"))
 		span.SetAttributes(attribute.String("error_message", tmplErr.Error()))

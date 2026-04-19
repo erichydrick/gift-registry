@@ -84,7 +84,9 @@ func TestLoginEmailValidationForm(t *testing.T) {
 	}
 
 	for _, data := range testData {
+
 		t.Run(data.testName, func(t *testing.T) {
+
 			t.Parallel()
 
 			/*
@@ -532,7 +534,7 @@ func TestLogout(t *testing.T) {
 
 			var foundSessionID string
 			var foundPersonID int64
-			err = db.QueryRow(ctx, "SELECT session_id, person_id FROM session WHERE session_id = $1", token).
+			err = db.QueryRow(ctx, "SELECT session_id, person_id FROM session WHERE session_id = ?", token).
 				Scan(&foundSessionID, foundPersonID)
 			if err == nil || err != sql.ErrNoRows {
 				t.Fatal("Error confirming logout")
@@ -570,7 +572,7 @@ func createToken(
 		fails, so I'm not going to worry about Rollback() calls erroring, the
 		database is going to be deleted anyhow
 	*/
-	if res, err := dbConn.Execute(ctx, "INSERT INTO verification (person_id, token, token_expiration, attempts) VALUES ($1, $2, $3, $4)", personID, token, expires, attempts); err != nil {
+	if res, err := dbConn.Execute(ctx, "INSERT INTO verification (person_id, token, token_expiration, attempts) VALUES (?, ?, ?, ?)", personID, token, expires, attempts); err != nil {
 		log.Println("Error adding a new test verification record to the database.")
 		return fmt.Errorf("error executing insert operation: %v", err)
 	} else if added, err := res.RowsAffected(); err != nil {

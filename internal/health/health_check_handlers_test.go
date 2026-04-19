@@ -21,8 +21,6 @@ import (
 	"gift-registry/internal/server"
 	"gift-registry/internal/test"
 
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"golang.org/x/net/html"
 )
 
@@ -32,9 +30,7 @@ type unhealthyDatabase struct {
 
 // Connection details for the test database
 const (
-	dbName    = "server_test"
-	dbUser    = "server_user"
-	dbPass    = "server_pass"
+	dbName    = "health_check_handlers_database"
 	userAgent = "test-user-agent"
 )
 
@@ -42,7 +38,6 @@ var (
 	badDB  database.Database
 	ctx    context.Context
 	liveDB database.Database
-	dbURL  string
 	env    map[string]string
 	getenv func(string) string
 	logger *slog.Logger
@@ -51,6 +46,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
+
 	start = time.Now().Local()
 
 	/* Sets up a testing logger */
@@ -60,27 +56,32 @@ func TestMain(m *testing.M) {
 
 	ctx = context.Background()
 
-	var dbCont *postgres.PostgresContainer
-	var err error
-
-	dbCont, dbURL, err = test.BuildDBContainer(ctx, filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql"), dbName, dbUser, dbPass)
-	defer func() {
-		if err := testcontainers.TerminateContainer(dbCont); err != nil {
-			log.Fatal("Failed to terminate the database test container ", err)
-		}
-	}()
+	srcDB, err := filepath.Abs(filepath.Join("..", "test", "test.db"))
 	if err != nil {
-		log.Fatal("Error setting up test containers! ", err)
+		log.Fatal("Could not find test database source: ", err)
 	}
+
+	dbPath, err := filepath.Abs(filepath.Join(".", dbName))
+	if err != nil {
+		log.Fatal("Could not get path for test database ", err)
+	}
+
+	copied, err := test.SetupTestDatabase(srcDB, dbPath)
+	if err != nil {
+		log.Fatal("Could not create test database ", dbPath, ": ", err)
+	}
+
+	logger.InfoContext(
+		ctx,
+		"Created test database",
+		slog.String("filename", dbPath),
+		slog.Int64("size", copied),
+	)
 
 	port = test.FreePort()
 
 	env = map[string]string{
-		"DB_USER":        dbUser,
-		"DB_PASS":        dbPass,
-		"DB_HOST":        strings.Split(dbURL, ":")[0],
-		"DB_PORT":        strings.Split(dbURL, ":")[1],
-		"DB_NAME":        dbName,
+		"DB_NAME":        dbPath,
 		"PORT":           strconv.Itoa(port),
 		"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations"),
 		"TEMPLATES_DIR":  filepath.Join("..", "..", "cmd", "web", "templates"),
@@ -97,7 +98,14 @@ func TestMain(m *testing.M) {
 	}
 
 	exitCode := m.Run()
+
+	err = test.CleanupDatabase(dbPath)
+	if err != nil {
+		log.Fatal("Error cleaning up the test ", err)
+	}
+
 	os.Exit(exitCode)
+
 }
 
 // TestHealthCheck validates the health check endpoint by connecting to the
@@ -258,10 +266,6 @@ func TestHealthCheck(t *testing.T) {
 // health check endpoint, and validating the output
 func TestHealthCheckInvalidTemplate(t *testing.T) {
 	env = map[string]string{
-		"DB_USER":        dbUser,
-		"DB_PASS":        dbPass,
-		"DB_HOST":        strings.Split(dbURL, ":")[0],
-		"DB_PORT":        strings.Split(dbURL, ":")[1],
 		"DB_NAME":        dbName,
 		"PORT":           strconv.Itoa(port),
 		"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations"),
