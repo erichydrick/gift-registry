@@ -46,18 +46,6 @@ for env_name in ${environments[@]}; do
         filename=.env_$env_name
     fi
 
-    allowed_hosts=""
-    if [[ "$env_name" == "local" ]]; then
-        allowed_hosts="localhost"
-    elif [[ "$env_name" == "test" ]]; then
-        allowed_hosts="gift-registry-test.hydrick-dev.net"
-    elif [[ "$env_name" == "prod" ]]; then
-        allowed_hosts="gift-registry.hydrick-dev.net"
-    else
-        echo "Environment $env_name is not allowed."
-        exit -1
-    fi
-
     # Include a docker compose file that undos the "run local" setup
     if [[ "$env_name" != "local" ]]; then
         compose_files+=("docker/compose-app-remote-snippet.yml")
@@ -67,6 +55,12 @@ for env_name in ${environments[@]}; do
     if [[ "$use_local_env" == 0 ]]; then
         sample_file="docker/env_sample_docker_secrets"
         cp $sample_file $filename
+    fi
+
+    read -p "What are the allowed hosts for this environment (separate multiple hosts with a comma)? " allowed_hosts
+    if [[ -z "$allowed_hosts" ]]; then
+        echo "You must provide a comma-separated list of allowed hosts"
+        exit 1
     fi
 
     # Figure out if we need to include telemetry containers
@@ -92,6 +86,7 @@ for env_name in ${environments[@]}; do
 
     if [[ "$use_local_env" == 0 ]]; then
         sed --in-place -e "s/env_name/$env_name/g" $filename
+        sed --in-place -e "s/{ALLOWED_HOSTS}/$allowed_hosts/g" $filename
     fi
     merge_command="docker compose --env-file=$filename $merged_files config > $output_file"
     eval $merge_command

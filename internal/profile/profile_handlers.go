@@ -54,8 +54,8 @@ const (
 			p.type
 		FROM person p
 			INNER JOIN household_person hp on hp.person_id = p.person_id
-		WHERE p.external_id = $1
-			AND (hp.person_id = $2 OR (p.type = 'MANAGED' AND hp.household_id = (SELECT household_id FROM household_person WHERE person_id = $3)))`
+		WHERE p.external_id = ?
+			AND (hp.person_id = ? OR (p.type = 'MANAGED' AND hp.household_id = (SELECT household_id FROM household_person WHERE person_id = ?)))`
 	lookupManagedProfilesQuery = `SELECT p.person_id, 
 			h.household_id,
 			p.external_id,
@@ -67,7 +67,7 @@ const (
 		FROM person p
 			INNER JOIN household_person hp ON p.person_id = hp.person_id
 			INNER JOIN household h ON hp.household_id = h.household_id
-		WHERE h.household_id = $1
+		WHERE h.household_id = ?
 			AND p.type = 'MANAGED'`
 	lookupPersonQuery = `SELECT p.person_id, 
 			h.household_id,
@@ -81,15 +81,14 @@ const (
 		FROM person p
 			INNER JOIN household_person hp ON p.person_id = hp.person_id
 			INNER JOIN household h ON hp.household_id = h.household_id
-		WHERE p.person_id = $1`
-	updatePersonQuery = `UPDATE person SET email = $1, first_name = $2, last_name = $3, display_name = $4 
-		WHERE external_id = $5`
-	updateHouseholdQuery = `UPDATE household AS h  
-		SET name = $1	
-		FROM household_person AS hp
-			JOIN person AS p ON hp.person_id = p.person_id
-		WHERE hp.household_id = h.household_id
-			AND p.person_id = $2`
+		WHERE p.person_id = ?`
+	updatePersonQuery = `UPDATE person SET email = ?, first_name = ?, last_name = ?, display_name = ? 
+		WHERE external_id = ?`
+	updateHouseholdQuery = `UPDATE household 
+		SET name = ? 
+		WHERE household_id IN 
+			(SELECT household_id FROM household_person WHERE person_id = ?);
+	`
 	varcharMaxLength = 255
 )
 
@@ -378,6 +377,12 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 
 		}
 
+		svr.Logger.DebugContext(
+			ctx,
+			"Doing a multi-statement update",
+			slog.Any("statements", sqlStatements),
+			slog.Any("params", sqlParams),
+		)
 		_, errs := svr.DB.ExecuteBatch(ctx, sqlStatements, sqlParams)
 		for _, err := range errs {
 			if err != nil {

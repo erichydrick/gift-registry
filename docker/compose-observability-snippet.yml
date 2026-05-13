@@ -17,8 +17,10 @@ services:
       timeout: 3s
       retries: 3
     environment:
-      GF_security_admin_user: ${GRAFANA_USER}
-      GF_security_admin_password: ${GRAFANA_PASS}
+      GF_AUTH_ANONYMOUS_ENABLED: false
+      GRAFANA_ANON: false
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASS}
     networks:
       - gift-registry-network
   app:

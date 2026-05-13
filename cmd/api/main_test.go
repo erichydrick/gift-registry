@@ -29,7 +29,8 @@ func TestMain(m *testing.M) {
 
 	ctx = context.Background()
 
-	m.Run()
+	exitCode := m.Run()
+	os.Exit(exitCode)
 
 }
 

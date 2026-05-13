@@ -7,14 +7,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"gift-registry/internal/database"
 	"gift-registry/internal/server"
 	"gift-registry/internal/test"
-
-	"github.com/testcontainers/testcontainers-go"
 )
 
 // Connection details for the test database
@@ -38,6 +35,7 @@ var (
 // to keep the tests fast, as well as define common variables that will be
 // re-used throughout tests
 func TestMain(m *testing.M) {
+
 	ctx = context.Background()
 
 	/* Sets up a testing logger */
@@ -45,22 +43,28 @@ func TestMain(m *testing.M) {
 	handler := slog.NewTextHandler(os.Stderr, options)
 	logger = slog.New(handler)
 
-	dbPath := filepath.Join("..", "..", "docker", "postgres_scripts", "init.sql")
-	dbCont, dbURL, err := test.BuildDBContainer(ctx, dbPath, dbName, dbUser, dbPass)
-	defer func() {
-		if err := testcontainers.TerminateContainer(dbCont); err != nil {
-			log.Fatal("Failed to terminate the database test container ", err)
-		}
-	}()
+	srcDB, err := filepath.Abs(filepath.Join("..", "test", "test.db"))
 	if err != nil {
-		log.Fatal("Error setting up a test database", err)
+		log.Fatal("Could not find test database source: ", err)
 	}
 
+	dbPath, err := filepath.Abs(filepath.Join(".", dbName))
+	if err != nil {
+		log.Fatal("Could not get path for test database ", err)
+	}
+
+	copied, err := test.SetupTestDatabase(srcDB, dbPath)
+	if err != nil {
+		log.Fatal("Could not create test database ", dbPath, ": ", err)
+	}
+	logger.InfoContext(
+		ctx,
+		"Created test database",
+		slog.String("filename", dbPath),
+		slog.Int64("size", copied),
+	)
+
 	env := map[string]string{
-		"DB_HOST":          strings.Split(dbURL, ":")[0],
-		"DB_USER":          dbUser,
-		"DB_PASS":          dbPass,
-		"DB_PORT":          strings.Split(dbURL, ":")[1],
 		"DB_NAME":          dbName,
 		"MIGRATIONS_DIR":   filepath.Join("..", "..", "internal", "database", "migrations"),
 		"STATIC_FILES_DIR": filepath.Join("..", "..", "cmd", "web"),
@@ -88,5 +92,11 @@ func TestMain(m *testing.M) {
 	allowedMethods = []string{"OPTIONS", "GET", "POST"}
 
 	exitCode := m.Run()
+
+	err = test.CleanupDatabase(dbPath)
+	if err != nil {
+		log.Fatal("Error cleaning up the test ", err)
+	}
+
 	os.Exit(exitCode)
 }
