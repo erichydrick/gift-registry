@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS build
+FROM golang:1.26.4-alpine AS build
 
 WORKDIR /app
 
@@ -12,9 +12,11 @@ FROM alpine:3.22.2 AS executor
 
 WORKDIR /app
 
+RUN apk add --no-cache libgcc gcompat
+
 COPY --from=build /app/main /app/main
 COPY internal/database/migrations migrations/
-COPY internal/database/private_migrations migrations/
+# COPY internal/database/private_migrations migrations/
 COPY cmd/web/templates/ templates/
 COPY cmd/web/css/ css/
 COPY cmd/web/js/ js/
