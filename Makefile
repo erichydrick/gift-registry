@@ -1,3 +1,4 @@
+# TODO: NEED TO CLEAN UP THE ENV STUFF, AND PROBABLY ABANDON INIT.SH
 all: build test
 
 build:
@@ -28,10 +29,10 @@ install:
 
 local-down:
 	clear
-	docker compose -f docker-compose-local.yml down
+	docker compose --env-file=.env_local -f docker-compose.yml down
 
-local-up: 
-	docker compose --env-file=.env_local -f docker-compose-local.yml up -d --no-deps
+local-up: test
+	docker compose --env-file=.env_local -f docker-compose.yml up -d --no-deps
 	docker ps -a
 
 prod-down:

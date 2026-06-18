@@ -2,14 +2,15 @@ name: gift-registry
 
 services:
   app:
-    container_name: gift-registry-app
-    image: golang
-    command: go run ./cmd/api/main.go
-    working_dir: /app
-    volumes:
-      - ..:/app
+    container_name: gift-registry
+    image: gift-registry
+    pull_policy: if_not_present
+    build:
+      context: .
     ports:
       - "8080:8080"
+    volumes:
+      - ${DB_PATH}:/app/database
     environment:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS}
       DB_NAME: ${DB_NAME}
@@ -17,14 +18,16 @@ services:
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_PASS: ${EMAIL_PASS}
       EMAIL_PORT: ${EMAIL_PORT}
-      MIGRATIONS_DIR: "internal/database/migrations"
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+      MIGRATIONS_DIR: "migrations"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTLP_EXPORTER_ENDPOINT}
       OTEL_METRIC_EXPORT_INTERVAL: "5000" # so we don't have to wait 60s for metrics
-      STATIC_FILES_DIR: cmd/web
+      STATIC_FILES_DIR: "."
       PORT: ${GR_PORT}
-      TEMPLATES_DIR: "cmd/web/templates"
+      TEMPLATES_DIR: "templates"
     networks:
-      - gift-registry-network
+      - telemetry
 
 networks:
-  gift-registry-network:
+  telemetry:
+    name: local-bridge-network
+    external: true
