@@ -40,7 +40,7 @@ var (
 	allowedDests  = []string{"document", "empty", "font", "image", "script", "style"}
 	allowedModes  = []string{"cors", "navigate", "no-cors", "same-origin", "websocket"}
 	publicRoutes  []*regexp.Regexp
-	routePatterns = []string{"^/$", "/css/*", "/js/*", "/login", "/verify"}
+	routePatterns = []string{"^/$", "/css/*", "/health", "/js/*", "/login", "/verify"}
 )
 
 func init() {
@@ -57,6 +57,8 @@ func init() {
 // Enforces valid login sessions for non-public endpoints
 func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
+		// TODO: DO I WANT TO START A SPAN HERE FOR ATTRIBUTES?
 		ctx := req.Context()
 		pass := false
 
@@ -82,10 +84,12 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 			authNext(ctx, svr, res, req, next, pass)
 			return
 		}
+
 		/*
 			The route is auth-protected, so query the DB to see if the session is
 			present and valid
 		*/
+		svr.Logger.DebugContext(ctx, "Validating session cookie")
 		cookie, err := req.Cookie(SessionCookie)
 		if err != nil {
 			/* No session data found, send the user to the login page */
@@ -93,6 +97,7 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 			return
 		}
 
+		svr.Logger.DebugContext(ctx, "Validating session info")
 		now := time.Now().UTC()
 		sessInfo, err := lookupSession(ctx, svr, cookie.Value)
 		if err != nil && err != sql.ErrNoRows {
@@ -115,6 +120,7 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 		}
 
 		/* Verify the session hasn't expired */
+		svr.Logger.DebugContext(ctx, "Validating session expiry")
 		if sessInfo.expiration.Before(now) {
 
 			svr.Logger.InfoContext(ctx,
@@ -137,6 +143,7 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 		}
 
 		/* Cross check the user-agent with the 1 used to log in */
+		svr.Logger.DebugContext(ctx, "Validating user agent")
 		if sessInfo.userAgent != req.UserAgent() {
 
 			svr.Logger.InfoContext(ctx,
@@ -159,6 +166,7 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 		}
 
 		/* Session's valid, continue the request */
+		svr.Logger.DebugContext(ctx, "Session validated")
 		pass = true
 		newExp := time.Now().Add(5 * time.Minute).UTC()
 		cookie.MaxAge = int(time.Until(newExp).Seconds())
@@ -190,6 +198,7 @@ func authNext(
 	next http.Handler,
 	pass bool,
 ) {
+
 	if pass || isPublic(ctx, svr, req) {
 		/*
 			Redirect straight to the registry if trying to load the login page with a

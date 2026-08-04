@@ -80,8 +80,23 @@ func (dbConn DBConn) runMigrations(
 		(if a migration file failed earlier, the assumption breaks, but the code will
 		still recover if that's the case)
 	*/
-	dbConn.logger.DebugContext(ctx, "Listing the migrations files", slog.String("migrationsDirectory", getenv("MIGRATIONS_DIR")))
-	dirList := strings.Split(getenv("MIGRATIONS_DIR"), ",")
+	dbConn.logger.DebugContext(
+		ctx,
+		"Listing the migration files",
+		slog.String("migrationsDirectory", getenv("MIGRATIONS_DIR")),
+	)
+	dirList := []string{getenv("MIGRATIONS_DIR")}
+
+	/*
+		Data migrations (migrations around records in the database), are optional
+		(as compared to database schema changes).
+	*/
+	if dataMigrationsDir := getenv("DATA_MIGRATIONS"); dataMigrationsDir != "" {
+
+		dirList = append(dirList, dataMigrationsDir)
+
+	}
+
 	migrationFiles := []migrationFile{}
 
 	/* Build a list of migration files across all templates */
