@@ -370,7 +370,6 @@ func cleanup(
 		select {
 		/* Time to clean up expired session and login verification tokens */
 		case <-ticker.C:
-			db.logger.DebugContext(ctx, "CLEANING UP EXPIRED DATA")
 			deleteQueries := []string{cleanupVerificationTokens, cleanupSessions}
 			deleteParams := []any{}
 			_, errList := db.ExecuteBatch(ctx, deleteQueries, [][]any{deleteParams, deleteParams})

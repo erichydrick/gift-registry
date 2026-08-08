@@ -7,6 +7,8 @@ build:
 
 docker-build: test
 	docker build -t gift-registry -f Dockerfile .
+	docker tag gift-registry localhost:30500/gift-registry:latest
+	docker push localhost:30500/gift-registry:latest
 
 env-local: 
 	clear
