@@ -3,10 +3,10 @@ package test
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"fmt"
 	"io"
 	"log"
-	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -47,12 +47,28 @@ type UserData struct {
 	Type            string
 }
 
+type ItemData struct {
+	ExternalID string
+	GiftDate   sql.NullTime
+	Name       string
+	Notes      string
+	Quantity   int8
+	PersonID   string
+	URL        string
+}
+
 const (
 	DefaultUserAgent = "go-test-user-agent"
 	externalIDLength = 40
 )
 
-func (em *EmailMock) SendVerificationEmail(ctx context.Context, to []string, code string, getenv func(string) string) error {
+func (em *EmailMock) SendVerificationEmail(
+	ctx context.Context,
+	to []string,
+	code string,
+	getenv func(string) string,
+) error {
+
 	for _, email := range to {
 
 		em.EmailToToken[email] = code
@@ -63,7 +79,12 @@ func (em *EmailMock) SendVerificationEmail(ctx context.Context, to []string, cod
 	return nil
 }
 
-func AddHouseholdPerson(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData, personID int64) (int64, error) {
+func AddHouseholdPerson(
+	ctx context.Context,
+	db database.Database,
+	userData UserData,
+	personID int64,
+) (int64, error) {
 
 	var householdID int64
 	db.QueryRow(ctx, "SELECT household_id FROM household WHERE name = ?",
@@ -87,7 +108,14 @@ func AddHouseholdPerson(ctx context.Context, logger *slog.Logger, db database.Da
 
 }
 
-func BuildDBContainer(ctx context.Context, initScripts string, dbName string, dbUser string, dbPass string) (*postgres.PostgresContainer, string, error) {
+func BuildDBContainer(
+	ctx context.Context,
+	initScripts string,
+	dbName string,
+	dbUser string,
+	dbPass string,
+) (*postgres.PostgresContainer, string, error) {
+
 	dbCont, err := postgres.Run(
 		ctx,
 		"postgres:17.2",
@@ -150,7 +178,13 @@ func CleanupDatabase(targetDB string) error {
 
 }
 
-func CreateHousehold(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData, personID int64) (int64, error) {
+func CreateHousehold(
+	ctx context.Context,
+	db database.Database,
+	userData UserData,
+	personID int64,
+) (int64, error) {
+
 	/*
 		I don't want to have to make external IDs for every test, just use a string
 		timestamp as a "good enough" placeholder
@@ -181,12 +215,19 @@ func CreateHousehold(ctx context.Context, logger *slog.Logger, db database.Datab
 		return 0, err
 	}
 
-	return AddHouseholdPerson(ctx, logger, db, userData, personID)
+	return AddHouseholdPerson(ctx, db, userData, personID)
 
 }
 
-func CreateSession(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData, timeLeft time.Duration, userAgent string) (string, error) {
-	personID, err := CreateUser(ctx, logger, db, userData)
+func CreateSession(
+	ctx context.Context,
+	db database.Database,
+	userData UserData,
+	timeLeft time.Duration,
+	userAgent string,
+) (string, error) {
+
+	personID, err := CreateUser(ctx, db, userData)
 	if err != nil {
 		log.Println("Could not create user for", userData, err)
 		return "", err
@@ -206,9 +247,34 @@ func CreateSession(ctx context.Context, logger *slog.Logger, db database.Databas
 	}
 
 	return token, nil
+
 }
 
-func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData) (int64, error) {
+func CreateItem(
+	ctx context.Context,
+	db database.Database,
+	itemData ItemData,
+) (int64, error) {
+
+	res, err := db.Execute(ctx, "INSERT INTO items (external_id, person_id, gift_date, name, notes, quantity, url) VALUES (?, ?, ?, ?, ?, ?, ?)", itemData.ExternalID, itemData.PersonID, itemData.GiftDate, itemData.Name, itemData.Notes, itemData.Quantity, itemData.URL)
+	if err != nil {
+		return 0, fmt.Errorf("error inserting item into test database: %v (%v)", err, itemData)
+	}
+
+	itemID, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("could not get item id from database insert: %v (%v)", err, itemData)
+	}
+
+	return itemID, nil
+
+}
+
+func CreateUser(
+	ctx context.Context,
+	db database.Database,
+	userData UserData,
+) (int64, error) {
 
 	id := int64(0)
 
@@ -257,13 +323,13 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 	/* Household information is not required for all tests.*/
 	if userData.CreateHousehold && userData.HouseholdName != "" {
 
-		_, err = CreateHousehold(ctx, logger, db, userData, id)
+		_, err = CreateHousehold(ctx, db, userData, id)
 		if err != nil {
 			return 0, fmt.Errorf("error adding the new test user to a household: %v", err)
 		}
 
 	} else {
-		AddHouseholdPerson(ctx, logger, db, userData, id)
+		AddHouseholdPerson(ctx, db, userData, id)
 	}
 
 	return id, nil
@@ -272,6 +338,7 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 // Checks if the element has the hidden property or hidden class.
 // Returns true if either is found
 func ElementVisible(node html.Node) bool {
+
 	for _, attr := range node.Attr {
 		/*
 			An element is visible if it does not have the hidden property and does not
@@ -295,10 +362,12 @@ func ElementVisible(node html.Node) bool {
 
 	/* Assume the element is visible by default */
 	return true
+
 }
 
 // Asks the system for an open port I can use for a server or container Pulled from https://stackoverflow.com/a/43425461
 func FreePort() (port int) {
+
 	if listener, err := net.Listen("tcp", ":0"); err == nil {
 		port = listener.Addr().(*net.TCPAddr).Port
 	} else {
@@ -306,6 +375,7 @@ func FreePort() (port int) {
 	}
 
 	return
+
 }
 
 // SetupTestDatabase copies a fresh database containing just the initial
@@ -341,7 +411,9 @@ func SetupTestDatabase(srcDB string, targetDB string) (int64, error) {
 // properties.
 /* TODO: SHOULD I INCLUDE A NOT ON PAGE CHECK? */
 func ValidatePage(page *html.Node, elements map[string]ElementValidation) error {
+
 	for id, validationInfo := range elements {
+
 		if pageElem, ok := CheckElement(*page, id); !ok {
 			return fmt.Errorf("could not find element %v on the page", id)
 		} else if elemVis := ElementVisible(pageElem); elemVis != validationInfo.Visible {
@@ -361,10 +433,12 @@ func ValidatePage(page *html.Node, elements map[string]ElementValidation) error 
 }
 
 func elementData(pageElem html.Node) string {
+
 	/*
 		Prioritize the value attribute first. Then element body.
 	*/
 	for _, attr := range pageElem.Attr {
+
 		/*
 			Don't return on an empty value attribute value -
 			try element body next.
@@ -372,6 +446,7 @@ func elementData(pageElem html.Node) string {
 		if attr.Key == "value" && attr.Val != "" {
 			return attr.Val
 		}
+
 	}
 
 	if pageElem.FirstChild != nil {
@@ -379,4 +454,5 @@ func elementData(pageElem html.Node) string {
 	}
 
 	return ""
+
 }

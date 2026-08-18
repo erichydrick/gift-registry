@@ -92,7 +92,7 @@ func TestLoginEmailValidationForm(t *testing.T) {
 			*/
 			if data.expectedEmailSent {
 
-				_, err := test.CreateUser(ctx, logger, db, data.userData)
+				_, err := test.CreateUser(ctx, db, data.userData)
 				if err != nil {
 					t.Fatal("Error creating a person record to use for testing", err)
 				}
@@ -474,7 +474,7 @@ func TestLogout(t *testing.T) {
 			/* This allows for testing logout eithout an active session */
 			token := ""
 			if data.createSession {
-				if sessionID, err := test.CreateSession(ctx, logger, db, data.userData, 5*time.Minute, userAgent); err != nil {
+				if sessionID, err := test.CreateSession(ctx, db, data.userData, 5*time.Minute, userAgent); err != nil {
 					t.Fatal("Could not create session for testing logout")
 				} else {
 					token = sessionID
@@ -558,7 +558,7 @@ func createToken(
 	duration time.Duration,
 	attempts int,
 ) error {
-	personID, err := test.CreateUser(ctx, logger, dbConn, userData)
+	personID, err := test.CreateUser(ctx, dbConn, userData)
 	if err != nil {
 		return fmt.Errorf("error creating a test user to associate with the verification token: %v", err)
 	}

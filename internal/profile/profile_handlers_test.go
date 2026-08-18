@@ -692,20 +692,6 @@ func TestProfileUpdates(t *testing.T) {
 		t.Run(data.testName, func(t *testing.T) {
 			t.Parallel()
 
-			/*
-				token, err := test.CreateSession(ctx, logger, db, data.userData, time.Minute*5, userAgent)
-				if err != nil {
-					t.Fatal("Could not create a test sesssion for ", data.testName, err)
-				}
-
-				if len(data.managedData) > 0 {
-					for _, managedProfile := range data.managedData {
-
-						_, err := test.CreateUser(ctx, logger, db, managedProfile)
-						if err != nil {
-							t.Fatal("Could not create child profile", err)
-						}
-
 					}
 				}
 			*/

@@ -236,7 +236,7 @@ func TestAuthMiddleware(t *testing.T) {
 					LastName:  data.lastName,
 				}
 
-				sessionID, err := test.CreateSession(ctx, logger, db, userData, data.timeLeft, data.sessionAgent)
+				sessionID, err := test.CreateSession(ctx, db, userData, data.timeLeft, data.sessionAgent)
 				if err != nil {
 					t.Fatal("Error setting up test session", err)
 				}

@@ -162,7 +162,6 @@ func TestHealthCheck(t *testing.T) {
 			*/
 			token, err := test.CreateSession(
 				ctx,
-				logger,
 				liveDB,
 				data.userData,
 				time.Second*5,

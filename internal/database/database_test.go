@@ -127,7 +127,6 @@ func TestCleanup(t *testing.T) {
 
 			sessionID, err := test.CreateSession(
 				ctx,
-				logger,
 				db,
 				data.userData,
 				time.Duration(data.offset)*time.Second,
