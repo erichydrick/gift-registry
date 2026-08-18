@@ -1,0 +1,17 @@
+{
+    "application-header": {
+        "visible": true
+    },
+    "login-email": {
+        "visible": true
+    },
+    "login-email-error": {
+        "visible": false
+    },
+    "login-error": {
+        "visible": false
+    },
+    "login-form": {
+        "visible": true
+    }
+}

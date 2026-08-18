@@ -1,0 +1,17 @@
+{
+    "login-email": {
+        "visible": true
+    },
+    "login-email-error": {
+        "visible": true
+    },
+    "login-error": {
+        "visible": false
+    },
+    "login-form": {
+        "visible": true
+    },
+    "login-submit": {
+        "visible": true
+    }
+}

@@ -1,0 +1,74 @@
+{
+  "profile-header-manager-profile": {
+    "value": "Root Named Profile",
+    "visible": true
+  },
+  "profile-form-manager-profile": { "visible": true },
+  "first-name-manager-profile": {
+    "value": "Display",
+    "visible": true
+  },
+  "last-name-manager-profile": {
+    "value": "Named",
+    "visible": true
+  },
+  "display-name-manager-profile": {
+    "value": "Root",
+    "visible": true
+  },
+  "email-manager-profile": {
+    "value": "profilewithkids@localhost.com",
+    "visible": true
+  },
+  "household-name-manager-profile": {
+    "value": "Disp",
+    "visible": true
+  },
+  "profile-submit-manager-profile": { "visible": true },
+  "first-name-error-manager-profile": { "visible": false },
+  "household-error-manager-profile": { "visible": false },
+  "last-name-error-manager-profile": { "visible": false },
+  "profile-error-manager-profile": { "visible": false },
+  "profile-header-child-1-profile": {
+    "value": "Junior Named Profile",
+    "visible": true
+  },
+  "profile-form-child-1-profile": { "visible": true },
+  "first-name-child-1-profile": {
+    "value": "Firstborn",
+    "visible": true
+  },
+  "last-name-child-1-profile": {
+    "value": "Named",
+    "visible": true
+  },
+  "display-name-child-1-profile": {
+    "value": "Junior",
+    "visible": true
+  },
+  "profile-submit-child-1-profile": { "visible": true },
+  "first-name-error-child-1-profile": { "visible": false },
+  "last-name-error-child-1-profile": { "visible": false },
+  "profile-error-child-1-profile": { "visible": false },
+  "profile-header-child-2-profile": {
+    "value": "Baby Named Profile",
+    "visible": true
+  },
+  "profile-form-child-2-profile": { "visible": true },
+  "first-name-child-2-profile": {
+    "value": "Secondborn",
+    "visible": true
+  },
+  "last-name-child-2-profile": {
+    "value": "Named",
+    "visible": true
+  },
+  "display-name-child-2-profile": {
+    "value": "Baby",
+    "visible": true
+  },
+  "profile-submit-child-2-profile": { "visible": true },
+  "first-name-error-child-2-profile": { "visible": false },
+  "last-name-error-child-2-profile": { "visible": false },
+  "profile-error-child-2-profile": { "visible": false }
+}
