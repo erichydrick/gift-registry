@@ -1,0 +1,32 @@
+{{define "registry-page"}}
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>Family gift registry</title>
+    <link rel="stylesheet" href="css/styles.css" />
+    <script src="js/htmx.js"></script>
+
+</head>
+
+<body>
+
+    <div id="application-header" class="center-text content shadowed" id="page-header">
+        <h1 class="centered">
+            Gift Registry
+        </h1>
+    </div>
+
+    <div id="registries" class="centered content flex-column overflow-y shadowed">
+        Registries go here (will need to add filters/searching later)
+        <!-- TODO: LOOP OVER ITEMS FOR PEOPLE AND SHOW THEM -->
+    </div>
+
+    <!-- TODO: REGISTER GIFT BUTTON -- MOVE TO BOTTOM RIGHT OF DISPLAY VIEW -->
+    <button id="register-gift-btn" class="btn-contained create-new-btn primary">Register Gift</button>
+
+</body>
+
+</html>
+{{end}}

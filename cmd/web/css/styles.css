@@ -169,6 +169,8 @@ small {
     color: var(--secondary-color-300);
 }
 
+/*
+ * TODO: DO I NEED THE BTN-TONALS?
 .btn-tonal.primary {
     background-color: var(--primary-color-300);
     box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
@@ -192,6 +194,7 @@ small {
 .btn-tonal.secondary:hover {
     background-color: var(--secondary-color);
 }
+*/
 
 .center-text {
     text-align: center;
@@ -209,6 +212,12 @@ small {
 .content {
     background-color: var(--white-color);
     padding: 1rem;
+}
+
+.create-new-btn {
+    margin-bottom: -.625rem;
+    position: sticky;
+    margin-right: -.625rem;
 }
 
 .danger {
