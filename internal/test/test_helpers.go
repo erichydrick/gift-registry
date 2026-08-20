@@ -3,7 +3,6 @@ package test
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"fmt"
 	"io"
 	"log"
@@ -35,6 +34,20 @@ type EmailMock struct {
 	EmailToSent  map[string]bool
 }
 
+// ItemData holds the details needed to make a test item in the database
+type ItemData struct {
+	AddedBy       int64
+	AddedOn       time.Time
+	ExternalID    string
+	GiftDate      time.Time
+	LastUpdatedOn time.Time
+	Name          string
+	Notes         string
+	Quantity      int8
+	PersonID      int64
+	URL           string
+}
+
 // Holds the details needed to make a test user in the database
 type UserData struct {
 	CreateHousehold bool
@@ -44,17 +57,8 @@ type UserData struct {
 	FirstName       string
 	HouseholdName   string
 	LastName        string
+	PersonID        int64
 	Type            string
-}
-
-type ItemData struct {
-	ExternalID string
-	GiftDate   sql.NullTime
-	Name       string
-	Notes      string
-	Quantity   int8
-	PersonID   string
-	URL        string
 }
 
 const (
@@ -82,8 +86,7 @@ func (em *EmailMock) SendVerificationEmail(
 func AddHouseholdPerson(
 	ctx context.Context,
 	db database.Database,
-	userData UserData,
-	personID int64,
+	userData *UserData,
 ) (int64, error) {
 
 	var householdID int64
@@ -94,7 +97,7 @@ func AddHouseholdPerson(
 		Add the test user to the household
 	*/
 
-	if res, err := db.Execute(ctx, "INSERT INTO household_person (household_id, person_id) VALUES(?, ?)", householdID, personID); err != nil {
+	if res, err := db.Execute(ctx, "INSERT INTO household_person (household_id, person_id) VALUES(?, ?)", householdID, userData.PersonID); err != nil {
 		return 0, fmt.Errorf("could not add test user to newly-created household %v: %v", householdID, err)
 	} else if added, err := res.RowsAffected(); err != nil {
 		log.Println("Error getting the last inserted ID from the test household creation.")
@@ -181,8 +184,7 @@ func CleanupDatabase(targetDB string) error {
 func CreateHousehold(
 	ctx context.Context,
 	db database.Database,
-	userData UserData,
-	personID int64,
+	userData *UserData,
 ) (int64, error) {
 
 	/*
@@ -215,19 +217,19 @@ func CreateHousehold(
 		return 0, err
 	}
 
-	return AddHouseholdPerson(ctx, db, userData, personID)
+	return AddHouseholdPerson(ctx, db, userData)
 
 }
 
 func CreateSession(
 	ctx context.Context,
 	db database.Database,
-	userData UserData,
+	userData *UserData,
 	timeLeft time.Duration,
 	userAgent string,
 ) (string, error) {
 
-	personID, err := CreateUser(ctx, db, userData)
+	err := CreateUser(ctx, db, userData)
 	if err != nil {
 		log.Println("Could not create user for", userData, err)
 		return "", err
@@ -238,7 +240,7 @@ func CreateSession(
 	/*
 		Write the session record and sanity check that it's there.
 	*/
-	if res, err := db.Execute(ctx, "INSERT INTO session(session_id, person_id, expiration, user_agent) VALUES (?, ?, ?, ?)", token, personID, time.Now().UTC().Add(timeLeft), userAgent); err != nil {
+	if res, err := db.Execute(ctx, "INSERT INTO session(session_id, person_id, expiration, user_agent) VALUES (?, ?, ?, ?)", token, userData.PersonID, time.Now().UTC().Add(timeLeft), userAgent); err != nil {
 		return "", err
 	} else if modified, err := res.RowsAffected(); err != nil {
 		return "", err
@@ -273,10 +275,8 @@ func CreateItem(
 func CreateUser(
 	ctx context.Context,
 	db database.Database,
-	userData UserData,
-) (int64, error) {
-
-	id := int64(0)
+	userData *UserData,
+) error {
 
 	/*
 		I don't want to have to make external IDs for every test, just use a string
@@ -305,34 +305,35 @@ func CreateUser(
 	*/
 	if res, err := db.Execute(ctx, "INSERT INTO person (external_id, email, first_name, last_name, display_name, type) VALUES (?, ?, ?, ?, ?, ?)", userData.ExternalID, userData.Email, userData.FirstName, userData.LastName, userData.DisplayName, userData.Type); err != nil {
 		log.Println("Error adding a new test person to the database.")
-		return 0, err
+		return err
 	} else if added, err := res.RowsAffected(); err != nil {
 		log.Println("Error getting the last inserted ID from the test person creation.")
-		return 0, err
+		return err
 	} else if added < 1 {
 		log.Println("Don't have an ID value for the newly-created person!")
-		return 0, err
+		return err
 	}
 
-	err := db.QueryRow(ctx, "SELECT person_id FROM person WHERE external_id = ?", userData.ExternalID).Scan(&id)
+	err := db.QueryRow(ctx, "SELECT person_id FROM person WHERE external_id = ?", userData.ExternalID).
+		Scan(&userData.PersonID)
 	if err != nil {
 		log.Println("Error reading the created user's ID")
-		return 0, fmt.Errorf("error reading the created user's id: %v", err)
+		return fmt.Errorf("error reading the created user's id: %v", err)
 	}
 
 	/* Household information is not required for all tests.*/
 	if userData.CreateHousehold && userData.HouseholdName != "" {
 
-		_, err = CreateHousehold(ctx, db, userData, id)
+		_, err = CreateHousehold(ctx, db, userData)
 		if err != nil {
-			return 0, fmt.Errorf("error adding the new test user to a household: %v", err)
+			return fmt.Errorf("error adding the new test user to a household: %v", err)
 		}
 
 	} else {
-		AddHouseholdPerson(ctx, db, userData, id)
+		AddHouseholdPerson(ctx, db, userData)
 	}
 
-	return id, nil
+	return nil
 }
 
 // Checks if the element has the hidden property or hidden class.

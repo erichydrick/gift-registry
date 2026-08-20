@@ -128,7 +128,7 @@ func TestCleanup(t *testing.T) {
 			sessionID, err := test.CreateSession(
 				ctx,
 				db,
-				data.userData,
+				&data.userData,
 				time.Duration(data.offset)*time.Second,
 				userAgent,
 			)
@@ -235,6 +235,7 @@ func TestRunMigrations(t *testing.T) {
 			expectedFilesApplied: []string{
 				"20250401_000000_create_test_table.sql",
 				"20250401_000100_insert_test_person.sql",
+				"20260818_152900_create_test_items_table.sql",
 			},
 			migrationsDir:    "migrations_test/success",
 			testName:         "Successful migration",
@@ -247,6 +248,7 @@ func TestRunMigrations(t *testing.T) {
 				"20250401_000000_create_test_table.sql",
 				"20250401_000100_insert_test_person.sql",
 				"20250401_000300_create_test_table.sql",
+				"20260818_152900_create_test_items_table.sql",
 			},
 			migrationsDir:    "migrations_test/rollback",
 			testName:         "Migration rollback",
@@ -260,6 +262,7 @@ func TestRunMigrations(t *testing.T) {
 				"20250401_000100_insert_test_person.sql",
 				"20250401_000300_create_test_table.sql",
 				"20250401_000400_alter_test_table.sql",
+				"20260818_152900_create_test_items_table.sql",
 			},
 			migrationsDir:    "migrations_test/alter_table",
 			testName:         "Update existing table",

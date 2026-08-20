@@ -138,7 +138,8 @@ func TestAuthMiddleware(t *testing.T) {
 		{
 			createSession: true,
 			elements: map[string]test.ElementValidation{
-				"registry-data": {Visible: true},
+				"registries":        {Visible: true},
+				"register-gift-btn": {Visible: true},
 			},
 			email:          "validSessionTest@localhost.com",
 			expectedStatus: http.StatusOK,
@@ -236,7 +237,7 @@ func TestAuthMiddleware(t *testing.T) {
 					LastName:  data.lastName,
 				}
 
-				sessionID, err := test.CreateSession(ctx, db, userData, data.timeLeft, data.sessionAgent)
+				sessionID, err := test.CreateSession(ctx, db, &userData, data.timeLeft, data.sessionAgent)
 				if err != nil {
 					t.Fatal("Error setting up test session", err)
 				}
