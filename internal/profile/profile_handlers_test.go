@@ -88,6 +88,7 @@ func TestMain(m *testing.M) {
 
 	env := map[string]string{
 		"DB_NAME":          dbPath,
+		"DATA_MIGRATIONS":  filepath.Join("..", "..", "testing_data", "profile_data"),
 		"MIGRATIONS_DIR":   filepath.Join("..", "..", "internal", "database", "migrations"),
 		"STATIC_FILES_DIR": filepath.Join("..", "..", "cmd", "web"),
 		"TEMPLATES_DIR":    filepath.Join("..", "..", "cmd", "web", "templates"),
@@ -119,10 +120,9 @@ func TestMain(m *testing.M) {
 
 func TestProfilePage(t *testing.T) {
 	testData := []struct {
-		userData    test.UserData
-		managedData []test.UserData
-		elements    map[string]test.ElementValidation
-		testName    string
+		elements map[string]test.ElementValidation
+		testName string
+		token    string
 	}{
 		{
 			elements: map[string]test.ElementValidation{
@@ -157,15 +157,7 @@ func TestProfilePage(t *testing.T) {
 				"last-name-error-succ-disp-name":  {Visible: false},
 				"profile-error-succ-disp-name":    {Visible: false},
 			},
-			userData: test.UserData{
-				CreateHousehold: true,
-				DisplayName:     "Root",
-				Email:           "displayName@localhost.com",
-				ExternalID:      "succ-disp-name",
-				FirstName:       "Display",
-				HouseholdName:   "Disp",
-				LastName:        "Named",
-			},
+			token:    "succ-disp-name-token",
 			testName: "Successful profile load with display name",
 		},
 		{
@@ -192,7 +184,7 @@ func TestProfilePage(t *testing.T) {
 					Visible: true,
 				},
 				"household-name-succ-def-disp-name": {
-					Value:   "Display",
+					Value:   "Disp",
 					Visible: true,
 				},
 				"profile-submit-succ-def-disp-name":   {Visible: true},
@@ -200,14 +192,7 @@ func TestProfilePage(t *testing.T) {
 				"last-name-error-succ-def-disp-name":  {Visible: false},
 				"profile-error-succ-def-disp-name":    {Visible: false},
 			},
-			userData: test.UserData{
-				CreateHousehold: true,
-				Email:           "nodisplayname@localhost.com",
-				ExternalID:      "succ-def-disp-name",
-				FirstName:       "Display",
-				HouseholdName:   "Display",
-				LastName:        "Nameless",
-			},
+			token:    "succ-def-disp-name-token",
 			testName: "Successful profile load with no display name",
 		},
 		{
@@ -235,7 +220,7 @@ func TestProfilePage(t *testing.T) {
 					Visible: true,
 				},
 				"household-name-manager-profile": {
-					Value:   "With Kids",
+					Value:   "Disp",
 					Visible: true,
 				},
 				"profile-submit-manager-profile":   {Visible: true},
@@ -288,35 +273,7 @@ func TestProfilePage(t *testing.T) {
 				"last-name-error-child-2-profile":  {Visible: false},
 				"profile-error-child-2-profile":    {Visible: false},
 			},
-			userData: test.UserData{
-				CreateHousehold: true,
-				DisplayName:     "Root",
-				Email:           "profilewithkids@localhost.com",
-				ExternalID:      "manager-profile",
-				FirstName:       "Display",
-				HouseholdName:   "With Kids",
-				LastName:        "Named",
-			},
-			managedData: []test.UserData{
-				{
-					CreateHousehold: false,
-					DisplayName:     "Junior",
-					ExternalID:      "child-1-profile",
-					FirstName:       "Firstborn",
-					HouseholdName:   "With Kids",
-					LastName:        "Named",
-					Type:            "MANAGED",
-				},
-				{
-					CreateHousehold: false,
-					DisplayName:     "Baby",
-					ExternalID:      "child-2-profile",
-					FirstName:       "Secondborn",
-					HouseholdName:   "With Kids",
-					LastName:        "Named",
-					Type:            "MANAGED",
-				},
-			},
+			token:    "manager-profile-token",
 			testName: "Profile load with associated managed profiles",
 		},
 	}
@@ -325,29 +282,13 @@ func TestProfilePage(t *testing.T) {
 		t.Run(data.testName, func(t *testing.T) {
 			t.Parallel()
 
-			token, err := test.CreateSession(ctx, logger, db, data.userData, time.Minute*5, userAgent)
-			if err != nil {
-				t.Fatal("Could not create a test sesssion for ", data.testName, err)
-			}
-
-			if len(data.managedData) > 0 {
-				for _, managedProfile := range data.managedData {
-
-					_, err := test.CreateUser(ctx, logger, db, managedProfile)
-					if err != nil {
-						t.Fatal("Could not create child profile", err)
-					}
-
-				}
-			}
-
 			sessCookie := http.Cookie{
 				HttpOnly: true,
 				MaxAge:   time.Now().UTC().Add(time.Minute * 1).Second(),
 				Name:     middleware.SessionCookie,
 				SameSite: http.SameSiteStrictMode,
 				Secure:   true,
-				Value:    token,
+				Value:    data.token,
 			}
 
 			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/profile", nil)
@@ -401,20 +342,15 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 		formData url.Values
 		method   string
 		path     string
+		token    string
 		testName string
-		userData test.UserData
 	}{
 		{
 			formData: url.Values{},
 			method:   "GET",
 			path:     "/profile",
 			testName: "Get Profile",
-			userData: test.UserData{
-				Email:      "getprofilebadtemplate@localhost.com",
-				ExternalID: "profile-load-bad-temp",
-				FirstName:  "Get",
-				LastName:   "Profile",
-			},
+			token:    "profile-load-bad-temp-token",
 		},
 		{
 			formData: url.Values{
@@ -426,12 +362,7 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 			method:   "POST",
 			path:     "/profile/profile-update-bad-temp",
 			testName: "Update Profile",
-			userData: test.UserData{
-				Email:      "updateprofilebadtemplate@localhost.com",
-				ExternalID: "profile-update-bad-temp",
-				FirstName:  "Update",
-				LastName:   "Profile",
-			},
+			token:    "profile-update-bad-temp-token",
 		},
 	}
 
@@ -442,25 +373,13 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 			templatesServer := httptest.NewServer(appHandler)
 			defer templatesServer.Close()
 
-			token, err := test.CreateSession(
-				ctx,
-				logger,
-				db,
-				data.userData,
-				time.Minute*5,
-				userAgent,
-			)
-			if err != nil {
-				t.Fatal("Could not create a test session!", err)
-			}
-
 			sessCookie := http.Cookie{
 				HttpOnly: true,
 				MaxAge:   time.Now().UTC().Add(time.Minute * 1).Second(),
 				Name:     middleware.SessionCookie,
 				SameSite: http.SameSiteStrictMode,
 				Secure:   true,
-				Value:    token,
+				Value:    data.token,
 			}
 
 			req, err := http.NewRequestWithContext(
@@ -495,18 +414,17 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 
 func TestProfileUpdates(t *testing.T) {
 	testData := []struct {
-		displayName     string
-		elements        map[string]test.ElementValidation
-		email           string
-		externalID      string
-		firstName       string
-		householdName   string
-		lastName        string
-		managedData     []test.UserData
+		elements map[string]test.ElementValidation
+		// displayName     string
+		// email           string
+		// firstName       string
+		// externalID      string
+		// householdName   string
+		// lastName        string
 		success         bool
 		testName        string
+		token           string
 		updatedUserData test.UserData
-		userData        test.UserData
 	}{
 		{
 			elements: map[string]test.ElementValidation{
@@ -543,6 +461,7 @@ func TestProfileUpdates(t *testing.T) {
 			},
 			success:  true,
 			testName: "Successful profile update changed",
+			token:    "success-update-token",
 			updatedUserData: test.UserData{
 				DisplayName:   "Sudo",
 				Email:         "completedupdate@localhost.com",
@@ -550,15 +469,6 @@ func TestProfileUpdates(t *testing.T) {
 				FirstName:     "Completed",
 				HouseholdName: "New House Success",
 				LastName:      "Modification",
-			},
-			userData: test.UserData{
-				CreateHousehold: true,
-				DisplayName:     "Root",
-				Email:           "successfulupdate@localhost.com",
-				ExternalID:      "success-update",
-				FirstName:       "Successful",
-				HouseholdName:   "Existing Household Success",
-				LastName:        "Update",
 			},
 		},
 		{
@@ -595,6 +505,7 @@ func TestProfileUpdates(t *testing.T) {
 				"profile-error-bad-first-name":    {Visible: false},
 			},
 			success:  false,
+			token:    "bad-first-name-token",
 			testName: "Failed update no first name",
 			updatedUserData: test.UserData{
 				DisplayName:   "Sudo",
@@ -603,15 +514,6 @@ func TestProfileUpdates(t *testing.T) {
 				FirstName:     "",
 				HouseholdName: "Failed update first name house",
 				LastName:      "Name",
-			},
-			userData: test.UserData{
-				CreateHousehold: true,
-				DisplayName:     "Root",
-				Email:           "failedupdatenofirstname@localhost.com",
-				ExternalID:      "bad-first-name",
-				FirstName:       "Nofirst",
-				HouseholdName:   "Failed update first name house",
-				LastName:        "Name",
 			},
 		},
 		{
@@ -649,6 +551,7 @@ func TestProfileUpdates(t *testing.T) {
 			},
 			success:  false,
 			testName: "Failed profile update last name and email",
+			token:    "bad-last-email-token",
 			updatedUserData: test.UserData{
 				DisplayName:   "Root",
 				Email:         "",
@@ -656,15 +559,6 @@ func TestProfileUpdates(t *testing.T) {
 				FirstName:     "FailedLastAndEmail",
 				HouseholdName: "Failed update last name and email house",
 				LastName:      "",
-			},
-			userData: test.UserData{
-				CreateHousehold: true,
-				DisplayName:     "Root",
-				Email:           "failedupdatemultipleFields@localhost.com",
-				ExternalID:      "bad-last-email",
-				FirstName:       "FailedLastAndEmail",
-				HouseholdName:   "Failed update last name and email house",
-				LastName:        "Update",
 			},
 		},
 		{
@@ -702,6 +596,7 @@ func TestProfileUpdates(t *testing.T) {
 			},
 			success:  true,
 			testName: "Clear display name",
+			token:    "clear-display-token",
 			updatedUserData: test.UserData{
 				DisplayName:   "",
 				Email:         "cleardisplayname@localhost.com",
@@ -709,15 +604,6 @@ func TestProfileUpdates(t *testing.T) {
 				FirstName:     "Clear",
 				HouseholdName: "Clear display name success house",
 				LastName:      "Displayname",
-			},
-			userData: test.UserData{
-				CreateHousehold: true,
-				DisplayName:     "Blanked",
-				Email:           "cleardisplayname@localhost.com",
-				ExternalID:      "clear-display",
-				FirstName:       "Clear",
-				HouseholdName:   "Clear display name success house",
-				LastName:        "Displayname",
 			},
 		},
 		{
@@ -755,6 +641,7 @@ func TestProfileUpdates(t *testing.T) {
 			},
 			success:  false,
 			testName: "Update household name",
+			token:    "valid-household-token",
 			updatedUserData: test.UserData{
 				DisplayName:   "Valid",
 				Email:         "validhouseholdname@localhost.com",
@@ -762,15 +649,6 @@ func TestProfileUpdates(t *testing.T) {
 				FirstName:     "Valid",
 				HouseholdName: "New valid household name",
 				LastName:      "Household",
-			},
-			userData: test.UserData{
-				CreateHousehold: true,
-				DisplayName:     "Valid",
-				Email:           "validhouseholdname@localhost.com",
-				ExternalID:      "valid-household",
-				FirstName:       "Valid",
-				HouseholdName:   "Valid household",
-				LastName:        "Household",
 			},
 		},
 		{
@@ -799,42 +677,13 @@ func TestProfileUpdates(t *testing.T) {
 			},
 			success:  true,
 			testName: "Update managed profile",
+			token:    "update-manager-profile-token",
 			updatedUserData: test.UserData{
 				DisplayName: "HasBeen",
 				ExternalID:  "update-managed-profile-2",
 				FirstName:   "HasBeen",
 				LastName:    "Modified",
 				Type:        "MANAGED",
-			},
-			userData: test.UserData{
-				CreateHousehold: true,
-				DisplayName:     "Root",
-				Email:           "managedprofileupdate@localhost.com",
-				ExternalID:      "update-manager-profile",
-				FirstName:       "Successful",
-				HouseholdName:   "Managed Household Success",
-				LastName:        "Update",
-				Type:            "NORMAL",
-			},
-			managedData: []test.UserData{
-				{
-					CreateHousehold: false,
-					DisplayName:     "NotToBe",
-					ExternalID:      "update-managed-profile-1",
-					FirstName:       "NotToBe",
-					HouseholdName:   "Managed Household Success",
-					LastName:        "Modified",
-					Type:            "MANAGED",
-				},
-				{
-					CreateHousehold: false,
-					DisplayName:     "NotYet",
-					ExternalID:      "update-managed-profile-2",
-					FirstName:       "HasBeen",
-					HouseholdName:   "Managed Household Success",
-					LastName:        "Modified",
-					Type:            "MANAGED",
-				},
 			},
 		},
 	}
@@ -843,21 +692,23 @@ func TestProfileUpdates(t *testing.T) {
 		t.Run(data.testName, func(t *testing.T) {
 			t.Parallel()
 
-			token, err := test.CreateSession(ctx, logger, db, data.userData, time.Minute*5, userAgent)
-			if err != nil {
-				t.Fatal("Could not create a test sesssion for ", data.testName, err)
-			}
-
-			if len(data.managedData) > 0 {
-				for _, managedProfile := range data.managedData {
-
-					_, err := test.CreateUser(ctx, logger, db, managedProfile)
-					if err != nil {
-						t.Fatal("Could not create child profile", err)
-					}
-
+			/*
+				token, err := test.CreateSession(ctx, logger, db, data.userData, time.Minute*5, userAgent)
+				if err != nil {
+					t.Fatal("Could not create a test sesssion for ", data.testName, err)
 				}
-			}
+
+				if len(data.managedData) > 0 {
+					for _, managedProfile := range data.managedData {
+
+						_, err := test.CreateUser(ctx, logger, db, managedProfile)
+						if err != nil {
+							t.Fatal("Could not create child profile", err)
+						}
+
+					}
+				}
+			*/
 
 			sessCookie := http.Cookie{
 				HttpOnly: true,
@@ -865,7 +716,7 @@ func TestProfileUpdates(t *testing.T) {
 				Name:     middleware.SessionCookie,
 				SameSite: http.SameSiteStrictMode,
 				Secure:   true,
-				Value:    token,
+				Value:    data.token,
 			}
 
 			form := url.Values{}
