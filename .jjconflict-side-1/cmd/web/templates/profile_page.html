@@ -1,0 +1,31 @@
+{{define "profile-page"}}
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>Family gift registry</title>
+    <link rel="stylesheet" href="css/styles.css" />
+    <script src="js/htmx.js"></script>
+
+</head>
+
+<body>
+
+    <div id="application-header" class="center-text content shadowed" id="page-header">
+        <h1 class="centered">
+            Edit profiles
+        </h1>
+        <a href="/logout">Logout</a>
+    </div>
+
+    {{range .Profiles}}
+    <div id="profile-{{.ExternalID}}" class="centered content flex-column shadowed">
+        {{template "profile-form" .}}
+    </div>
+    {{end}}
+
+</body>
+
+</html>
+{{end}}

@@ -1,0 +1,32 @@
+{
+  "profile-form-clear-display": { "visible": true },
+  "profile-header-clear-display": {
+    "value": "Clear Displayname Profile",
+    "visible": true
+  },
+  "first-name-clear-display": {
+    "value": "Clear",
+    "visible": true
+  },
+  "last-name-clear-display": {
+    "value": "Displayname",
+    "visible": true
+  },
+  "display-name-clear-display": {
+    "value": "Clear",
+    "visible": true
+  },
+  "email-clear-display": {
+    "value": "cleardisplayname@localhost.com",
+    "visible": true
+  },
+  "household-name-clear-display": {
+    "value": "Clear display name success house",
+    "visible": true
+  },
+  "profile-submit-clear-display": { "visible": true },
+  "first-name-error-clear-display": { "visible": false },
+  "household-error-clear-display": { "visible": false },
+  "last-name-error-clear-display": { "visible": false },
+  "profile-error-clear-display": { "visible": false }
+}

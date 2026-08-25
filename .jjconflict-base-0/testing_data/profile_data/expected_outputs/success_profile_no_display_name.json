@@ -1,0 +1,31 @@
+{
+  "profile-form-succ-def-disp-name": { "visible": true },
+  "profile-header-succ-def-disp-name": {
+    "value": "Display Nameless Profile",
+    "visible": true
+  },
+  "first-name-succ-def-disp-name": {
+    "value": "Display",
+    "visible": true
+  },
+  "last-name-succ-def-disp-name": {
+    "value": "Nameless",
+    "visible": true
+  },
+  "display-name-succ-def-disp-name": {
+    "value": "Display",
+    "visible": true
+  },
+  "email-succ-def-disp-name": {
+    "value": "nodisplayname@localhost.com",
+    "visible": true
+  },
+  "household-name-succ-def-disp-name": {
+    "value": "Disp",
+    "visible": true
+  },
+  "profile-submit-succ-def-disp-name": { "visible": true },
+  "first-name-error-succ-def-disp-name": { "visible": false },
+  "last-name-error-succ-def-disp-name": { "visible": false },
+  "profile-error-succ-def-disp-name": { "visible": false }
+}

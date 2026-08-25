@@ -1,0 +1,13 @@
+INSERT INTO people (
+    email, 
+    first_name, 
+    last_name,
+    external_id,
+    display_name
+) VALUES (
+    'test.user@yopmail.com', 
+    'Test', 
+    'User',
+    'test-success-user',
+    'Test'
+);
