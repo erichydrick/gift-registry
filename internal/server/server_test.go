@@ -24,12 +24,13 @@ const (
 
 // Test-specific values
 var (
-	ctx        context.Context
-	db         database.Database
-	emailer    server.Emailer
-	getenv     func(string) string
-	logger     *slog.Logger
-	testServer *httptest.Server
+	ctx              context.Context
+	db               database.Database
+	elementsFilePath string
+	emailer          server.Emailer
+	getenv           func(string) string
+	logger           *slog.Logger
+	testServer       *httptest.Server
 )
 
 // TestMain sets up the application tests by initializing a logger object to
@@ -64,9 +65,10 @@ func TestMain(m *testing.M) {
 	)
 
 	env := map[string]string{
-		"DB_NAME":        dbPath,
-		"MIGRATIONS_DIR": filepath.Join("..", "database", "migrations"),
-		"TEMPLATES_DIR":  filepath.Join("..", "..", "cmd", "web", "templates"),
+		"DB_NAME":         dbPath,
+		"DATA_MIGRATIONS": filepath.Join("..", "..", "testing_data", "server_data", "sql"),
+		"MIGRATIONS_DIR":  filepath.Join("..", "database", "migrations"),
+		"TEMPLATES_DIR":   filepath.Join("..", "..", "cmd", "web", "templates"),
 	}
 
 	getenv = func(name string) string { return env[name] }
@@ -80,6 +82,12 @@ func TestMain(m *testing.M) {
 		EmailToToken: map[string]string{},
 		EmailToSent:  map[string]bool{},
 	}
+
+	elementsFilePath, err = filepath.Abs(filepath.Join("..", "..", "testing_data", "server_data", "expected_outputs"))
+	if err != nil {
+		log.Fatal("Could not build path to expected element data for validating output!", err)
+	}
+
 	appHandler, err := server.NewServer(getenv, db, logger, emailer)
 	if err != nil {
 		log.Fatal("Error setting up the test handler", err)

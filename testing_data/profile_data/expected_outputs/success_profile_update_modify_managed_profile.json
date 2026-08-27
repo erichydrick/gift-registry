@@ -1,0 +1,23 @@
+{
+  "profile-form-update-managed-profile-2": { "visible": true },
+  "profile-header-update-managed-profile-2": {
+    "value": "HasBeen Modified Profile",
+    "visible": true
+  },
+  "first-name-update-managed-profile-2": {
+    "value": "HasBeen",
+    "visible": true
+  },
+  "last-name-update-managed-profile-2": {
+    "value": "Modified",
+    "visible": true
+  },
+  "display-name-update-managed-profile-2": {
+    "value": "HasBeen",
+    "visible": true
+  },
+  "profile-submit-update-managed-profile-2": { "visible": true },
+  "first-name-error-update-managed-profile-2": { "visible": false },
+  "last-name-error-update-managed-profile-2": { "visible": false },
+  "profile-error-update-managed-profile-2": { "visible": false }
+}

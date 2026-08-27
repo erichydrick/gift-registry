@@ -1,0 +1,10 @@
+{
+    "overall-health": {
+        "visible": true,
+        "value": "Healthy"
+    },
+    "db-health-status": {
+        "visible": true,
+        "value": "Healthy"
+    }
+}

@@ -2,14 +2,15 @@
 <div id="login">
     <h3 class="center-text">Log in to view the family gift registry</h3>
     <form id="login-form" hx-disabled-elt="#login-submit" hx-post="/login" hx-target="#login" class="flex-column">
-        <div id="login-error" class="danger mt-2 flex-row" {{if ne .Errors.ErrorMessage "" }}{{else}}hidden{{end}}>
-            {{.Errors.ErrorMessage}}
+        <div id="login-error" class="danger mt-2 flex-row" {{if or (eq .Errors.ErrorMessage nil) (eq
+            .Errors.ErrorMessage "" ) }}hidden{{end}}>
+            Errors.ErrorMessage: {{.Errors.ErrorMessage}}
         </div>
         <div class="form-input-group">
             <label for="login-email">Email address</label>
             <div class="flex-column">
                 <input type="text" id="login-email" name="email" value="{{or .Email ""}}" />
-                <small id="login-email-error" class="danger" {{if eq .Errors.Email nil
+                <small id="login-email-error" class="danger" {{if or (eq .Errors.Email nil) (eq .Errors.Email "" )
                     }}hidden{{end}}>{{.Errors.Email}}</small>
             </div>
         </div>

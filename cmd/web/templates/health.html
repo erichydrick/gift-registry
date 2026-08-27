@@ -14,9 +14,8 @@
     <div class="center-text content shadowed" id="page-header">
         <h1 class="centered">
             Gift Registry Health Status:
-            <span id="overall-health" class="{{if .Healthy}}healthy{{else}}unhealthy{{end}}">
-                {{if .Healthy}}Healthy{{else}}Unhealthy{{end}}
-            </span>
+            <span id="overall-health" class="{{if .Healthy}}healthy{{else}}unhealthy{{end}}">{{if
+                .Healthy}}Healthy{{else}}Unhealthy{{end}}</span>
 
         </h1>
     </div>
@@ -25,9 +24,9 @@
         <h2 class="center-text">Component Health</h2>
         <p>
 
-            <label>Database status:</label> <span id="db-health-status"
-                class="{{if .DBHealth.Healthy}}healthy{{else}}unhealthy{{end}}"><strong>{{if
-                    .DBHealth.Healthy}}Healthy{{else}}Unhealthy{{end}}</strong></span>
+            <label for="db-health-status">Database status:</label>
+            <strong id="db-health-status" class="{{if .DBHealth.Healthy}}healthy{{else}}unhealthy{{end}}">{{if
+                .DBHealth.Healthy}}Healthy{{else}}Unhealthy{{end}}</strong>
 
         </p>
 
