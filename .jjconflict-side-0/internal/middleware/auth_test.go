@@ -79,7 +79,6 @@ func TestAuthMiddleware(t *testing.T) {
 			validSession:   true,
 		},
 		{
-			elementsFile:   "middleware_auth_registry_page_elements.json",
 			expectedStatus: http.StatusOK,
 			path:           "/registry",
 			sfDest:         "document",
@@ -134,20 +133,16 @@ func TestAuthMiddleware(t *testing.T) {
 
 			sessCookie := http.Cookie{}
 
-			if data.token != "" {
+			sessCookie.Name = middleware.SessionCookie
+			sessCookie.MaxAge = time.Now().UTC().Add(5 * time.Minute).Second()
+			sessCookie.HttpOnly = true
+			sessCookie.Secure = true
+			sessCookie.SameSite = http.SameSiteStrictMode
 
-				sessCookie.Name = middleware.SessionCookie
-				sessCookie.MaxAge = time.Now().UTC().Add(5 * time.Minute).Second()
-				sessCookie.HttpOnly = true
-				sessCookie.Secure = true
-				sessCookie.SameSite = http.SameSiteStrictMode
-
-				if data.validSession {
-					sessCookie.Value = data.token
-				} else {
-					sessCookie.Value = "Invalid Session ID"
-				}
-
+			if data.validSession {
+				sessCookie.Value = data.token
+			} else {
+				sessCookie.Value = "Invalid Session ID"
 			}
 
 			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+data.path, nil)

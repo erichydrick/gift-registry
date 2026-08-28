@@ -3,31 +3,33 @@ package registry_test
 import (
 	"context"
 	"gift-registry/internal/database"
+	"gift-registry/internal/middleware"
 	"gift-registry/internal/server"
 	"gift-registry/internal/test"
 	"log"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"golang.org/x/net/html"
 )
 
 const (
 	dbName    = "registry_test"
 	userAgent = "test-user-agent"
-	/*
-		TODO: ADD QUERY CONSTANTS
-	*/
 )
 
 var (
-	ctx        context.Context
-	db         database.Database
-	getenv     func(string) string
-	logger     *slog.Logger
-	testServer *httptest.Server
+	ctx                  context.Context
+	db                   database.Database
+	expectedElementsPath string
+	getenv               func(string) string
+	logger               *slog.Logger
+	testServer           *httptest.Server
 )
 
 func TestMain(m *testing.M) {
@@ -38,28 +40,13 @@ func TestMain(m *testing.M) {
 	handler := slog.NewTextHandler(os.Stderr, options)
 	logger = slog.New(handler)
 
-	srcDB, err := filepath.Abs(filepath.Join("..", "test", "test.db"))
-	if err != nil {
-		log.Fatal("Could not find test database source: ", err)
-	}
-
 	dbPath, err := filepath.Abs(filepath.Join(".", dbName))
 	if err != nil {
 		log.Fatal("Could not get path for test database ", err)
 	}
 
-	copied, err := test.SetupTestDatabase(srcDB, dbPath)
-	if err != nil {
-		log.Fatal("Could not create test database ", dbPath, ": ", err)
-	}
-	logger.InfoContext(
-		ctx,
-		"Created test database",
-		slog.String("filename", dbPath),
-		slog.Int64("size", copied),
-	)
-
 	env := map[string]string{
+		"DATA_MIGRATIONS":  filepath.Join("..", "..", "testing_data", "registry_data", "sql"),
 		"DB_NAME":          dbPath,
 		"MIGRATIONS_DIR":   filepath.Join("..", "..", "internal", "database", "migrations"),
 		"STATIC_FILES_DIR": filepath.Join("..", "..", "cmd", "web"),
@@ -80,6 +67,11 @@ func TestMain(m *testing.M) {
 	testServer = httptest.NewServer(appHandler)
 	defer testServer.Close()
 
+	expectedElementsPath, err = filepath.Abs(filepath.Join("..", "..", "testing_data", "registry_data", "expected_outputs"))
+	if err != nil {
+		log.Fatal("Could not load the path to the expected outputs directory", err)
+	}
+
 	exitCode := m.Run()
 
 	err = test.CleanupDatabase(dbPath)
@@ -93,84 +85,77 @@ func TestMain(m *testing.M) {
 
 func TestRegistryPage(t *testing.T) {
 
-	/* TODO: DEFINE THE TEST CASES */
 	testData := []struct {
-		elements map[string]test.ElementValidation
-		itemData map[string][]test.ItemData
-		userData []test.UserData /* TODO: HOW BAD DO I WANT MULTIPLE USERS/ITEMS? */
-		testName string
+		elementsFile string
+		testName     string
+		token        string
 	}{
 		{
-			elements: map[string]test.ElementValidation{
-				"registries": test.ElementValidation{
-					Visible: true,
-				},
-				"register-gift-btn": test.ElementValidation{
-					Visible: true,
-				},
-			},
-			itemData: map[string][]test.ItemData{
-				"boy-child": {
-					{
-						AddedOn:    time.Now(),
-						ExternalID: "new-bike",
-						GiftDate:   time.Now().AddDate(0, 0, 7),
-						Name:       "Bicycle",
-						Notes:      "He's too big for the one he has now",
-						Quantity:   1,
-					},
-					{
-						AddedOn:    time.Now(),
-						ExternalID: "harry-potter",
-						GiftDate:   time.Now().AddDate(0, 0, 7),
-						Name:       "Harry Potter collectibles",
-						Quantity:   10,
-						URL:        "https://hydrick.net/",
-					},
-				},
-				"girl-child": {
-					{
-						AddedOn:    time.Now(),
-						ExternalID: "mat",
-						GiftDate:   time.Now().AddDate(0, 1, 0),
-						Name:       "Tumbling mat",
-						Quantity:   1,
-						URL:        "https://hydrick.net",
-					},
-					{
-						AddedOn:    time.Now(),
-						ExternalID: "princess-dolls",
-						GiftDate:   time.Now().AddDate(0, 1, 0),
-						Name:       "Princess dolls",
-						Notes:      "Barbie-style Disney princess dolls",
-						Quantity:   1,
-					},
-				},
-			},
-			userData: []test.UserData{
-				/* TODO: ADD PARENT, AND ADD GIRL-CHILD */
-				{
-					CreateHousehold: true,
-					ExternalID:      "boy-child",
-					FirstName:       "Boy",
-					HouseholdName:   "Test House",
-					LastName:        "Tester",
-					Type:            "MANAGED",
-				},
-			},
+			elementsFile: "success_registry_display_page.json",
+			testName:     "Successful registry view",
+			token:        "mom-registry-session",
+		},
+		{
+			elementsFile: "success_registry_display_page_other_person.json",
+			testName:     "Can view claim details for other households",
+			token:        "grandma-registry-session",
+		},
+		{
+			elementsFile: "success_registry_display_page_other_person.json",
+			testName:     "Can see claimants for other household member's gifts",
+			token:        "dad-registry-session",
 		},
 	}
-
-	/*
-		TODO: THINK ABOUT CREATING THE SESSION AND GETTING TEST USER IDS
-	*/
 	for _, data := range testData {
 
 		t.Run(data.testName, func(t *testing.T) {
 
 			t.Parallel()
 
-			/* TODO: THIS IS WHERE THE MAGIC HAPPENS */
+			sessCookie := http.Cookie{
+				HttpOnly: true,
+				MaxAge:   time.Now().UTC().Add(time.Minute * 1).Second(),
+				Name:     middleware.SessionCookie,
+				SameSite: http.SameSiteStrictMode,
+				Secure:   true,
+				Value:    data.token,
+			}
+
+			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/registry", nil)
+			if err != nil {
+				t.Fatal("Error building registry request", err)
+			}
+
+			req.AddCookie(&sessCookie)
+			req.Header.Set("User-Agent", test.DefaultUserAgent)
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "same-origin")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
+
+			res, err := http.DefaultClient.Do(req)
+			defer func() {
+				_ = res.Body.Close()
+			}()
+			if err != nil {
+				t.Fatal("Error getting the registry page!", err)
+			} else if res.StatusCode != http.StatusOK {
+				t.Fatal("Expected a success status from the server, but got", res.StatusCode)
+			}
+
+			doc, err := html.Parse(res.Body)
+			if err != nil {
+				t.Fatal("Error parsing response body!", err)
+			}
+
+			expectedElements, err := test.LoadExpectedElements(expectedElementsPath, data.elementsFile)
+			if err != nil {
+				t.Fatal("Could not load the list of elements to validate!", err)
+			}
+
+			err = test.ValidatePage(doc, expectedElements)
+			if err != nil {
+				t.Fatal("Output validation failed!", err)
+			}
 
 		})
 

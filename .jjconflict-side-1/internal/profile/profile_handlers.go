@@ -4,6 +4,7 @@
 package profile
 
 import (
+	"database/sql"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -27,7 +28,7 @@ type profileErrors struct {
 type userData struct {
 	DisplayName   string
 	Errors        profileErrors
-	Email         string
+	Email         sql.NullString
 	ExternalID    string
 	FirstName     string
 	HouseholdName string
@@ -263,8 +264,11 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 		}
 
 		user := userData{
-			DisplayName:   req.FormValue("displayName"),
-			Email:         req.FormValue("email"),
+			DisplayName: req.FormValue("displayName"),
+			Email: sql.NullString{
+				Valid:  true,
+				String: req.FormValue("email"),
+			},
 			ExternalID:    req.FormValue("externalID"),
 			FirstName:     req.FormValue("firstName"),
 			HouseholdName: req.FormValue("householdName"),
@@ -279,7 +283,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			attribute.String("updated_external_id", externalID),
 			attribute.String("updated_type", user.Type),
 			attribute.String("updated_display_name", user.DisplayName),
-			attribute.String("updated_email", user.Email),
+			attribute.String("updated_email", user.Email.String),
 			attribute.String("updated_first_name", user.FirstName),
 			attribute.String("updated_household_name", user.HouseholdName),
 			attribute.String("updated_last_name", user.LastName),
@@ -462,12 +466,12 @@ func (user *userData) validate() {
 	}
 
 	/* The below fields aren't part of the profile cards for managed profiles */
-	if user.Email == "" && user.Type != "MANAGED" {
+	if user.Email.String == "" && user.Type != "MANAGED" {
 
 		user.Errors.Email = "Email address is required for non-managed person accounts"
 		user.valid = false
 
-	} else if len(user.Email) > varcharMaxLength {
+	} else if len(user.Email.String) > varcharMaxLength {
 
 		user.Errors.Email = fmt.Sprintf("Email address can't be more than %d characters", varcharMaxLength)
 		user.valid = false
@@ -508,7 +512,7 @@ func (user userData) String() string {
 	return fmt.Sprintf(
 		"{DisplayName: %s, Email: %s, ExternalID: %s, FirstName: %s, LastName: %s, Type: %s, HouseholdName: %s, Errors: %s}",
 		user.DisplayName,
-		user.Email,
+		user.Email.String,
 		user.ExternalID,
 		user.FirstName,
 		user.LastName,

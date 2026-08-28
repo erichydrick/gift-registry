@@ -1,0 +1,52 @@
+{{define "registry-table"}}
+<h3 id="registry-{{.PersonID}}-label" class="center-text mb-3">{{.DisplayName}} {{.LastName}}'s Registry</h3>
+<table id="item-list-{{.PersonID}}" class="flex-column">
+    <thead>
+        <tr>
+            <td>Item</td>
+            <td>Wanted</td>
+            <td>Link</td>
+            <td>Extra Notes</td>
+            <td>Claimed By</td>
+            <td>Will Be Given On</td>
+            <td><!-- Addeding an unlabeled column for the claim this button --></td>
+        </tr>
+    </thead>
+    <tbody>
+        {{range $key, $value := .Items}}
+        <tr id="item-{{$key}}">
+            <td id="item-{{$key}}-name">{{$value.Name}}</td>
+            <td id="item-{{$key}}-quantity">{{subtract $value.Quantity $value.TotalClaimed}} / {{$value.Quantity}}</td>
+            <td id="item-{{$key}}-url">{{$value.URL}}</td>
+            <td id="item-{{$key}}-notes">{{$value.Notes}}</td>
+            <!-- 
+                TODO: NEED TO FIGURE OUT HOW TO DIFFERENTIATE BETWEEN "i'LL GET
+                SOME OF THESE" AND "JOINT GIFT"
+            -->
+            <td id="item-{{$key}}-claimants">
+                {{range $idx, $claim := $value.Claims}}
+                <span id="item-{{$key}}-claimant-{{$idx}}">{{$claim.Claimant}}</span><br />
+                {{end}}
+            </td>
+            <td id="item-{{$key}}-give-on">
+                {{range $idx, $claim := $value.Claims}}
+                <span id="item-{{$key}}-claim-{{$idx}}-gift-date">{{$claim.GiftDate}}</span><br />
+                {{end}}
+            </td>
+            <!-- 
+                Will turn this into a proper button when I implement it, 
+                but just putting the holder in for now. This needs some 
+                thoughts around enabling/disabling, and some updates
+                to the test helper to validate disabled status (which
+                will also impact the profile page)
+
+                TODO: 
+                This text should be dynamic, need to decided if that's here or 
+                when I implement this as a button.
+            -->
+            <td id="item-{{$key}}-claim-button">We'll get this</td>
+        </tr>
+        {{end}}
+    </tbody>
+</table>
+{{end}}

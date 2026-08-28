@@ -3,11 +3,9 @@ package test
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
- 	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -25,8 +23,8 @@ import (
 
 // Holds the details needed to validate page contents
 type ElementValidation struct {
-	Value   string `json:"value"`
-	Visible bool   `json:"visible"`
+	Value   string
+	Visible bool
 }
 
 // Stub for the Emailer interface so I can validate emailing in automated
@@ -64,7 +62,7 @@ type UserData struct {
 }
 
 const (
-	DefaultUserAgent = "test-user-agent"
+	DefaultUserAgent = "go-test-user-agent"
 	externalIDLength = 40
 )
 
@@ -92,14 +90,14 @@ func AddHouseholdPerson(
 ) (int64, error) {
 
 	var householdID int64
-	_ = db.QueryRow(ctx, "SELECT household_id FROM household WHERE name = ?",
+	db.QueryRow(ctx, "SELECT household_id FROM household WHERE name = ?",
 		userData.HouseholdName).Scan(&householdID)
 
 	/*
 		Add the test user to the household
 	*/
 
-	if res, err := db.Execute(ctx, "INSERT INTO household_people (household_id, person_id) VALUES(?, ?)", householdID, personID); err != nil {
+	if res, err := db.Execute(ctx, "INSERT INTO household_person (household_id, person_id) VALUES(?, ?)", householdID, userData.PersonID); err != nil {
 		return 0, fmt.Errorf("could not add test user to newly-created household %v: %v", householdID, err)
 	} else if added, err := res.RowsAffected(); err != nil {
 		log.Println("Error getting the last inserted ID from the test household creation.")
@@ -110,6 +108,7 @@ func AddHouseholdPerson(
 	}
 
 	return householdID, nil
+
 }
 
 func BuildDBContainer(
@@ -142,7 +141,6 @@ func BuildDBContainer(
 }
 
 func CheckElement(root html.Node, id string) (html.Node, bool) {
-
 	/*
 		If this element has the ID we're looking for, return true.
 	*/
@@ -166,18 +164,21 @@ func CheckElement(root html.Node, id string) (html.Node, bool) {
 // CleanupDatabase removes the libsql files associated with the database in
 // the given (absolute path) file reference.
 func CleanupDatabase(targetDB string) error {
+
 	files, err := filepath.Glob(targetDB + "*")
 	if err != nil {
 		return fmt.Errorf("could not clean up test database %s: %v", targetDB, err)
 	}
 
 	for _, filename := range files {
+
 		if err := os.Remove(filename); err != nil {
 			return fmt.Errorf("could not clean up test file %s: %v", filename, err)
 		}
 	}
 
 	return nil
+
 }
 
 func CreateHousehold(
@@ -216,7 +217,7 @@ func CreateHousehold(
 		return 0, err
 	}
 
-	return AddHouseholdPerson(ctx, logger, db, userData, personID)
+	return AddHouseholdPerson(ctx, db, userData)
 
 }
 
@@ -248,11 +249,34 @@ func CreateSession(
 	}
 
 	return token, nil
+
 }
 
-func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData) (int64, error) {
+func CreateItem(
+	ctx context.Context,
+	db database.Database,
+	itemData ItemData,
+) (int64, error) {
 
-	id := int64(0)
+	res, err := db.Execute(ctx, "INSERT INTO items (external_id, person_id, gift_date, name, notes, quantity, url) VALUES (?, ?, ?, ?, ?, ?, ?)", itemData.ExternalID, itemData.PersonID, itemData.GiftDate, itemData.Name, itemData.Notes, itemData.Quantity, itemData.URL)
+	if err != nil {
+		return 0, fmt.Errorf("error inserting item into test database: %v (%v)", err, itemData)
+	}
+
+	itemID, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("could not get item id from database insert: %v (%v)", err, itemData)
+	}
+
+	return itemID, nil
+
+}
+
+func CreateUser(
+	ctx context.Context,
+	db database.Database,
+	userData *UserData,
+) error {
 
 	/*
 		I don't want to have to make external IDs for every test, just use a string
@@ -269,7 +293,9 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 		Put an explicit default on the type for testing
 	*/
 	if userData.Type == "" {
+
 		userData.Type = "NORMAL"
+
 	}
 
 	/*
@@ -277,7 +303,7 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 		fails, so I'm not going to worry about Rollback() calls erroring, the
 		database is going to be deleted anyhow
 	*/
-	if res, err := db.Execute(ctx, "INSERT INTO people (external_id, email, first_name, last_name, display_name, type) VALUES (?, ?, ?, ?, ?, ?)", userData.ExternalID, userData.Email, userData.FirstName, userData.LastName, userData.DisplayName, userData.Type); err != nil {
+	if res, err := db.Execute(ctx, "INSERT INTO person (external_id, email, first_name, last_name, display_name, type) VALUES (?, ?, ?, ?, ?, ?)", userData.ExternalID, userData.Email, userData.FirstName, userData.LastName, userData.DisplayName, userData.Type); err != nil {
 		log.Println("Error adding a new test person to the database.")
 		return err
 	} else if added, err := res.RowsAffected(); err != nil {
@@ -288,7 +314,8 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 		return err
 	}
 
-	err := db.QueryRow(ctx, "SELECT person_id FROM person WHERE external_id = ?", userData.ExternalID).Scan(&id)
+	err := db.QueryRow(ctx, "SELECT person_id FROM person WHERE external_id = ?", userData.ExternalID).
+		Scan(&userData.PersonID)
 	if err != nil {
 		log.Println("Error reading the created user's ID")
 		return fmt.Errorf("error reading the created user's id: %v", err)
@@ -314,23 +341,17 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 func ElementVisible(node html.Node) bool {
 
 	for _, attr := range node.Attr {
-
 		/*
 			An element is visible if it does not have the hidden property and does not
 			have the "hidden" class. We don't care about any other attribute
 		*/
-		switch strings.ReplaceAll(attr.Key, " ", "") {
+		switch attr.Key {
 
 		/* The hidden property means the element is not visible */
 		case "hidden":
 			return false
 		case "class":
 			/* The "hidden" class will set the element's display to none */
-			if strings.Contains(attr.Val, "hidden") {
-				return false
-			}
-		case "type":
-			/* Hidden inputs are not visible on the page */
 			if strings.Contains(attr.Val, "hidden") {
 				return false
 			}
@@ -347,6 +368,7 @@ func ElementVisible(node html.Node) bool {
 
 // Asks the system for an open port I can use for a server or container Pulled from https://stackoverflow.com/a/43425461
 func FreePort() (port int) {
+
 	if listener, err := net.Listen("tcp", ":0"); err == nil {
 		port = listener.Addr().(*net.TCPAddr).Port
 	} else {
@@ -354,6 +376,7 @@ func FreePort() (port int) {
 	}
 
 	return
+
 }
 
 // SetupTestDatabase copies a fresh database containing just the initial
@@ -366,21 +389,22 @@ func SetupTestDatabase(srcDB string, targetDB string) (int64, error) {
 	if _, err := os.Stat(srcDB); err != nil {
 		return 0, fmt.Errorf("could not find the source DB %s: %v", srcDB, err)
 	}
-	defer func() {
-		_ = jsonFile.Close()
-	}()
 
-	jsonBytes, err := io.ReadAll(jsonFile)
+	src, err := os.Open(srcDB)
 	if err != nil {
-		return elementData, nil
+		return 0, fmt.Errorf("could not open the source DB file %s: %v", srcDB, err)
 	}
+	defer src.Close()
 
-	err = json.Unmarshal(jsonBytes, &elementData)
+	dest, err := os.Create(targetDB)
 	if err != nil {
-		return map[string]ElementValidation{}, fmt.Errorf("could not convert json to element verification map: %v", err)
+		return 0, fmt.Errorf("could not create the test DB file %s: %v", targetDB,
+			err)
 	}
+	defer dest.Close()
 
-	return elementData, nil
+	return io.Copy(dest, src)
+
 }
 
 // ValidatePage goes through the mapping of elements to validation details and
@@ -392,32 +416,16 @@ func ValidatePage(page *html.Node, elements map[string]ElementValidation) error 
 	for id, validationInfo := range elements {
 
 		if pageElem, ok := CheckElement(*page, id); !ok {
-
 			return fmt.Errorf("could not find element %v on the page", id)
-
+		} else if elemVis := ElementVisible(pageElem); elemVis != validationInfo.Visible {
+			return fmt.Errorf("expected element %v to have visibility = %v, but it was %v", id, validationInfo.Visible, elemVis)
 		} else if validationInfo.Value != "" {
 
 			pageData := elementData(pageElem)
-
-			/*
-				I like newlines and whitespace, and when it's in the HTML template
-				I'm validating, the value check fails because it picks up the
-				newline. I'm not doing anything where newlines (or their absence)
-				would be relevant.
-			*/
-			pageData = strings.ReplaceAll(pageData, "\n", "")
-			pageData = strings.Trim(pageData, " ")
-
 			if validationInfo.Value != pageData {
-
 				return fmt.Errorf("expected element %v to have value = %v, but had %v",
 					id, validationInfo.Value, pageData)
-
 			}
-
-		} else if elemVis := ElementVisible(pageElem); elemVis != validationInfo.Visible {
-
-			return fmt.Errorf("expected element %v to have visibility = %v, but it was %v", id, validationInfo.Visible, elemVis)
 
 		}
 	}

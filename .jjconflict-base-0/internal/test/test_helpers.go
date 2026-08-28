@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"log/slog"
+ 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -35,6 +36,20 @@ type EmailMock struct {
 	EmailToSent  map[string]bool
 }
 
+// ItemData holds the details needed to make a test item in the database
+type ItemData struct {
+	AddedBy       int64
+	AddedOn       time.Time
+	ExternalID    string
+	GiftDate      time.Time
+	LastUpdatedOn time.Time
+	Name          string
+	Notes         string
+	Quantity      int8
+	PersonID      int64
+	URL           string
+}
+
 // Holds the details needed to make a test user in the database
 type UserData struct {
 	CreateHousehold bool
@@ -44,6 +59,7 @@ type UserData struct {
 	FirstName       string
 	HouseholdName   string
 	LastName        string
+	PersonID        int64
 	Type            string
 }
 
@@ -52,7 +68,13 @@ const (
 	externalIDLength = 40
 )
 
-func (em *EmailMock) SendVerificationEmail(ctx context.Context, to []string, code string, getenv func(string) string) error {
+func (em *EmailMock) SendVerificationEmail(
+	ctx context.Context,
+	to []string,
+	code string,
+	getenv func(string) string,
+) error {
+
 	for _, email := range to {
 
 		em.EmailToToken[email] = code
@@ -63,7 +85,12 @@ func (em *EmailMock) SendVerificationEmail(ctx context.Context, to []string, cod
 	return nil
 }
 
-func AddHouseholdPerson(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData, personID int64) (int64, error) {
+func AddHouseholdPerson(
+	ctx context.Context,
+	db database.Database,
+	userData *UserData,
+) (int64, error) {
+
 	var householdID int64
 	_ = db.QueryRow(ctx, "SELECT household_id FROM household WHERE name = ?",
 		userData.HouseholdName).Scan(&householdID)
@@ -85,7 +112,14 @@ func AddHouseholdPerson(ctx context.Context, logger *slog.Logger, db database.Da
 	return householdID, nil
 }
 
-func BuildDBContainer(ctx context.Context, initScripts string, dbName string, dbUser string, dbPass string) (*postgres.PostgresContainer, string, error) {
+func BuildDBContainer(
+	ctx context.Context,
+	initScripts string,
+	dbName string,
+	dbUser string,
+	dbPass string,
+) (*postgres.PostgresContainer, string, error) {
+
 	dbCont, err := postgres.Run(
 		ctx,
 		"postgres:17.2",
@@ -146,7 +180,12 @@ func CleanupDatabase(targetDB string) error {
 	return nil
 }
 
-func CreateHousehold(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData, personID int64) (int64, error) {
+func CreateHousehold(
+	ctx context.Context,
+	db database.Database,
+	userData *UserData,
+) (int64, error) {
+
 	/*
 		I don't want to have to make external IDs for every test, just use a string
 		timestamp as a "good enough" placeholder
@@ -178,10 +217,18 @@ func CreateHousehold(ctx context.Context, logger *slog.Logger, db database.Datab
 	}
 
 	return AddHouseholdPerson(ctx, logger, db, userData, personID)
+
 }
 
-func CreateSession(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData, timeLeft time.Duration, userAgent string) (string, error) {
-	personID, err := CreateUser(ctx, logger, db, userData)
+func CreateSession(
+	ctx context.Context,
+	db database.Database,
+	userData *UserData,
+	timeLeft time.Duration,
+	userAgent string,
+) (string, error) {
+
+	err := CreateUser(ctx, db, userData)
 	if err != nil {
 		log.Println("Could not create user for", userData, err)
 		return "", err
@@ -192,7 +239,7 @@ func CreateSession(ctx context.Context, logger *slog.Logger, db database.Databas
 	/*
 		Write the session record and sanity check that it's there.
 	*/
-	if res, err := db.Execute(ctx, "INSERT INTO session(session_id, person_id, expiration, user_agent) VALUES (?, ?, ?, ?)", token, personID, time.Now().UTC().Add(timeLeft), userAgent); err != nil {
+	if res, err := db.Execute(ctx, "INSERT INTO session(session_id, person_id, expiration, user_agent) VALUES (?, ?, ?, ?)", token, userData.PersonID, time.Now().UTC().Add(timeLeft), userAgent); err != nil {
 		return "", err
 	} else if modified, err := res.RowsAffected(); err != nil {
 		return "", err
@@ -204,6 +251,7 @@ func CreateSession(ctx context.Context, logger *slog.Logger, db database.Databas
 }
 
 func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData) (int64, error) {
+
 	id := int64(0)
 
 	/*
@@ -231,34 +279,34 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 	*/
 	if res, err := db.Execute(ctx, "INSERT INTO people (external_id, email, first_name, last_name, display_name, type) VALUES (?, ?, ?, ?, ?, ?)", userData.ExternalID, userData.Email, userData.FirstName, userData.LastName, userData.DisplayName, userData.Type); err != nil {
 		log.Println("Error adding a new test person to the database.")
-		return 0, err
+		return err
 	} else if added, err := res.RowsAffected(); err != nil {
 		log.Println("Error getting the last inserted ID from the test person creation.")
-		return 0, err
+		return err
 	} else if added < 1 {
 		log.Println("Don't have an ID value for the newly-created person!")
-		return 0, err
+		return err
 	}
 
-	err := db.QueryRow(ctx, "SELECT person_id FROM people WHERE external_id = ?", userData.ExternalID).Scan(&id)
+	err := db.QueryRow(ctx, "SELECT person_id FROM person WHERE external_id = ?", userData.ExternalID).Scan(&id)
 	if err != nil {
 		log.Println("Error reading the created user's ID")
-		return 0, fmt.Errorf("error reading the created user's id: %v", err)
+		return fmt.Errorf("error reading the created user's id: %v", err)
 	}
 
 	/* Household information is not required for all tests.*/
 	if userData.CreateHousehold && userData.HouseholdName != "" {
 
-		_, err = CreateHousehold(ctx, logger, db, userData, id)
+		_, err = CreateHousehold(ctx, db, userData)
 		if err != nil {
-			return 0, fmt.Errorf("error adding the new test user to a household: %v", err)
+			return fmt.Errorf("error adding the new test user to a household: %v", err)
 		}
 
 	} else {
-		AddHouseholdPerson(ctx, logger, db, userData, id)
+		AddHouseholdPerson(ctx, db, userData)
 	}
 
-	return id, nil
+	return nil
 }
 
 // Checks if the element has the hidden property or hidden class.
@@ -294,18 +342,29 @@ func ElementVisible(node html.Node) bool {
 
 	/* Assume the element is visible by default */
 	return true
+
 }
 
-func LoadExpectedElements(dirPath string, filename string) (map[string]ElementValidation, error) {
-	elementData := map[string]ElementValidation{}
-	dataFile, err := filepath.Abs(filepath.Join(dirPath, filename))
-	if err != nil {
-		return elementData, fmt.Errorf("could not get the full path for the expected elements file: %v", err)
+// Asks the system for an open port I can use for a server or container Pulled from https://stackoverflow.com/a/43425461
+func FreePort() (port int) {
+	if listener, err := net.Listen("tcp", ":0"); err == nil {
+		port = listener.Addr().(*net.TCPAddr).Port
+	} else {
+		log.Fatal("error getting open port", err)
 	}
 
-	jsonFile, err := os.Open(dataFile)
-	if err != nil {
-		return elementData, fmt.Errorf("could not open the expected elements file: %v", err)
+	return
+}
+
+// SetupTestDatabase copies a fresh database containing just the initial
+// migrations table schema to a file with the given name to be used as the
+// database for a set of tests.
+// Both srcDB AND targetDB should be full file paths, not relative.
+func SetupTestDatabase(srcDB string, targetDB string) (int64, error) {
+
+	/* Sanity check the files */
+	if _, err := os.Stat(srcDB); err != nil {
+		return 0, fmt.Errorf("could not find the source DB %s: %v", srcDB, err)
 	}
 	defer func() {
 		_ = jsonFile.Close()
@@ -329,6 +388,7 @@ func LoadExpectedElements(dirPath string, filename string) (map[string]ElementVa
 // properties.
 /* TODO: SHOULD I INCLUDE A NOT ON PAGE CHECK? */
 func ValidatePage(page *html.Node, elements map[string]ElementValidation) error {
+
 	for id, validationInfo := range elements {
 
 		if pageElem, ok := CheckElement(*page, id); !ok {
@@ -366,10 +426,12 @@ func ValidatePage(page *html.Node, elements map[string]ElementValidation) error 
 }
 
 func elementData(pageElem html.Node) string {
+
 	/*
 		Prioritize the value attribute first. Then element body.
 	*/
 	for _, attr := range pageElem.Attr {
+
 		/*
 			Don't return on an empty value attribute value -
 			try element body next.
@@ -377,6 +439,7 @@ func elementData(pageElem html.Node) string {
 		if attr.Key == "value" && attr.Val != "" {
 			return attr.Val
 		}
+
 	}
 
 	if pageElem.FirstChild != nil {
@@ -384,4 +447,5 @@ func elementData(pageElem html.Node) string {
 	}
 
 	return ""
+
 }

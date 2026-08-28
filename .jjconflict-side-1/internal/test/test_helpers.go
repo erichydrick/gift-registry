@@ -216,7 +216,8 @@ func CreateHousehold(
 		return 0, err
 	}
 
-	return AddHouseholdPerson(ctx, logger, db, userData, personID)
+	return AddHouseholdPerson(ctx, db, userData)
+
 }
 
 func CreateSession(
@@ -247,10 +248,34 @@ func CreateSession(
 	}
 
 	return token, nil
+
 }
 
-func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData) (int64, error) {
-	id := int64(0)
+func CreateItem(
+	ctx context.Context,
+	db database.Database,
+	itemData ItemData,
+) (int64, error) {
+
+	res, err := db.Execute(ctx, "INSERT INTO items (external_id, person_id, gift_date, name, notes, quantity, url) VALUES (?, ?, ?, ?, ?, ?, ?)", itemData.ExternalID, itemData.PersonID, itemData.GiftDate, itemData.Name, itemData.Notes, itemData.Quantity, itemData.URL)
+	if err != nil {
+		return 0, fmt.Errorf("error inserting item into test database: %v (%v)", err, itemData)
+	}
+
+	itemID, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("could not get item id from database insert: %v (%v)", err, itemData)
+	}
+
+	return itemID, nil
+
+}
+
+func CreateUser(
+	ctx context.Context,
+	db database.Database,
+	userData *UserData,
+) error {
 
 	/*
 		I don't want to have to make external IDs for every test, just use a string
@@ -286,7 +311,8 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 		return err
 	}
 
-	err := db.QueryRow(ctx, "SELECT person_id FROM people WHERE external_id = ?", userData.ExternalID).Scan(&id)
+	err := db.QueryRow(ctx, "SELECT person_id FROM person WHERE external_id = ?", userData.ExternalID).
+		Scan(&userData.PersonID)
 	if err != nil {
 		log.Println("Error reading the created user's ID")
 		return fmt.Errorf("error reading the created user's id: %v", err)
@@ -343,16 +369,28 @@ func ElementVisible(node html.Node) bool {
 
 }
 
-func LoadExpectedElements(dirPath string, filename string) (map[string]ElementValidation, error) {
-	elementData := map[string]ElementValidation{}
-	dataFile, err := filepath.Abs(filepath.Join(dirPath, filename))
-	if err != nil {
-		return elementData, fmt.Errorf("could not get the full path for the expected elements file: %v", err)
+// Asks the system for an open port I can use for a server or container Pulled from https://stackoverflow.com/a/43425461
+func FreePort() (port int) {
+
+	if listener, err := net.Listen("tcp", ":0"); err == nil {
+		port = listener.Addr().(*net.TCPAddr).Port
+	} else {
+		log.Fatal("error getting open port", err)
 	}
 
-	jsonFile, err := os.Open(dataFile)
-	if err != nil {
-		return elementData, fmt.Errorf("could not open the expected elements file: %v", err)
+	return
+
+}
+
+// SetupTestDatabase copies a fresh database containing just the initial
+// migrations table schema to a file with the given name to be used as the
+// database for a set of tests.
+// Both srcDB AND targetDB should be full file paths, not relative.
+func SetupTestDatabase(srcDB string, targetDB string) (int64, error) {
+
+	/* Sanity check the files */
+	if _, err := os.Stat(srcDB); err != nil {
+		return 0, fmt.Errorf("could not find the source DB %s: %v", srcDB, err)
 	}
 	defer func() {
 		_ = jsonFile.Close()

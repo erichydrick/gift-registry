@@ -214,8 +214,10 @@ func LoginFormHandler(svr *util.ServerUtils) http.Handler {
 		span.SetName("login_form_handler")
 
 		templates := svr.Getenv("TEMPLATES_DIR")
-		tmpl, tmplErr := template.ParseFiles(templates+"/login_page.html", templates+"/login_form.html")
-
+		tmpl, tmplErr := template.ParseFiles(
+			templates+"/login_page.html",
+			templates+"/login_form.html",
+		)
 		if tmplErr != nil {
 			svr.Logger.ErrorContext(ctx, "Error loading the login form template", slog.String("errorMessage", tmplErr.Error()))
 			res.WriteHeader(500)

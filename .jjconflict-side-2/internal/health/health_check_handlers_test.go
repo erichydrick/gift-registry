@@ -10,12 +10,16 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"gift-registry/internal/database"
+	"gift-registry/internal/middleware"
 	"gift-registry/internal/server"
+	"gift-registry/internal/test"
 
 	"golang.org/x/net/html"
 )
@@ -31,15 +35,14 @@ const (
 )
 
 var (
-	badDB            database.Database
-	ctx              context.Context
-	elementsFilePath string
-	env              map[string]string
-	getenv           func(string) string
-	liveDB           database.Database
-	logger           *slog.Logger
-	port             int
-	start            time.Time
+	badDB  database.Database
+	ctx    context.Context
+	liveDB database.Database
+	env    map[string]string
+	getenv func(string) string
+	logger *slog.Logger
+	port   int
+	start  time.Time
 )
 
 func TestMain(m *testing.M) {
@@ -53,13 +56,33 @@ func TestMain(m *testing.M) {
 
 	ctx = context.Background()
 
+	srcDB, err := filepath.Abs(filepath.Join("..", "test", "test.db"))
+	if err != nil {
+		log.Fatal("Could not find test database source: ", err)
+	}
+
 	dbPath, err := filepath.Abs(filepath.Join(".", dbName))
 	if err != nil {
 		log.Fatal("Could not get path for test database ", err)
 	}
 
+	copied, err := test.SetupTestDatabase(srcDB, dbPath)
+	if err != nil {
+		log.Fatal("Could not create test database ", dbPath, ": ", err)
+	}
+
+	logger.InfoContext(
+		ctx,
+		"Created test database",
+		slog.String("filename", dbPath),
+		slog.Int64("size", copied),
+	)
+
+	port = test.FreePort()
+
 	env = map[string]string{
 		"DB_NAME":        dbPath,
+		"PORT":           strconv.Itoa(port),
 		"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations"),
 		"TEMPLATES_DIR":  filepath.Join("..", "..", "cmd", "web", "templates"),
 	}
@@ -72,11 +95,6 @@ func TestMain(m *testing.M) {
 
 	badDB = unhealthyDatabase{
 		db: liveDB,
-	}
-
-	elementsFilePath, err = filepath.Abs(filepath.Join("..", "..", "testing_data", "health_check_data", "expected_outputs"))
-	if err != nil {
-		log.Fatal("Could not load files for output validation!")
 	}
 
 	exitCode := m.Run()
@@ -95,23 +113,72 @@ func TestMain(m *testing.M) {
 // health check endpoint, and validating the output
 func TestHealthCheck(t *testing.T) {
 	testData := []struct {
-		db                 database.Database
-		elementsFile       string
-		expectedHttpStatus int
-		testName           string
+		db                    database.Database
+		expectedDBStatusClass string
+		expectedHttpStatus    int
+		healthy               string
+		testName              string
+		userData              test.UserData
 	}{
 		{
-			db:                 liveDB,
-			elementsFile:       "health_check_healthy_response.json",
-			expectedHttpStatus: http.StatusOK,
-			testName:           "Successful health check",
+			db:                    liveDB,
+			expectedDBStatusClass: "healthy",
+			expectedHttpStatus:    http.StatusOK,
+			healthy:               "Healthy",
+			testName:              "Successful health check",
+			userData: test.UserData{
+				Email:         "successfulHealthCheck@localhost.com",
+				ExternalID:    "success-health-check",
+				FirstName:     "Success",
+				HouseholdName: "Health Check",
+				LastName:      "Check",
+			},
+		},
+		{
+			db:                    badDB,
+			expectedDBStatusClass: "unhealthy",
+			expectedHttpStatus:    http.StatusOK,
+			healthy:               "Unhealthy",
+			testName:              "Database error",
+			userData: test.UserData{
+				Email:         "badDBHealthCheck@localhost.com",
+				ExternalID:    "bad-db-health-check",
+				FirstName:     "Bad",
+				HouseholdName: "Health Check",
+				LastName:      "Database",
+			},
 		},
 	}
 
 	for _, data := range testData {
 		t.Run(data.testName, func(t *testing.T) {
-
 			t.Parallel()
+
+			/*
+				Not using test.db here because when I hit the test case of a "bad"
+				database connectino it fails before it starts (because that "databse"
+				isn't actually real). So always use the live DB for this part, then use
+				the test.db input for everything else.
+			*/
+			token, err := test.CreateSession(
+				ctx,
+				logger,
+				liveDB,
+				data.userData,
+				time.Second*5,
+				userAgent,
+			)
+			if err != nil {
+				t.Fatal("Could not create a test session to validate health checking", err)
+			}
+
+			sessCookie := http.Cookie{
+				HttpOnly: true,
+				MaxAge:   time.Now().UTC().Add(time.Second * 5).Second(),
+				Name:     middleware.SessionCookie,
+				Secure:   true,
+				Value:    token,
+			}
 
 			var emailer server.Emailer = &test.EmailMock{}
 			appHandler, err := server.NewServer(getenv, data.db, logger, emailer)
@@ -126,13 +193,7 @@ func TestHealthCheck(t *testing.T) {
 			if err != nil {
 				t.Fatal("error building health check request", err)
 			}
-			logger.DebugContext(
-				ctx,
-				"Ready to send a health check request",
-				slog.String("uri", req.URL.Port()),
-				slog.String("expectedStatus", data.elementsFile),
-			)
-
+			req.AddCookie(&sessCookie)
 			req.Header.Set("Sec-Fetch-Dest", "document")
 			req.Header.Set("Sec-Fetch-Mode", "same-origin")
 			req.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -164,119 +225,38 @@ func TestHealthCheck(t *testing.T) {
 				return
 			}
 
-			elementsData, err := test.LoadExpectedElements(elementsFilePath, data.elementsFile)
-			if err != nil {
-				t.Fatal("Error loading the field validation data", err)
-			}
-
-			logger.DebugContext(
-				ctx,
-				"Validating the response",
-				slog.String("port", res.Request.URL.Port()),
-				slog.String("filename", data.elementsFile),
-				slog.Any("elements", elementsData),
-			)
-			err = test.ValidatePage(doc, elementsData)
-			if err != nil {
-				t.Fatal("Error validating the health check output", err)
-			}
-
-		})
-	}
-}
-
-// TestHealthCheckBadDB validates the health check endpoint by connecting to the
-// testing database container, starting an application server with an
-// "unhealthy" database, calling the health check endpoint, and validating the
-// output
-func TestHealthCheckBadDB(t *testing.T) {
-	testData := []struct {
-		db                 database.Database
-		elementsFile       string
-		expectedHttpStatus int
-		testName           string
-	}{
-		{
-			db:                 badDB,
-			elementsFile:       "health_check_unhealthy_db_response.json",
-			expectedHttpStatus: http.StatusOK,
-			testName:           "Database error",
-		},
-	}
-
-	for _, data := range testData {
-		t.Run(data.testName, func(t *testing.T) {
-
-			t.Parallel()
-
-			var emailer server.Emailer = &test.EmailMock{}
-			appHandler, err := server.NewServer(getenv, data.db, logger, emailer)
-			if err != nil {
-				t.Fatal("error setting up the test handler", err)
-			}
-
-			testServer := httptest.NewServer(appHandler)
-			defer testServer.Close()
-
-			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/health", nil)
-			if err != nil {
-				t.Fatal("error building health check request", err)
-			}
-			logger.DebugContext(
-				ctx,
-				"Ready to send a health check request",
-				slog.String("uri", req.URL.Port()),
-				slog.String("expectedStatus", data.elementsFile),
-			)
-
-			req.Header.Set("Sec-Fetch-Dest", "document")
-			req.Header.Set("Sec-Fetch-Mode", "same-origin")
-			req.Header.Set("Sec-Fetch-Site", "same-origin")
-			req.Header.Set("User-Agent", userAgent)
-
-			res, err := http.DefaultClient.Do(req)
-			defer func() {
-				if res != nil && res.Body != nil {
-					_ = res.Body.Close()
-				}
-			}()
-			if err != nil {
-				logger.Error(fmt.Sprintf("Server call failed %v", err))
-			}
-
-			if res.StatusCode != data.expectedHttpStatus {
-				t.Fatal("Expected a ", data.expectedHttpStatus, "status, but got a ", res.StatusCode, "response")
-			}
-
-			doc, err := html.Parse(res.Body)
-			if err != nil {
-				t.Fatal("error parsing the HTML content from the response", err)
-			}
-
 			/*
-				Don't try to validate document contents if there was an HTTP error
+				I don't care about the actual values per se (and if I make this parallel
+				they won't be reliable), I just care that I'm picking up the correct number
+				of data points and that they have data.
 			*/
-			if data.expectedHttpStatus != http.StatusOK {
-				return
+			dbStatusFound := false
+			for node := range doc.Descendants() {
+
+				if slices.Contains(node.Attr, html.Attribute{Key: "id", Val: "db-health-status"}) {
+
+					dbStatusFound = true
+
+					if !slices.Contains(node.Attr, html.Attribute{Key: "class", Val: data.expectedDBStatusClass}) {
+						t.Fatal("invalid database health status class, expected ", data.expectedDBStatusClass)
+					}
+
+				}
+
+				if node.Type == html.ElementNode &&
+					slices.Contains(node.Attr, html.Attribute{Key: "id", Val: "overall-health"}) &&
+					node.FirstChild.Data != "" {
+
+					if strings.TrimSpace(node.FirstChild.Data) != data.healthy {
+						t.Fatalf("Expected an overall health status of %s, but was %s", data.healthy, node.FirstChild.Data)
+					}
+				}
+
 			}
 
-			elementsData, err := test.LoadExpectedElements(elementsFilePath, data.elementsFile)
-			if err != nil {
-				t.Fatal("Error loading the field validation data", err)
+			if !dbStatusFound {
+				t.Fatal("no database health status found!")
 			}
-
-			logger.DebugContext(
-				ctx,
-				"Validating the response",
-				slog.String("port", res.Request.URL.Port()),
-				slog.String("filename", data.elementsFile),
-				slog.Any("elements", elementsData),
-			)
-			err = test.ValidatePage(doc, elementsData)
-			if err != nil {
-				t.Fatal("Error validating the health check output", err)
-			}
-
 		})
 	}
 }
