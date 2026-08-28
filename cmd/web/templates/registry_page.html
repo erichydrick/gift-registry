@@ -18,13 +18,17 @@
         </h1>
     </div>
 
-    <div id="registries" class="centered content flex-column overflow-y shadowed">
-        Registries go here (will need to add filters/searching later)
-        <!-- TODO: LOOP OVER ITEMS FOR PEOPLE AND SHOW THEM -->
+    <div id="registries">
+        <div id="registry-error-message" class="centered content error flex-column overflow-y shadowed" {{if eq .ErrorMessage ""}}hidden{{end}}>{{.ErrorMessage}}</div>
+        {{range .Registries}}
+        <div id="registry-{{.PersonID}}" class="centered content flex-column overflow-y shadowed">
+            {{template "registry-table" .}}
+        </div>
+        {{end}}
     </div>
 
     <!-- TODO: REGISTER GIFT BUTTON -- MOVE TO BOTTOM RIGHT OF DISPLAY VIEW -->
-    <button id="register-gift-btn" class="btn-contained create-new-btn primary">Register Gift</button>
+    <button id="register-gift-btn" class="btn-contained create-new-btn primary">Request Gift</button>
 
 </body>
 

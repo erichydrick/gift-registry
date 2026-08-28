@@ -33,7 +33,7 @@
     <div id="email-group-{{.ExternalID}}" class="form-input-group">
         <label for="email-{{.ExternalID}}">Email address</label>
         <div class="flex-column">
-            <input type="text" id="email-{{.ExternalID}}" name="email" value="{{.Email}}" disabled />
+            <input type="text" id="email-{{.ExternalID}}" name="email" value="{{if .Email.Valid}}{{.Email.String}}{{end}}" disabled />
             <small>This is where the login verification code is sent</small>
         </div>
     </div>

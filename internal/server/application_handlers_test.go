@@ -11,16 +11,12 @@ import (
 
 func TestIndexHandler(t *testing.T) {
 	testData := []struct {
-		elements       map[string]bool
+		elementsFile   string
 		expectedStatus int
 		testName       string
 	}{
 		{
-			elements: map[string]bool{
-				"application-header": true,
-				"page-content":       true,
-				"redirector":         true,
-			},
+			elementsFile:   "index_page_elements.json",
 			expectedStatus: 200,
 			testName:       "Success",
 		},
@@ -57,13 +53,16 @@ func TestIndexHandler(t *testing.T) {
 				t.Fatal("error parsing the HTML content from the response", err)
 			}
 
-			for id, visible := range data.elements {
-				if pageElem, ok := test.CheckElement(*doc, id); ok == false {
-					t.Fatal("Could not find element", id, "on the page")
-				} else if elemVis := test.ElementVisible(pageElem); elemVis != test.ElementVisible(pageElem) {
-					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
-				}
+			elementsData, err := test.LoadExpectedElements(elementsFilePath, data.elementsFile)
+			if err != nil {
+				t.Fatal("Could not load expected output for validation!", err)
 			}
+
+			err = test.ValidatePage(doc, elementsData)
+			if err != nil {
+				t.Fatal("Could not validate expected output!", err)
+			}
+
 		})
 	}
 }

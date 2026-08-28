@@ -2,21 +2,15 @@ package server_test
 
 import (
 	"database/sql"
-	"fmt"
-	"log"
-	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/net/html"
 
-	"gift-registry/internal/database"
 	"gift-registry/internal/middleware"
-	"gift-registry/internal/server"
 	"gift-registry/internal/test"
 )
 
@@ -26,81 +20,43 @@ const (
 
 func TestLoginEmailValidationForm(t *testing.T) {
 	testData := []struct {
+		elementsFile       string
+		email              string
 		expectedEmailSent  bool
-		expectedFields     map[string]bool
 		expectedStatusCode int
 		testName           string
-		userData           test.UserData
 	}{
 		{
-			expectedEmailSent: true,
-			expectedFields: map[string]bool{
-				"verify-code":       true,
-				"verify-code-error": false,
-				"verify-email":      false,
-				"verify-error":      false,
-			},
+			elementsFile:       "verification_page_elements_no_errors.json",
+			email:              "validemailtest@localhost.com",
+			expectedEmailSent:  true,
 			expectedStatusCode: 200,
 			testName:           "Valid email",
-			userData: test.UserData{
-				DisplayName: "Allgood",
-				Email:       "validemailtest@localhost.com",
-				FirstName:   "Valid",
-				LastName:    "Email",
-			},
 		},
 		{
-			expectedEmailSent: false,
-			expectedFields: map[string]bool{
-				"verify-code":       true,
-				"verify-code-error": false,
-				"verify-email":      false,
-				"verify-error":      false,
-			},
+			elementsFile:       "verification_page_elements_no_errors.json",
+			email:              "unregistereduser@localhost.com",
+			expectedEmailSent:  false,
 			expectedStatusCode: 200,
 			testName:           "Invalid user",
-			userData: test.UserData{
-				DisplayName: "Whoami",
-				Email:       "unregistereduser@localhost.com",
-				FirstName:   "Unregistered",
-				LastName:    "User",
-			},
 		},
 		{
-			expectedEmailSent: false,
-			expectedFields: map[string]bool{
-				"login-email":       true,
-				"login-email-error": true,
-				"login-error":       false,
-			},
+			elementsFile:       "login_form_elements_email_error.json",
+			email:              "no",
+			expectedEmailSent:  false,
 			expectedStatusCode: 200,
 			testName:           "Invalid email",
-			userData: test.UserData{
-				Email:     "no",
-				FirstName: "John",
-				LastName:  "Dont",
-			},
 		},
 	}
 
 	for _, data := range testData {
+
 		t.Run(data.testName, func(t *testing.T) {
+
 			t.Parallel()
 
-			/*
-				Pre-populate the database with a registered user email if needed.
-			*/
-			if data.expectedEmailSent {
-
-				err := test.CreateUser(ctx, db, &data.userData)
-				if err != nil {
-					t.Fatal("Error creating a person record to use for testing", err)
-				}
-
-			}
-
 			form := url.Values{}
-			form.Add("email", data.userData.Email)
+			form.Add("email", data.email)
 
 			req, err := http.NewRequestWithContext(ctx, "POST", testServer.URL+"/login", strings.NewReader(form.Encode()))
 			if err != nil {
@@ -130,22 +86,20 @@ func TestLoginEmailValidationForm(t *testing.T) {
 				t.Fatal("error parsing reponse body")
 			}
 
-			for id, visible := range data.expectedFields {
-				if pageElem, ok := test.CheckElement(*doc, id); ok == false {
-					t.Fatal("Could not find element", id, "on the page")
-				} else if elemVis := test.ElementVisible(pageElem); elemVis != test.ElementVisible(pageElem) {
-					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
-				}
+			elementsData, err := test.LoadExpectedElements(elementsFilePath, data.elementsFile)
+			if err != nil {
+				t.Fatal("Could not load expected elements for output validation!", err)
 			}
 
-			/*
-				We could have triggered more than 1 email because we tested agaisnt more
-				than 1 browser.
-			*/
-			if sent, ok := emailer.(*test.EmailMock).EmailToSent[data.userData.Email]; ok && sent != data.expectedEmailSent {
+			err = test.ValidatePage(doc, elementsData)
+			if err != nil {
+				t.Fatal("Output did not conform to expected values!", err)
+			}
+
+			if sent, ok := emailer.(*test.EmailMock).EmailToSent[data.email]; ok && sent != data.expectedEmailSent {
 				t.Fatalf("Should the verification email have been sent? (%v) Was it? (%v)",
 					data.expectedEmailSent,
-					emailer.(*test.EmailMock).EmailToSent[data.userData.Email],
+					emailer.(*test.EmailMock).EmailToSent[data.email],
 				)
 			}
 		})
@@ -153,28 +107,16 @@ func TestLoginEmailValidationForm(t *testing.T) {
 }
 
 func TestLoginForm(t *testing.T) {
-	/* Sets up a testing logger */
-	options := &slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true}
-	handler := slog.NewTextHandler(os.Stderr, options)
-	logger = slog.New(handler)
 
 	testData := []struct {
-		expectedStatus   int
-		expectedElements map[string]bool
-		envOverrides     map[string]string
-		hiddenElements   []string
-		testName         string
+		elementsFile   string
+		expectedStatus int
+		testName       string
 	}{
 		{
+			elementsFile:   "login_page_elements_no_errors.json",
 			expectedStatus: 200,
-			expectedElements: map[string]bool{
-				"application-header": true,
-				"login-email":        true,
-				"login-email-error":  false,
-				"login-error":        false,
-				"login-form":         true,
-			},
-			testName: "Success",
+			testName:       "Success",
 		},
 	}
 
@@ -205,12 +147,14 @@ func TestLoginForm(t *testing.T) {
 				t.Fatal("error parsing reponse body")
 			}
 
-			for id, visible := range data.expectedElements {
-				if pageElem, ok := test.CheckElement(*doc, id); ok == false {
-					t.Fatal("Could not find element", id, "on the page")
-				} else if elemVis := test.ElementVisible(pageElem); elemVis != test.ElementVisible(pageElem) {
-					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
-				}
+			elementsData, err := test.LoadExpectedElements(elementsFilePath, data.elementsFile)
+			if err != nil {
+				t.Fatal("Could not load expected elements for output validation!", err)
+			}
+
+			err = test.ValidatePage(doc, elementsData)
+			if err != nil {
+				t.Fatal("Output did not conform to expected values!", err)
 			}
 		})
 	}
@@ -218,143 +162,74 @@ func TestLoginForm(t *testing.T) {
 
 func TestVerification(t *testing.T) {
 	testData := []struct {
-		attempts             int
-		createSession        bool
-		duration             time.Duration
+		elementsFile         string
+		email                string
 		enteredToken         string
-		expectedFields       map[string]bool
 		expectedStatusCode   int
 		location             string
 		testName             string
 		token                string
-		userData             test.UserData
 		verificationSuccess  bool
 		verifyEmailPopulated bool
 	}{
 		{
-			attempts:      0,
-			createSession: true,
-			duration:      -5 * time.Minute,
-			enteredToken:  "expired-token",
-			expectedFields: map[string]bool{
-				"login-email":       true,
-				"login-email-error": true,
-				"login-form":        true,
-				"login-submit":      true,
-			},
-			expectedStatusCode: 200,
-			testName:           "Expired token",
-			token:              "expired-token",
-			userData: test.UserData{
-				Email:     "expiredTokenTest@localhost.com",
-				FirstName: "Expired",
-				LastName:  "Token",
-			},
+			elementsFile:         "verification_failed_back_to_login.json",
+			email:                "expiredTokenTest@localhost.com",
+			enteredToken:         "expired-token",
+			expectedStatusCode:   200,
+			testName:             "Expired token",
+			token:                "expired-token",
 			verifyEmailPopulated: false,
 			verificationSuccess:  false,
 		},
 		{
-			attempts:      server.MaxAttempts + 5,
-			createSession: true,
-			duration:      5 * time.Minute,
-			enteredToken:  "thisiswrong",
-			expectedFields: map[string]bool{
-				"login-email":       true,
-				"login-email-error": false,
-				"login-form":        true,
-				"login-submit":      true,
-			},
-			expectedStatusCode: 200,
-			token:              "unentered-exceeded-token",
-			userData: test.UserData{
-				Email:     "exceededAttemptsTokenTest@localhost.com",
-				FirstName: "Exceeded",
-				LastName:  "Attempts",
-			},
+			elementsFile:         "verification_failed_back_to_login.json",
+			email:                "exceededAttemptsTokenTest@localhost.com",
+			enteredToken:         "thisiswrong",
+			expectedStatusCode:   200,
+			token:                "unentered-exceeded-token",
 			testName:             "Failed attempts exceeded",
 			verifyEmailPopulated: false,
 			verificationSuccess:  false,
 		},
 		{
-			attempts: server.MaxAttempts - 1, duration: 5 * time.Minute,
-			createSession: true,
-			enteredToken:  "thisiswrong",
-			expectedFields: map[string]bool{
-				"login-email":       true,
-				"login-email-error": false,
-				"login-form":        true,
-				"login-submit":      true,
-			},
-			expectedStatusCode: 200,
-			testName:           "Failed attempts at max",
-			token:              "unentered-max-token",
-			userData: test.UserData{
-				Email:     "maxedFailuresTokenTest@localhost.com",
-				FirstName: "Maxed",
-				LastName:  "Failures",
-			},
+			elementsFile:         "verification_failed_back_to_login.json",
+			email:                "maxedFailuresTokenTest@localhost.com",
+			enteredToken:         "thisiswrong",
+			expectedStatusCode:   200,
+			testName:             "Failed attempts at max",
+			token:                "unentered-max-token",
 			verifyEmailPopulated: false,
 			verificationSuccess:  false,
 		},
 		{
-			attempts:      0,
-			createSession: true,
-			duration:      5 * time.Minute,
-			enteredToken:  "thisiswrong",
-			expectedFields: map[string]bool{
-				"verify-code":  true,
-				"verify-email": false,
-				"verify-error": true,
-				"verify-form":  true,
-			},
-			expectedStatusCode: 200,
-			testName:           "Failed attempts more remaining",
-			token:              "unentered-more-tries-token",
-			userData: test.UserData{
-				Email:     "moreTriesTokenTest@localhost.com",
-				FirstName: "More",
-				LastName:  "Tries",
-			},
+			elementsFile:         "verification_failed_stay_on_page.json",
+			email:                "moreTriesTokenTest@localhost.com",
+			enteredToken:         "thisiswrong",
+			expectedStatusCode:   200,
+			testName:             "Failed attempts more remaining",
+			token:                "unentered-more-tries-token",
 			verifyEmailPopulated: true,
 			verificationSuccess:  false,
 		},
 		{
-			attempts:      0,
-			createSession: false,
-			duration:      5 * time.Minute,
-			enteredToken:  "invalid-email-token",
-			expectedFields: map[string]bool{
-				"login-email":       true,
-				"login-email-error": false,
-				"login-form":        true,
-				"login-submit":      true,
-			},
-			expectedStatusCode: 200,
-			testName:           "Failed invalid email",
-			token:              "invalid-email-token",
-			userData: test.UserData{
-				Email:     "invalidEmail@localhost.com",
-				FirstName: "Invalid",
-				LastName:  "Email",
-			},
+			elementsFile:         "verification_failed_back_to_login.json",
+			email:                "invalidEmail@localhost.com",
+			enteredToken:         "invalid-email-token",
+			expectedStatusCode:   200,
+			testName:             "Failed invalid email",
+			token:                "invalid-email-token",
 			verifyEmailPopulated: false,
 			verificationSuccess:  false,
 		},
 		{
-			attempts:           0,
-			createSession:      true,
-			duration:           5 * time.Minute,
-			enteredToken:       "valid-token",
-			expectedFields:     map[string]bool{},
-			expectedStatusCode: http.StatusOK,
-			location:           "/registry",
-			testName:           "Successful verification",
-			token:              "valid-token",
-			userData: test.UserData{
-				Email:     "successfulVerification@localhost.com",
-				FirstName: "Successful",
-				LastName:  "Verification",
-			},
+			elementsFile:         "registry_page.json",
+			email:                "registeredUser@localhost.com",
+			enteredToken:         "registered-user-token",
+			expectedStatusCode:   http.StatusOK,
+			location:             "/registry",
+			testName:             "Successful verification",
+			token:                "valid-token",
 			verifyEmailPopulated: false,
 			verificationSuccess:  true,
 		},
@@ -364,20 +239,9 @@ func TestVerification(t *testing.T) {
 		t.Run(data.testName, func(t *testing.T) {
 			t.Parallel()
 
-			if data.createSession {
-
-				log.Println("Need to create a user and associated token", data.userData, data.token, data.duration, data.attempts)
-				err := createToken(db, data.userData, data.token, data.duration, data.attempts)
-				if err != nil {
-					t.Fatal("Error creating a verification record to use for testing: ", err)
-				}
-				log.Println("User and associated token created successfully")
-
-			}
-
 			form := url.Values{}
 			form.Add("code", data.enteredToken)
-			form.Add("email", data.userData.Email)
+			form.Add("email", data.email)
 
 			req, err := http.NewRequestWithContext(ctx, "POST", testServer.URL+"/verify", strings.NewReader(form.Encode()))
 			if err != nil {
@@ -413,13 +277,16 @@ func TestVerification(t *testing.T) {
 				t.Fatal("Error parsing the HTML response")
 			}
 
-			for id, visible := range data.expectedFields {
-				if pageElem, ok := test.CheckElement(*doc, id); ok == false {
-					t.Fatal("Could not find element", id, "on the page")
-				} else if elemVis := test.ElementVisible(pageElem); elemVis != test.ElementVisible(pageElem) {
-					t.Fatal("Expected element", id, "to have visibility =", visible, "but it was", elemVis)
-				}
+			expectedElements, err := test.LoadExpectedElements(elementsFilePath, data.elementsFile)
+			if err != nil {
+				t.Fatal("Could not load expected HTML elements from", data.elementsFile, ":", err)
 			}
+
+			err = test.ValidatePage(doc, expectedElements)
+			if err != nil {
+				t.Fatal("HTML validation failed!", err)
+			}
+
 		})
 	}
 }
@@ -429,7 +296,7 @@ func TestLogout(t *testing.T) {
 		createSession    bool
 		expectedElements map[string]test.ElementValidation
 		testName         string
-		userData         test.UserData
+		token            string
 	}{
 		{
 			createSession: true,
@@ -439,14 +306,7 @@ func TestLogout(t *testing.T) {
 				"login-email-error": {Visible: false},
 			},
 			testName: "Successful logout",
-			userData: test.UserData{
-				CreateHousehold: false,
-				Email:           "testsuccessfullogout@localhost.com",
-				ExternalID:      "successful-logout-test",
-				FirstName:       "Test",
-				LastName:        "User",
-				Type:            "NORMAL",
-			},
+			token:    "logout-sucess-session",
 		},
 		{
 			createSession: false,
@@ -456,14 +316,7 @@ func TestLogout(t *testing.T) {
 				"login-email-error": {Visible: false},
 			},
 			testName: "Logout with no session",
-			userData: test.UserData{
-				CreateHousehold: false,
-				Email:           "testlogoutwithoutsession@localhost.com",
-				ExternalID:      "logout-no-session-test",
-				FirstName:       "Test",
-				LastName:        "User",
-				Type:            "NORMAL",
-			},
+			token:    "not-in-database",
 		},
 	}
 
@@ -471,23 +324,13 @@ func TestLogout(t *testing.T) {
 		t.Run(data.testName, func(t *testing.T) {
 			t.Parallel()
 
-			/* This allows for testing logout eithout an active session */
-			token := ""
-			if data.createSession {
-				if sessionID, err := test.CreateSession(ctx, db, &data.userData, 5*time.Minute, userAgent); err != nil {
-					t.Fatal("Could not create session for testing logout")
-				} else {
-					token = sessionID
-				}
-			}
-
 			sessCookie := http.Cookie{
 				HttpOnly: true,
 				MaxAge:   time.Now().UTC().Add(time.Minute * 5).Second(),
 				Name:     middleware.SessionCookie,
 				SameSite: http.SameSiteStrictMode,
 				Secure:   true,
-				Value:    token,
+				Value:    data.token,
 			}
 
 			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/logout", nil)
@@ -532,7 +375,7 @@ func TestLogout(t *testing.T) {
 
 			var foundSessionID string
 			var foundPersonID int64
-			err = db.QueryRow(ctx, "SELECT session_id, person_id FROM session WHERE session_id = ?", token).
+			err = db.QueryRow(ctx, "SELECT session_id, person_id FROM sessions WHERE session_id = ?", data.token).
 				Scan(&foundSessionID, foundPersonID)
 			if err == nil || err != sql.ErrNoRows {
 				t.Fatal("Error confirming logout")
@@ -549,40 +392,4 @@ func TestLogout(t *testing.T) {
 			}
 		})
 	}
-}
-
-func createToken(
-	dbConn database.Database,
-	userData test.UserData,
-	token string,
-	duration time.Duration,
-	attempts int,
-) error {
-
-	err := test.CreateUser(ctx, dbConn, &userData)
-	if err != nil {
-		return fmt.Errorf("error creating a test user to associate with the verification token: %v", err)
-	}
-
-	expires := time.Now().Add(duration).UTC()
-
-	/*
-		Do the insertion and make sure it worked. We're going to t.Fatal() if this
-		fails, so I'm not going to worry about Rollback() calls erroring, the
-		database is going to be deleted anyhow
-	*/
-	if res, err := dbConn.Execute(ctx, "INSERT INTO verification (person_id, token, token_expiration, attempts) VALUES (?, ?, ?, ?)", userData.PersonID, token, expires, attempts); err != nil {
-		log.Println("Error adding a new test verification record to the database.")
-		return fmt.Errorf("error executing insert operation: %v", err)
-	} else if added, err := res.RowsAffected(); err != nil {
-		log.Println("Error getting the last inserted ID from the test person creation.")
-		return fmt.Errorf("no rows inserted into the table: %v", err)
-	} else if added < 1 {
-		log.Println("No rows were added to the verification table!")
-		return fmt.Errorf("did not complete insertion for test verification details: %v", err)
-	}
-
-	logger.DebugContext(ctx, "Single verification record added!")
-
-	return nil
 }

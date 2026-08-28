@@ -1,0 +1,187 @@
+{
+    "registry-error-message": {
+        "visible": false
+    },
+    "registry-person-one": {
+        "visible": true
+    },
+    "registry-person-one-label": {
+        "visible": true,
+        "value": "Mom TestFamily's Registry"
+    },
+    "registry-person-two": {
+        "visible": true
+    },
+    "registry-person-two-label": {
+        "visible": true,
+        "value": "Dad TestFamily's Registry"
+    },
+    "registry-person-three": {
+        "visible": true
+    },
+    "registry-person-three-label": {
+        "visible": true,
+        "value": "Son TestFamily's Registry"
+    },
+    "registry-person-four": {
+        "visible": true
+    },
+    "registry-person-four-label": {
+        "visible": true,
+        "value": "Daughter TestFamily's Registry"
+    },
+    "registry-person-five": {
+        "visible": true
+    },
+    "registry-person-five-label": {
+        "visible": true,
+        "value": "Grandpa Grandtester's Registry"
+    },
+    "registry-person-six": {
+        "visible": true
+    },
+    "registry-person-six-label": {
+        "visible": true,
+        "value": "Grandma Grandtester's Registry"
+    },
+    "registry-person-seven": {
+        "visible": true
+    },
+    "registry-person-seven-label": {
+        "visible": true,
+        "value": "Aunt OtherFamily's Registry"
+    },
+    "registry-person-eight": {
+        "visible": true
+    },
+    "registry-person-eight-label": {
+        "visible": true,
+        "value": "Uncle OtherFamily's Registry"
+    },
+    "item-gift-1-name": {
+        "visible": true,
+        "value": "New bike"
+    },
+    "item-gift-1-quantity": {
+        "visible": true,
+        "value": "0 / 1"
+    },
+    "item-gift-1-url": {
+        "visible": true,
+        "value": ""
+    },
+    "item-gift-1-notes": {
+        "visible": true,
+        "value": "He outgrew his last one"
+    },
+    "item-gift-1-claimant-0": {
+        "visible": true,
+        "value": "Grandma & Grandpa"
+    },
+    "item-gift-1-claimant-1": {
+        "visible": true,
+        "value": "The OtherFamily"
+    },
+    "item-gift-1-claim-0-gift-date": {
+        "visible": true
+    },
+    "item-gift-1-claim-1-gift-date": {
+        "visible": true
+    },
+    "item-gift-1-give-on": {
+        "visible": true
+    },
+    "item-gift-2-name": {
+        "visible": true,
+        "value": "New helmet"
+    },
+    "item-gift-2-quantity": {
+        "visible": true,
+        "value": "1 / 1"
+    },
+    "item-gift-2-url": {
+        "visible": true,
+        "value": "https://www.walmart.com"
+    },
+    "item-gift-2-notes": {
+        "visible": true,
+        "value": ""
+    },
+    "item-gift-2-claimants": {
+        "visible": true,
+        "value": ""
+    },
+    "item-gift-2-give-on": {
+        "visible": true,
+        "value": ""
+    },
+    "item-gift-3-name": {
+        "visible": true,
+        "value": "Headbands"
+    },
+    "item-gift-3-quantity": {
+        "visible": true,
+        "value": "6 / 10"
+    },
+    "item-gift-3-url": {
+        "visible": true,
+        "value": "https://www.amazon.com"
+    },
+    "item-gift-3-notes": {
+        "visible": true,
+        "value": "She can never have too many"
+    },
+    "item-gift-3-claimant-0": {
+        "visible": true,
+        "value": "Grandma & Grandpa"
+    },
+    "item-gift-3-claim-0-gift-date": {
+        "visible": true
+    },
+    "item-gift-4-name": {
+        "visible": true,
+        "value": "Doll"
+    },
+    "item-gift-4-quantity": {
+        "visible": true,
+        "value": "1 / 1"
+    },
+    "item-gift-4-url": {
+        "visible": true,
+        "value": ""
+    },
+    "item-gift-4-notes": {
+        "visible": true,
+        "value": ""
+    },
+    "item-gift-4-claimants": {
+        "visible": true,
+        "value": ""
+    },
+    "item-gift-4-give-on": {
+        "visible": true
+    },
+    "item-gift-5-name": {
+        "visible": true,
+        "value": "KitchenAid Attachments"
+    },
+    "item-gift-5-quantity": {
+        "visible": true,
+        "value": "2 / 3"
+    },
+    "item-gift-5-url": {
+        "visible": true,
+        "value": ""
+    },
+    "item-gift-5-notes": {
+        "visible": true,
+        "value": "Have the pasta one"
+    },
+    "item-gift-5-claimant-0": {
+        "visible": true,
+        "value": "The OtherFamily"
+    },
+    "item-gift-5-claim-0-gift-date": {
+        "visible": true
+    }
+}

@@ -1,4 +1,4 @@
-INSERT INTO person (
+INSERT INTO people (
     email, 
     first_name, 
     last_name,

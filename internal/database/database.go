@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -38,8 +37,8 @@ type DBConn struct {
 const (
 	/* DB cleanup happens every 5 minutes by default */
 	defaultTickInterval       = 300000
-	cleanupSessions           = "DELETE FROM session WHERE expiration <= CURRENT_TIMESTAMP"
-	cleanupVerificationTokens = "DELETE FROM verification WHERE token_expiration <= CURRENT_TIMESTAMP"
+	cleanupSessions           = "DELETE FROM sessions WHERE expiration <= CURRENT_TIMESTAMP"
+	cleanupVerificationTokens = "DELETE FROM verifications WHERE token_expiration <= CURRENT_TIMESTAMP"
 	name                      = "net.hydrick.gift-registry/database"
 )
 
@@ -274,16 +273,6 @@ func Connect(ctx context.Context, logger *slog.Logger, getenv func(string) strin
 			return dbConn, nil
 		}
 
-	}
-
-	/*
-		There's an os.ErrNotExist error I COULD check for, but other errors likely
-		indicate problems reading from the file, which is just as bad.
-	*/
-
-	if _, err := os.Stat(dbName); err != nil {
-		return DBConn{},
-			fmt.Errorf("error checking for db file %s: %v", dbName, os.ErrNotExist)
 	}
 
 	dbConn = DBConn{

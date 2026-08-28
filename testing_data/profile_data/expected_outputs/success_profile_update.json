@@ -1,0 +1,32 @@
+{
+  "profile-form-success-update": { "visible": true },
+  "profile-header-success-update": {
+    "value": "Sudo Modification Profile",
+    "visible": true
+  },
+  "first-name-success-update": {
+    "value": "Completed",
+    "visible": true
+  },
+  "last-name-success-update": {
+    "value": "Modification",
+    "visible": true
+  },
+  "display-name-success-update": {
+    "value": "Sudo",
+    "visible": true
+  },
+  "email-success-update": {
+    "value": "completedupdate@localhost.com",
+    "visible": true
+  },
+  "household-name-success-update": {
+    "value": "New House Success",
+    "visible": true
+  },
+  "profile-submit-success-update": { "visible": true },
+  "first-name-error-success-update": { "visible": false },
+  "household-error-success-update": { "visible": false },
+  "last-name-error-success-update": { "visible": false },
+  "profile-error-success-update": { "visible": false }
+}

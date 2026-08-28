@@ -4,6 +4,7 @@
 package profile
 
 import (
+	"database/sql"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -27,7 +28,7 @@ type profileErrors struct {
 type userData struct {
 	DisplayName   string
 	Errors        profileErrors
-	Email         string
+	Email         sql.NullString
 	ExternalID    string
 	FirstName     string
 	HouseholdName string
@@ -52,10 +53,10 @@ const (
 	externalIDLookupQuery = `SELECT p.person_id, 
 			p.external_id,
 			p.type
-		FROM person p
-			INNER JOIN household_person hp on hp.person_id = p.person_id
+		FROM people p
+			INNER JOIN household_people hp on hp.person_id = p.person_id
 		WHERE p.external_id = ?
-			AND (hp.person_id = ? OR (p.type = 'MANAGED' AND hp.household_id = (SELECT household_id FROM household_person WHERE person_id = ?)))`
+			AND (hp.person_id = ? OR (p.type = 'MANAGED' AND hp.household_id = (SELECT household_id FROM household_people WHERE person_id = ?)))`
 	lookupManagedProfilesQuery = `SELECT p.person_id, 
 			h.household_id,
 			p.external_id,
@@ -64,9 +65,9 @@ const (
 			p.display_name, 
 			p.type,
 			h.name
-		FROM person p
-			INNER JOIN household_person hp ON p.person_id = hp.person_id
-			INNER JOIN household h ON hp.household_id = h.household_id
+		FROM people p
+			INNER JOIN household_people hp ON p.person_id = hp.person_id
+			INNER JOIN households h ON hp.household_id = h.household_id
 		WHERE h.household_id = ?
 			AND p.type = 'MANAGED'`
 	lookupPersonQuery = `SELECT p.person_id, 
@@ -78,16 +79,16 @@ const (
 			p.display_name, 
 			p.type,
 			h.name
-		FROM person p
-			INNER JOIN household_person hp ON p.person_id = hp.person_id
-			INNER JOIN household h ON hp.household_id = h.household_id
+		FROM people p
+			INNER JOIN household_people hp ON p.person_id = hp.person_id
+			INNER JOIN households h ON hp.household_id = h.household_id
 		WHERE p.person_id = ?`
-	updatePersonQuery = `UPDATE person SET email = ?, first_name = ?, last_name = ?, display_name = ? 
+	updatePersonQuery = `UPDATE people SET email = ?, first_name = ?, last_name = ?, display_name = ? 
 		WHERE external_id = ?`
-	updateHouseholdQuery = `UPDATE household 
+	updateHouseholdQuery = `UPDATE households
 		SET name = ? 
 		WHERE household_id IN 
-			(SELECT household_id FROM household_person WHERE person_id = ?);
+			(SELECT household_id FROM household_people WHERE person_id = ?);
 	`
 	varcharMaxLength = 255
 )
@@ -135,6 +136,13 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 				&person.HouseholdName,
 			)
 		if err != nil {
+			svr.Logger.ErrorContext(
+				ctx,
+				"Error looking up profile information",
+				slog.String("errorMessage", err.Error()),
+				slog.String("query", lookupPersonQuery),
+				slog.Any("params", personID),
+			)
 			person = userData{
 				Errors: profileErrors{
 					ErrorMessage: "Could not look up profile information.",
@@ -153,6 +161,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 				span.SetAttributes(attribute.String("error_message", err.Error()))
 				return
 			}
+			return
 		}
 
 		/*
@@ -255,8 +264,11 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 		}
 
 		user := userData{
-			DisplayName:   req.FormValue("displayName"),
-			Email:         req.FormValue("email"),
+			DisplayName: req.FormValue("displayName"),
+			Email: sql.NullString{
+				Valid:  true,
+				String: req.FormValue("email"),
+			},
 			ExternalID:    req.FormValue("externalID"),
 			FirstName:     req.FormValue("firstName"),
 			HouseholdName: req.FormValue("householdName"),
@@ -271,7 +283,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			attribute.String("updated_external_id", externalID),
 			attribute.String("updated_type", user.Type),
 			attribute.String("updated_display_name", user.DisplayName),
-			attribute.String("updated_email", user.Email),
+			attribute.String("updated_email", user.Email.String),
 			attribute.String("updated_first_name", user.FirstName),
 			attribute.String("updated_household_name", user.HouseholdName),
 			attribute.String("updated_last_name", user.LastName),
@@ -454,12 +466,12 @@ func (user *userData) validate() {
 	}
 
 	/* The below fields aren't part of the profile cards for managed profiles */
-	if user.Email == "" && user.Type != "MANAGED" {
+	if user.Email.String == "" && user.Type != "MANAGED" {
 
 		user.Errors.Email = "Email address is required for non-managed person accounts"
 		user.valid = false
 
-	} else if len(user.Email) > varcharMaxLength {
+	} else if len(user.Email.String) > varcharMaxLength {
 
 		user.Errors.Email = fmt.Sprintf("Email address can't be more than %d characters", varcharMaxLength)
 		user.valid = false
@@ -500,7 +512,7 @@ func (user userData) String() string {
 	return fmt.Sprintf(
 		"{DisplayName: %s, Email: %s, ExternalID: %s, FirstName: %s, LastName: %s, Type: %s, HouseholdName: %s, Errors: %s}",
 		user.DisplayName,
-		user.Email,
+		user.Email.String,
 		user.ExternalID,
 		user.FirstName,
 		user.LastName,

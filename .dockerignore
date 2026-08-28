@@ -4,3 +4,4 @@ LICENSE
 README.md
 docker-compose.yml
 init.sh
+testing_data/
