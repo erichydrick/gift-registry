@@ -1,0 +1,14 @@
+{
+    "verify-code": {
+        "visible": true
+    },
+    "verify-code-error": {
+        "visible": false
+    },
+    "verify-email": {
+        "visible": false
+    },
+    "verify-error": {
+        "visible": false
+    }
+}

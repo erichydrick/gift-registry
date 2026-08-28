@@ -5,7 +5,7 @@ build:
 	clear
 	go build -o main cmd/api/main.go
 
-docker-build: test
+docker-build: test 
 	docker build -t gift-registry -f Dockerfile .
 
 env-local: 

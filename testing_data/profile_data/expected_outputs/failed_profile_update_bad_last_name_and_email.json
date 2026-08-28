@@ -1,0 +1,32 @@
+{
+  "profile-form-bad-last-email": { "visible": true },
+  "profile-header-bad-last-email": {
+    "value": "Root  Profile",
+    "visible": true
+  },
+  "first-name-bad-last-email": {
+    "value": "FailedLastAndEmail",
+    "visible": true
+  },
+  "last-name-bad-last-email": {
+    "value": "",
+    "visible": true
+  },
+  "display-name-bad-last-email": {
+    "value": "Root",
+    "visible": true
+  },
+  "email-bad-last-email": {
+    "value": "",
+    "visible": true
+  },
+  "household-name-bad-last-email": {
+    "value": "Failed update last name and email house",
+    "visible": true
+  },
+  "profile-submit-bad-last-email": { "visible": true },
+  "first-name-error-bad-last-email": { "visible": false },
+  "household-error-bad-last-email": { "visible": false },
+  "last-name-error-bad-last-email": { "visible": true },
+  "profile-error-bad-last-email": { "visible": false }
+}

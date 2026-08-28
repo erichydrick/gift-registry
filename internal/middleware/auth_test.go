@@ -13,36 +13,21 @@ import (
 
 func TestAuthMiddleware(t *testing.T) {
 	testData := []struct {
-		createSession  bool
-		elements       map[string]test.ElementValidation
-		email          string
+		elementsFile   string
 		expectedStatus int
-		firstName      string
-		lastName       string
 		path           string
-		sessionAgent   string
 		sfDest         string
 		sfMode         string
 		sfSite         string
 		testName       string
-		timeLeft       time.Duration
+		token          string
 		userAgent      string
 		validSession   bool
 	}{
 		{
-			createSession: false,
-			elements: map[string]test.ElementValidation{
-				"login-form":        {Visible: true},
-				"login-email":       {Visible: true},
-				"login-submit":      {Visible: true},
-				"login-email-error": {Visible: false},
-			},
-			email:          "unprotectedEndpointTest@localhost.com",
+			elementsFile:   "middleware_auth_login_page_elements.json",
 			expectedStatus: http.StatusOK,
-			firstName:      "Unprotected",
-			lastName:       "Endpoint",
 			path:           "/login",
-			sessionAgent:   test.DefaultUserAgent,
 			sfDest:         "document",
 			sfMode:         "same-origin",
 			sfSite:         "same-origin",
@@ -51,172 +36,93 @@ func TestAuthMiddleware(t *testing.T) {
 			validSession:   false,
 		},
 		{
-			createSession: false,
-			elements: map[string]test.ElementValidation{
-				"login-form":        {Visible: true},
-				"login-email":       {Visible: true},
-				"login-submit":      {Visible: true},
-				"login-email-error": {Visible: false},
-			},
-			email:          "protectedEndpointNoCookieTest@localhost.com",
+			elementsFile:   "middleware_auth_login_page_elements.json",
 			expectedStatus: http.StatusOK,
-			firstName:      "Protected",
-			lastName:       "Endpoint",
 			path:           "/registry",
-			sessionAgent:   test.DefaultUserAgent,
 			testName:       "Protected endpoint no cookie",
-			timeLeft:       5 * time.Minute,
 			userAgent:      test.DefaultUserAgent,
 			validSession:   true,
 		},
 		{
-			createSession: true,
-			elements: map[string]test.ElementValidation{
-				"login-form":        {Visible: true},
-				"login-email":       {Visible: true},
-				"login-submit":      {Visible: true},
-				"login-email-error": {Visible: false},
-			},
-			email:          "idNotInDBTest@localhost.com",
+			elementsFile:   "middleware_auth_login_page_elements.json",
 			expectedStatus: http.StatusOK,
-			firstName:      "Idnot",
-			lastName:       "Indb",
 			path:           "/registry",
-			sessionAgent:   test.DefaultUserAgent,
 			sfDest:         "document",
 			sfMode:         "same-origin",
 			sfSite:         "same-origin",
 			testName:       "Unauthorized access ID not in DB",
-			timeLeft:       5 * time.Minute,
 			userAgent:      test.DefaultUserAgent,
 			validSession:   false,
 		},
 		{
-			createSession: true,
-			elements: map[string]test.ElementValidation{
-				"login-form":        {Visible: true},
-				"login-email":       {Visible: true},
-				"login-submit":      {Visible: true},
-				"login-email-error": {Visible: false},
-			},
-			email:          "sessionExpiredTest@localhost.com",
+			elementsFile:   "middleware_auth_login_page_elements.json",
 			expectedStatus: http.StatusOK,
-			firstName:      "Session",
-			lastName:       "Expired",
 			path:           "/registry",
-			sessionAgent:   test.DefaultUserAgent,
 			sfDest:         "document",
 			sfMode:         "same-origin",
 			sfSite:         "same-origin",
 			testName:       "Unauthorized access session expired",
-			timeLeft:       -1 * time.Minute,
+			token:          "expired-session-token",
 			userAgent:      test.DefaultUserAgent,
 			validSession:   true,
 		},
 		{
-			createSession: true,
-			elements: map[string]test.ElementValidation{
-				"login-form":        {Visible: true},
-				"login-email":       {Visible: true},
-				"login-submit":      {Visible: true},
-				"login-email-error": {Visible: false},
-			},
-			email:          "wrongUserAgentTest@localhost.com",
+			elementsFile:   "middleware_auth_login_page_elements.json",
 			expectedStatus: http.StatusOK,
-			firstName:      "Wrong",
-			lastName:       "Agent",
 			path:           "/registry",
-			sessionAgent:   test.DefaultUserAgent,
 			sfDest:         "document",
 			sfMode:         "same-origin",
 			sfSite:         "same-origin",
 			testName:       "Unauthorized access wrong user agent",
-			timeLeft:       5 * time.Minute,
+			token:          "wrong-agent-token",
 			userAgent:      "nottherightuseragent",
 			validSession:   true,
 		},
 		{
-			createSession: true,
-			elements: map[string]test.ElementValidation{
-				"registry-data": {Visible: true},
-			},
-			email:          "validSessionTest@localhost.com",
+			elementsFile:   "middleware_auth_registry_page_elements.json",
 			expectedStatus: http.StatusOK,
-			firstName:      "Valid",
-			lastName:       "Session",
 			path:           "/registry",
-			sessionAgent:   test.DefaultUserAgent,
 			sfDest:         "document",
 			sfMode:         "same-origin",
 			sfSite:         "same-origin",
 			testName:       "Valid session",
-			timeLeft:       5 * time.Minute,
+			token:          "protected-endpoint-access",
 			userAgent:      test.DefaultUserAgent,
 			validSession:   true,
 		},
 		{
-			createSession: true,
-			elements: map[string]test.ElementValidation{
-				"login-form":        {Visible: true},
-				"login-email":       {Visible: true},
-				"login-submit":      {Visible: true},
-				"login-email-error": {Visible: false},
-			},
-			email:          "invalidSecFetchDest@localhost.com",
+			elementsFile:   "middleware_auth_login_page_elements.json",
 			expectedStatus: http.StatusOK,
-			firstName:      "Login",
-			lastName:       "User",
 			path:           "/login",
-			sessionAgent:   test.DefaultUserAgent,
 			sfDest:         "test document",
 			sfMode:         "same-origin",
 			sfSite:         "same-origin",
 			testName:       "Invalid Sec-Fetch-Dest",
-			timeLeft:       5 * time.Minute,
+			token:          "protected-endpoint-access",
 			userAgent:      test.DefaultUserAgent,
 			validSession:   true,
 		},
 		{
-			createSession: true,
-			elements: map[string]test.ElementValidation{
-				"login-form":        {Visible: true},
-				"login-email":       {Visible: true},
-				"login-submit":      {Visible: true},
-				"login-email-error": {Visible: false},
-			},
-			email:          "invalidSecFetchMode@localhost.com",
+			elementsFile:   "middleware_auth_login_page_elements.json",
 			expectedStatus: http.StatusOK,
-			firstName:      "Login",
-			lastName:       "User",
 			path:           "/login",
-			sessionAgent:   test.DefaultUserAgent,
 			sfDest:         "document",
 			sfMode:         "haxxoring",
 			sfSite:         "same-origin",
 			testName:       "Invalid Sec-Fetch-Mode",
-			timeLeft:       5 * time.Minute,
+			token:          "protected-endpoint-access",
 			userAgent:      test.DefaultUserAgent,
 			validSession:   true,
 		},
 		{
-			createSession: true,
-			elements: map[string]test.ElementValidation{
-				"login-form":        {Visible: true},
-				"login-email":       {Visible: true},
-				"login-submit":      {Visible: true},
-				"login-email-error": {Visible: false},
-			},
-			email:          "invalidSecFetchSite@localhost.com",
+			elementsFile:   "middleware_auth_login_page_elements.json",
 			expectedStatus: http.StatusOK,
-			firstName:      "Login",
-			lastName:       "User",
 			path:           "/login",
-			sessionAgent:   test.DefaultUserAgent,
 			sfDest:         "document",
 			sfMode:         "same-origin",
 			sfSite:         "evil site, inc",
 			testName:       "Invalid Sec-Fetch-Site",
-			timeLeft:       5 * time.Minute,
+			token:          "protected-endpoint-access",
 			userAgent:      test.DefaultUserAgent,
 			validSession:   true,
 		},
@@ -228,27 +134,16 @@ func TestAuthMiddleware(t *testing.T) {
 
 			sessCookie := http.Cookie{}
 
-			if data.createSession {
-
-				userData := test.UserData{
-					Email:     data.email,
-					FirstName: data.firstName,
-					LastName:  data.lastName,
-				}
-
-				sessionID, err := test.CreateSession(ctx, logger, db, userData, data.timeLeft, data.sessionAgent)
-				if err != nil {
-					t.Fatal("Error setting up test session", err)
-				}
+			if data.token != "" {
 
 				sessCookie.Name = middleware.SessionCookie
-				sessCookie.MaxAge = time.Now().UTC().Add(data.timeLeft).Second()
+				sessCookie.MaxAge = time.Now().UTC().Add(5 * time.Minute).Second()
 				sessCookie.HttpOnly = true
 				sessCookie.Secure = true
 				sessCookie.SameSite = http.SameSiteStrictMode
 
 				if data.validSession {
-					sessCookie.Value = sessionID
+					sessCookie.Value = data.token
 				} else {
 					sessCookie.Value = "Invalid Session ID"
 				}
@@ -284,7 +179,12 @@ func TestAuthMiddleware(t *testing.T) {
 				t.Fatal("Error parsing the HTML response", err)
 			}
 
-			err = test.ValidatePage(doc, data.elements)
+			expectedElements, err := test.LoadExpectedElements(elementsFilePath, data.elementsFile)
+			if err != nil {
+				t.Fatal("Could not load expected elements", err)
+			}
+
+			err = test.ValidatePage(doc, expectedElements)
 			if err != nil {
 				t.Fatal("Page validation failed:", err)
 			}

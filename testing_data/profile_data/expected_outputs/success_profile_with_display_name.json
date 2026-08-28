@@ -1,0 +1,32 @@
+{
+  "profile-header-succ-disp-name": {
+    "value": "Root Named Profile",
+    "visible": true
+  },
+  "profile-form-succ-disp-name": { "visible": true },
+  "first-name-succ-disp-name": {
+    "value": "Display",
+    "visible": true
+  },
+  "last-name-succ-disp-name": {
+    "value": "Named",
+    "visible": true
+  },
+  "display-name-succ-disp-name": {
+    "value": "Root",
+    "visible": true
+  },
+  "email-succ-disp-name": {
+    "value": "displayName@localhost.com",
+    "visible": true
+  },
+  "household-name-succ-disp-name": {
+    "value": "Disp",
+    "visible": true
+  },
+  "profile-submit-succ-disp-name": { "visible": true },
+  "first-name-error-succ-disp-name": { "visible": false },
+  "household-error-succ-disp-name": { "visible": false },
+  "last-name-error-succ-disp-name": { "visible": false },
+  "profile-error-succ-disp-name": { "visible": false }
+}

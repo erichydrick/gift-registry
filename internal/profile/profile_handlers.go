@@ -95,9 +95,7 @@ const (
 // ProfileHandler looks up the person information and returns it, along with
 // any other managed profiles in the household.
 func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
-
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-
 		ctx := req.Context()
 		span := trace.SpanFromContext(ctx)
 		span.SetName("profile_handler")
@@ -230,16 +228,12 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
-
 	})
-
 }
 
 // Updates the person's information with the values provided from form input.
 func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
-
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-
 		ctx := req.Context()
 		span := trace.SpanFromContext(ctx)
 		span.SetName("profile_update")
@@ -302,11 +296,13 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 				&user.ExternalID,
 				&user.Type,
 			)
-
-		/* We can't validate the profile details, so we can't do an update */
+			/* We can't validate the profile details, so we can't do an update */
 		if err != nil {
 			svr.Logger.ErrorContext(ctx,
 				"Error looking up profile to update",
+				slog.String("query", externalIDLookupQuery),
+				slog.String("externalID", externalID),
+				slog.Int64("personID", personID),
 				slog.String("errorMessage", err.Error()),
 			)
 			user.Errors.ErrorMessage = "Could not update profile"
@@ -420,9 +416,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
-
 	})
-
 }
 
 func (user *userData) validate() {
@@ -486,7 +480,6 @@ func (user *userData) validate() {
 }
 
 func (user userData) String() string {
-
 	errors := "{}"
 	if user.Errors.ErrorMessage != "" ||
 		user.Errors.FirstName != "" ||
@@ -502,7 +495,6 @@ func (user userData) String() string {
 			user.Errors.Email,
 			user.Errors.Household,
 		)
-
 	}
 
 	return fmt.Sprintf(
