@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	DeleteSessionQuery = "DELETE FROM session WHERE session_id = ?"
-	ExtendSessionQuery = "UPDATE session SET expiration = ? WHERE session_id = ?"
-	LookupSessionQuery = "SELECT session_id, person_id, expiration, user_agent FROM session WHERE session_id = ?"
+	DeleteSessionQuery = "DELETE FROM sessions WHERE session_id = ?"
+	ExtendSessionQuery = "UPDATE sessions SET expiration = ? WHERE session_id = ?"
+	LookupSessionQuery = "SELECT session_id, person_id, expiration, user_agent FROM sessions WHERE session_id = ?"
 	SessionCookie      = "gift-registry-session"
 )
 

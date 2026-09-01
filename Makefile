@@ -25,7 +25,7 @@ fmt:
 	go fmt ./...
 
 install: 
-	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install honnef.co/go/tools/cmd/staticcheck@v0.8.0
 
 local-down:
 	clear

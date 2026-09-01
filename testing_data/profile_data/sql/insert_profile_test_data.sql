@@ -1,4 +1,4 @@
-INSERT INTO person (person_id, external_id, email, display_name, first_name, last_name, `type`) 
+INSERT INTO people (person_id, external_id, email, display_name, first_name, last_name, `type`) 
     VALUES (1, 'succ-disp-name', 'displayName@localhost.com', 'Root', 'Display', 'Named', 'NORMAL'),
         (2, 'succ-def-disp-name', 'nodisplayname@localhost.com', 'Display', 'Display', 'Nameless', 'NORMAL'),
         (3, 'manager-profile', 'profilewithkids@localhost.com', 'Root', 'Display', 'Named', 'NORMAL'),
@@ -15,12 +15,12 @@ INSERT INTO person (person_id, external_id, email, display_name, first_name, las
         (14, 'update-managed-profile-2', '', 'NotYet', 'HasBeen', 'Modified', 'MANAGED'),
         (15, 'valid-household', 'validhouseholdname@localhost.com', 'Valid', 'Valid', 'Household', 'NORMAL');
 
-INSERT INTO household (household_id, external_id, name) 
+INSERT INTO households (household_id, external_id, name) 
     VALUES (1, 'disp-household', 'Disp'),
         (2, 'update-profile-existing-household', 'Existing Household Success'),
         (3, 'update-household-name-succ', 'Valid household');
 
-INSERT INTO household_person (household_id, person_id) 
+INSERT INTO household_people (household_id, person_id) 
     VALUES (1, 1),
         (1, 2),
         (1, 3),
@@ -35,7 +35,7 @@ INSERT INTO household_person (household_id, person_id)
         (2, 14),
         (3, 15);
 
-INSERT INTO session (session_id, person_id, expiration, user_agent) 
+INSERT INTO sessions (session_id, person_id, expiration, user_agent) 
     VALUES ('succ-disp-name-token', 1, Datetime('now', '+5 minutes'), 'test-user-agent'),
         ('succ-def-disp-name-token', 2, Datetime('now', '+5 minutes'), 'test-user-agent'),
         ('manager-profile-token', 3, Datetime('now', '+5 minutes'), 'test-user-agent'),

@@ -44,26 +44,10 @@ func TestMain(m *testing.M) {
 	handler := slog.NewTextHandler(os.Stderr, options)
 	logger = slog.New(handler)
 
-	srcDB, err := filepath.Abs(filepath.Join("..", "test", "test.db"))
-	if err != nil {
-		log.Fatal("Could not find test database source: ", err)
-	}
-
 	dbPath, err := filepath.Abs(filepath.Join(".", dbName))
 	if err != nil {
 		log.Fatal("Could not get path for test database ", err)
 	}
-
-	copied, err := test.SetupTestDatabase(srcDB, dbPath)
-	if err != nil {
-		log.Fatal("Could not create test database ", dbPath, ": ", err)
-	}
-	logger.InfoContext(
-		ctx,
-		"Created test database",
-		slog.String("filename", dbPath),
-		slog.Int64("size", copied),
-	)
 
 	env := map[string]string{
 		"DATA_MIGRATIONS":  filepath.Join("..", "..", "testing_data", "middleware_data", "sql"),

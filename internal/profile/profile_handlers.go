@@ -52,10 +52,10 @@ const (
 	externalIDLookupQuery = `SELECT p.person_id, 
 			p.external_id,
 			p.type
-		FROM person p
-			INNER JOIN household_person hp on hp.person_id = p.person_id
+		FROM people p
+			INNER JOIN household_people hp on hp.person_id = p.person_id
 		WHERE p.external_id = ?
-			AND (hp.person_id = ? OR (p.type = 'MANAGED' AND hp.household_id = (SELECT household_id FROM household_person WHERE person_id = ?)))`
+			AND (hp.person_id = ? OR (p.type = 'MANAGED' AND hp.household_id = (SELECT household_id FROM household_people WHERE person_id = ?)))`
 	lookupManagedProfilesQuery = `SELECT p.person_id, 
 			h.household_id,
 			p.external_id,
@@ -64,9 +64,9 @@ const (
 			p.display_name, 
 			p.type,
 			h.name
-		FROM person p
-			INNER JOIN household_person hp ON p.person_id = hp.person_id
-			INNER JOIN household h ON hp.household_id = h.household_id
+		FROM people p
+			INNER JOIN household_people hp ON p.person_id = hp.person_id
+			INNER JOIN households h ON hp.household_id = h.household_id
 		WHERE h.household_id = ?
 			AND p.type = 'MANAGED'`
 	lookupPersonQuery = `SELECT p.person_id, 
@@ -78,16 +78,16 @@ const (
 			p.display_name, 
 			p.type,
 			h.name
-		FROM person p
-			INNER JOIN household_person hp ON p.person_id = hp.person_id
-			INNER JOIN household h ON hp.household_id = h.household_id
+		FROM people p
+			INNER JOIN household_people hp ON p.person_id = hp.person_id
+			INNER JOIN households h ON hp.household_id = h.household_id
 		WHERE p.person_id = ?`
-	updatePersonQuery = `UPDATE person SET email = ?, first_name = ?, last_name = ?, display_name = ? 
+	updatePersonQuery = `UPDATE people SET email = ?, first_name = ?, last_name = ?, display_name = ? 
 		WHERE external_id = ?`
-	updateHouseholdQuery = `UPDATE household 
+	updateHouseholdQuery = `UPDATE households
 		SET name = ? 
 		WHERE household_id IN 
-			(SELECT household_id FROM household_person WHERE person_id = ?);
+			(SELECT household_id FROM household_people WHERE person_id = ?);
 	`
 	varcharMaxLength = 255
 )
@@ -135,6 +135,13 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 				&person.HouseholdName,
 			)
 		if err != nil {
+			svr.Logger.ErrorContext(
+				ctx,
+				"Error looking up profile information",
+				slog.String("errorMessage", err.Error()),
+				slog.String("query", lookupPersonQuery),
+				slog.Any("params", personID),
+			)
 			person = userData{
 				Errors: profileErrors{
 					ErrorMessage: "Could not look up profile information.",
@@ -153,6 +160,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 				span.SetAttributes(attribute.String("error_message", err.Error()))
 				return
 			}
+			return
 		}
 
 		/*
