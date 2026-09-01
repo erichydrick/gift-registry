@@ -72,7 +72,7 @@ func AddHouseholdPerson(ctx context.Context, logger *slog.Logger, db database.Da
 		Add the test user to the household
 	*/
 
-	if res, err := db.Execute(ctx, "INSERT INTO household_person (household_id, person_id) VALUES(?, ?)", householdID, personID); err != nil {
+	if res, err := db.Execute(ctx, "INSERT INTO household_people (household_id, person_id) VALUES(?, ?)", householdID, personID); err != nil {
 		return 0, fmt.Errorf("could not add test user to newly-created household %v: %v", householdID, err)
 	} else if added, err := res.RowsAffected(); err != nil {
 		log.Println("Error getting the last inserted ID from the test household creation.")
@@ -229,7 +229,7 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 		fails, so I'm not going to worry about Rollback() calls erroring, the
 		database is going to be deleted anyhow
 	*/
-	if res, err := db.Execute(ctx, "INSERT INTO person (external_id, email, first_name, last_name, display_name, type) VALUES (?, ?, ?, ?, ?, ?)", userData.ExternalID, userData.Email, userData.FirstName, userData.LastName, userData.DisplayName, userData.Type); err != nil {
+	if res, err := db.Execute(ctx, "INSERT INTO people (external_id, email, first_name, last_name, display_name, type) VALUES (?, ?, ?, ?, ?, ?)", userData.ExternalID, userData.Email, userData.FirstName, userData.LastName, userData.DisplayName, userData.Type); err != nil {
 		log.Println("Error adding a new test person to the database.")
 		return 0, err
 	} else if added, err := res.RowsAffected(); err != nil {
@@ -240,7 +240,7 @@ func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, 
 		return 0, err
 	}
 
-	err := db.QueryRow(ctx, "SELECT person_id FROM person WHERE external_id = ?", userData.ExternalID).Scan(&id)
+	err := db.QueryRow(ctx, "SELECT person_id FROM people WHERE external_id = ?", userData.ExternalID).Scan(&id)
 	if err != nil {
 		log.Println("Error reading the created user's ID")
 		return 0, fmt.Errorf("error reading the created user's id: %v", err)
@@ -322,32 +322,6 @@ func LoadExpectedElements(dirPath string, filename string) (map[string]ElementVa
 	}
 
 	return elementData, nil
-}
-
-// SetupTestDatabase copies a fresh database containing just the initial
-// migrations table schema to a file with the given name to be used as the
-// database for a set of tests.
-// Both srcDB AND targetDB should be full file paths, not relative.
-func SetupTestDatabase(srcDB string, targetDB string) (int64, error) {
-	/* Sanity check the files */
-	if _, err := os.Stat(srcDB); err != nil {
-		return 0, fmt.Errorf("could not find the source DB %s: %v", srcDB, err)
-	}
-
-	src, err := os.Open(srcDB)
-	if err != nil {
-		return 0, fmt.Errorf("could not open the source DB file %s: %v", srcDB, err)
-	}
-	defer src.Close()
-
-	dest, err := os.Create(targetDB)
-	if err != nil {
-		return 0, fmt.Errorf("could not create the test DB file %s: %v", targetDB,
-			err)
-	}
-	defer dest.Close()
-
-	return io.Copy(dest, src)
 }
 
 // ValidatePage goes through the mapping of elements to validation details and

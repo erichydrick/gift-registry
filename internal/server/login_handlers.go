@@ -58,24 +58,24 @@ type verificationRecord struct {
 
 const (
 	DeleteSessionStatement = `DELETE
-		FROM session
+		FROM sessions
 		WHERE session_id = ?`
 	DeleteSessionForPersonStatement = `DELETE
-		FROM session
+		FROM sessions
 		WHERE person_id = ?`
 	DeleteVerificationTokenStatement = `DELETE 
-		FROM verification 
+		FROM verifications 
 		WHERE person_id = ?`
 	GetVerificationQuery = `SELECT v.person_id, v.token, v.token_expiration, v.attempts 
-		FROM verification v 
-			INNER JOIN person p ON p.person_id = v.person_id 
+		FROM verifications v 
+			INNER JOIN people p ON p.person_id = v.person_id 
 		WHERE p.email = ?`
 	InsertSessionStatement = `INSERT INTO session(session_id, person_id, expiration, user_agent) 
 		VALUES (?, ?, ?, ?)`
 	LoginFailed            = "Login process failed. Please try again"
 	MaxAttempts            = 3
 	SelectUserByEmailQuery = `SELECT person_id, email 
-		FROM person 
+		FROM people 
 		WHERE email = ?`
 	SetVerificationTokenStatement = `INSERT INTO verification (token, token_expiration, person_id) 
 		VALUES (?, ?, ?) 

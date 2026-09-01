@@ -3,7 +3,6 @@ module gift-registry
 go 1.24.1
 
 require (
-	github.com/lib/pq v1.10.9
 	go.opentelemetry.io/contrib/bridges/otelslog v0.13.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
 	go.opentelemetry.io/otel v1.38.0
@@ -23,7 +22,7 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdoutlog v0.14.0
 	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.38.0
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.38.0
-	turso.tech/database/tursogo v0.5.3
+	turso.tech/database/tursogo v0.7.2
 )
 
 require (
@@ -31,7 +30,7 @@ require (
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/moby/go-archive v0.1.0 // indirect
-	github.com/tursodatabase/turso-go-platform-libs v0.5.3 // indirect
+	github.com/tursodatabase/turso-go-platform-libs v0.7.2 // indirect
 )
 
 require (

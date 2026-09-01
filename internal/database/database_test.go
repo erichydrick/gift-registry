@@ -36,26 +36,10 @@ func TestMain(m *testing.M) {
 	handler := slog.NewTextHandler(os.Stderr, options)
 	logger = slog.New(handler)
 
-	srcDB, err := filepath.Abs(filepath.Join("..", "test", "test.db"))
-	if err != nil {
-		log.Fatal("Could not find test database source: ", err)
-	}
-
 	dbPath, err := filepath.Abs(filepath.Join(".", dbName))
 	if err != nil {
 		log.Fatal("Could not get path for test database ", err)
 	}
-
-	copied, err := test.SetupTestDatabase(srcDB, dbPath)
-	if err != nil {
-		log.Fatal("Could not create test database ", dbPath, ": ", err)
-	}
-	logger.InfoContext(
-		ctx,
-		"Created test database",
-		slog.String("filename", dbPath),
-		slog.Int64("size", copied),
-	)
 
 	env = map[string]string{
 		"DATA_MIGRATIONS": filepath.Join("..", "..", "testing_data", "database_data", "sql"),
@@ -118,11 +102,11 @@ func TestCleanup(t *testing.T) {
 
 			time.Sleep(1 * time.Second)
 
-			if _, err := db.Query(ctx, "SELECT expiration FROM session WHERE session_id = $1", data.token); err != nil {
+			if _, err := db.Query(ctx, "SELECT expiration FROM sessions WHERE session_id = $1", data.token); err != nil {
 
 				t.Fatal("Error checking session cleanup", err)
 
-			} else if _, err := db.Query(ctx, "SELECT * FROM verification WHERE token = $1", data.token); err != nil {
+			} else if _, err := db.Query(ctx, "SELECT * FROM verifications WHERE token = $1", data.token); err != nil {
 
 				t.Fatal("Verification token did not clean up!", err)
 
@@ -135,24 +119,21 @@ func TestCleanup(t *testing.T) {
 }
 
 // TestConnect validates connecting to the database and confirms the
-// Connect() function behaves correctly when successful and when
-// connection fails due to a bad config.
+// Connect() function behaves correctly regardless of connecting to an
+// existing file.
 func TestConnect(t *testing.T) {
 	testData := []struct {
 		dbName        string
-		errorExpected bool
 		migrationsDir string
 		testName      string
 	}{
 		{
-			dbName:        dbName,
-			errorExpected: false,
-			testName:      "Successful connection",
+			dbName:   dbName,
+			testName: "Successful connection",
 		},
 		{
-			dbName:        dbName + ".not_on_fs",
-			errorExpected: true,
-			testName:      "Failed connection",
+			dbName:   dbName + ".not_on_fs",
+			testName: "Auto-create DB file",
 		},
 	}
 
@@ -170,13 +151,8 @@ func TestConnect(t *testing.T) {
 			}
 
 			db, err := database.Connect(ctx, logger, getenv)
-			if !data.errorExpected && err != nil {
-				t.Fatal(t.Name(), ": successful connection attempt failed! ", err)
-			} else if data.errorExpected && err == nil {
-
-				_ = db.Close()
-				t.Fatal(t.Name(), ": have a connection even though it should have failed!")
-
+			if err != nil {
+				t.Fatal(t.Name(), ": connection attempt failed! ", err)
 			}
 
 			_ = db.Close()

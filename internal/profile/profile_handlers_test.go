@@ -43,9 +43,9 @@ const (
 			p.display_name, 
 			p.email,
 			h.name
-		FROM person p 
-			INNER JOIN household_person hp ON hp.person_id = p.person_id
-			INNER JOIN household h ON h.household_id = hp.household_id
+		FROM people p 
+			INNER JOIN household_people hp ON hp.person_id = p.person_id
+			INNER JOIN households h ON h.household_id = hp.household_id
 		WHERE p.external_id = $1`
 )
 
@@ -72,26 +72,10 @@ func TestMain(m *testing.M) {
 		log.Fatal("Could not find the directory holding expected test output files.")
 	}
 
-	srcDB, err := filepath.Abs(filepath.Join("..", "test", "test.db"))
-	if err != nil {
-		log.Fatal("Could not find test database source: ", err)
-	}
-
 	dbPath, err := filepath.Abs(filepath.Join(".", dbName))
 	if err != nil {
 		log.Fatal("Could not get path for test database ", err)
 	}
-
-	copied, err := test.SetupTestDatabase(srcDB, dbPath)
-	if err != nil {
-		log.Fatal("Could not create test database ", dbPath, ": ", err)
-	}
-	logger.InfoContext(
-		ctx,
-		"Created test database",
-		slog.String("filename", dbPath),
-		slog.Int64("size", copied),
-	)
 
 	env := map[string]string{
 		"DB_NAME":          dbPath,
@@ -180,7 +164,7 @@ func TestProfilePage(t *testing.T) {
 			if err != nil {
 				t.Fatal("Error getting the profile page!", err)
 			} else if res.StatusCode != http.StatusOK {
-				t.Fatal("Got an error status from the server!")
+				t.Fatal("Got an error status from the server! (", res.StatusCode, ")")
 			}
 
 			doc, err := html.Parse(res.Body)

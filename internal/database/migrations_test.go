@@ -4,7 +4,6 @@ import (
 	"gift-registry/internal/database"
 	"gift-registry/internal/test"
 	"log"
-	"log/slog"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -64,23 +63,11 @@ func TestRunMigrations(t *testing.T) {
 
 		t.Run(data.testName, func(t *testing.T) {
 
-			/*
-				Since I'm testing migrations, use a fresh database for each test case
-			*/
-			srcDB, err := filepath.Abs(filepath.Join("..", "test", "test.db"))
-			if err != nil {
-				t.Fatal("Could not find test database source: ", err)
-			}
-
 			testDB, err := filepath.Abs(data.testName + ".db")
 			if err != nil {
 				t.Fatal("Could not get path for the test database (", data.testName, ".db)")
 			}
 
-			copied, err := test.SetupTestDatabase(srcDB, testDB)
-			if err != nil {
-				log.Fatal("Could not create test database ", testDB, ": ", err)
-			}
 			defer func() {
 				err := test.CleanupDatabase(testDB)
 				if err != nil {
@@ -88,12 +75,6 @@ func TestRunMigrations(t *testing.T) {
 				}
 
 			}()
-			logger.InfoContext(
-				ctx,
-				"Created test database",
-				slog.String("filename", testDB),
-				slog.Int64("size", copied),
-			)
 
 			/* We're also using a fresh set of migrations per test case */
 			getenv := func(key string) string {

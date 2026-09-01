@@ -21,7 +21,7 @@ type migrationFile struct {
 
 const (
 	FindMigrationsQuery      = "SELECT filename FROM migrations ORDER BY filename ASC"
-	InsertMigrationStatement = "INSERT INTO migrations (filename, appliedOn) VALUES (?, CURRENT_TIMESTAMP)"
+	InsertMigrationStatement = "INSERT INTO migrations (filename, applied_on) VALUES (?, CURRENT_TIMESTAMP)"
 )
 
 var (
@@ -66,10 +66,14 @@ func (dbConn DBConn) runMigrations(
 	*/
 	migrationsApplied, err := dbConn.readAppliedMigrations(ctx)
 	if err != nil {
-		dbConn.logger.ErrorContext(ctx, "Error reading applied migrations from the database", slog.String("errorMessage", err.Error()))
-		errs = append(errs, fmt.Errorf("error reading applied migrations from the database: %s", err.Error()))
-		return
+		createTblErr := dbConn.createMigrationsTable(ctx)
+		if createTblErr != nil {
+			dbConn.logger.ErrorContext(ctx, "Error reading applied migrations from the database", slog.String("errorMessage", err.Error()))
+			errs = append(errs, fmt.Errorf("error reading applied migrations from the database: %s", err.Error()))
+			return
+		}
 	}
+
 	dbConn.logger.DebugContext(ctx, "Have the list of migrations applied", slog.Any("migrationsApplied", migrationsApplied))
 
 	/*
@@ -225,34 +229,27 @@ func (dbConn DBConn) applyMigration(
 	}
 
 	rawMigration := string(sqlBytes)
-	statements := strings.SplitSeq(rawMigration, ";")
-	for sqlStatement := range statements {
 
-		/*
-			If the file ends with a ";", Go picks up an empty string as a "final" token.
-		*/
-		if len(strings.TrimSpace(sqlStatement)) < 1 {
+	if len(strings.TrimSpace(rawMigration)) < 1 {
 
-			continue
+		return 0, fmt.Errorf("empty migration file")
 
-		}
+	}
 
-		result, err := tx.ExecContext(ctx, sqlStatement)
-		if err != nil {
-			logger.ErrorContext(ctx, "Error applying migration",
-				slog.String("sqlStatement", sqlStatement),
-				slog.String("errorMessage", err.Error()))
-			return 0, fmt.Errorf("error applying migration statement \"%s\": %s", sqlStatement, err.Error())
-		}
+	result, err := tx.ExecContext(ctx, rawMigration)
+	if err != nil {
+		logger.ErrorContext(ctx, "Error applying migration",
+			slog.String("sqlStatement", rawMigration),
+			slog.String("errorMessage", err.Error()))
+		return 0, fmt.Errorf("error applying migration statement \"%s\": %s", rawMigration, err.Error())
+	}
 
-		if rowsAffected, err := result.RowsAffected(); err != nil {
-			logger.ErrorContext(ctx, "Error getting the number of rows impacted",
-				slog.String("errorMessage", err.Error()))
-			return 0, fmt.Errorf("error getting the number of rows impacted by sql statement \"%s\": %s", sqlStatement, err.Error())
-		} else {
-			totalRowsAffected += rowsAffected
-		}
-
+	if rowsAffected, err := result.RowsAffected(); err != nil {
+		logger.ErrorContext(ctx, "Error getting the number of rows impacted",
+			slog.String("errorMessage", err.Error()))
+		return 0, fmt.Errorf("error getting the number of rows impacted by sql statement \"%s\": %s", rawMigration, err.Error())
+	} else {
+		totalRowsAffected += rowsAffected
 	}
 
 	logger.DebugContext(
@@ -263,6 +260,14 @@ func (dbConn DBConn) applyMigration(
 		slog.String("statement", rawMigration),
 	)
 	return totalRowsAffected, nil
+
+}
+
+// Create the migrations table if this is a fresh file
+func (dbConn DBConn) createMigrationsTable(ctx context.Context) error {
+
+	_, err := dbConn.Execute(ctx, "CREATE TABLE migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, filename VARCHAR (255), applied_on TIMESTAMP)")
+	return err
 
 }
 

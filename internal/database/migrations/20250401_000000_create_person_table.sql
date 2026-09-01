@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS person (
+CREATE TABLE IF NOT EXISTS people (
     person_id INTEGER PRIMARY KEY AUTOINCREMENT, 
     email VARCHAR(255) NOT NULL,
     external_id VARCHAR(40) UNIQUE NOT NULL CHECK (TRIM(external_id) <> ''),
@@ -7,4 +7,16 @@ CREATE TABLE IF NOT EXISTS person (
     display_name VARCHAR(255) NOT NULL,
     type VARCHAR(100) NOT NULL DEFAULT 'NORMAL' CHECK (TRIM(type) <> '')
 );
-CREATE UNIQUE INDEX unique_email_values ON person (email) WHERE (email <> '');
+CREATE UNIQUE INDEX unique_email_values ON people (email) WHERE (email <> '');
+CREATE TRIGGER email_required_normal_profile_insert
+    AFTER INSERT ON people 
+    WHEN NEW.type = 'NORMAL' AND (NEW.email IS NULL OR TRIM(New.email) = '')
+    BEGIN
+        SELECT RAISE(ABORT, 'Email is required for NORMAL accounts');
+    END;
+CREATE TRIGGER email_required_normal_profile_update
+    AFTER UPDATE ON people
+    WHEN NEW.type = 'NORMAL' AND (NEW.email IS NULL OR TRIM(New.email) = '')
+    BEGIN
+        SELECT RAISE(ABORT, 'Email is required for NORMAL accounts');
+    END;

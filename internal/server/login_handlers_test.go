@@ -375,7 +375,7 @@ func TestLogout(t *testing.T) {
 
 			var foundSessionID string
 			var foundPersonID int64
-			err = db.QueryRow(ctx, "SELECT session_id, person_id FROM session WHERE session_id = ?", data.token).
+			err = db.QueryRow(ctx, "SELECT session_id, person_id FROM sessions WHERE session_id = ?", data.token).
 				Scan(&foundSessionID, foundPersonID)
 			if err == nil || err != sql.ErrNoRows {
 				t.Fatal("Error confirming logout")
