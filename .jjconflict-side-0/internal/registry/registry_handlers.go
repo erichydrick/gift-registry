@@ -268,7 +268,9 @@ func (person *RegistryPerson) addItem(rowData ItemRow, currentUser int64) {
 
 	/*
 		The second (and beyond) joint claim should not impact the count that people
-		have committed to getting.
+		have committed to getting. Only adjust the claimed count if nobody has
+		already committed to getting it or 2+ separate people are making 2+ separate
+		purchases (e.g. 2+ partial claims)
 	*/
 	if len(item.Claims) == 0 || (claim.Type != "" && claim.Type != "JOINT") {
 		item.TotalClaimed += claim.ClaimedCount
