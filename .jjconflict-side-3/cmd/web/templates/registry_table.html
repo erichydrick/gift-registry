@@ -1,6 +1,7 @@
 {{define "registry-table"}}
 <h3 id="registry-{{.PersonID}}-label" class="center-text mb-3">{{.DisplayName}} {{.LastName}}'s Registry</h3>
-<table id="item-list-{{.PersonID}}" class="flex-column">
+{{if .Items}}
+<table id="item-list-{{.PersonID}}">
     <thead>
         <tr>
             <td>Item</td>
@@ -49,4 +50,7 @@
         {{end}}
     </tbody>
 </table>
+{{else}}
+<div id="registry-{{.PersonID}}-nothing-wanted-msg" class="centered"><em>{{.DisplayName}} is happy and content and wants for nothing.</em></div>
+{{end}}
 {{end}}

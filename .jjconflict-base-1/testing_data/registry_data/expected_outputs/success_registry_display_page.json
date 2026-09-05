@@ -16,6 +16,9 @@
         "visible": true,
         "value": "Dad TestFamily's Registry"
     },
+    "registry-person-two-nothing-wanted-msg": {
+        "visible": true
+    },
     "registry-person-three": {
         "visible": true
     },
@@ -37,12 +40,18 @@
         "visible": true,
         "value": "Grandpa Grandtester's Registry"
     },
+    "registry-person-five-nothing-wanted-msg": {
+        "visible": true
+    },
     "registry-person-six": {
         "visible": true
     },
     "registry-person-six-label": {
         "visible": true,
         "value": "Grandma Grandtester's Registry"
+    },
+    "registry-person-six-nothing-wanted-msg": {
+        "visible": true
     },
     "registry-person-seven": {
         "visible": true
@@ -51,12 +60,18 @@
         "visible": true,
         "value": "Aunt OtherFamily's Registry"
     },
+    "registry-person-seven-nothing-wanted-msg": {
+        "visible": true
+    },
     "registry-person-eight": {
         "visible": true
     },
     "registry-person-eight-label": {
         "visible": true,
         "value": "Uncle OtherFamily's Registry"
+    },
+    "registry-person-eight-nothing-wanted-msg": {
+        "visible": true
     },
     "item-gift-1-name": {
         "visible": true,
