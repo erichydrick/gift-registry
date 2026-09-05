@@ -70,18 +70,18 @@ const (
 		FROM verifications v 
 			INNER JOIN people p ON p.person_id = v.person_id 
 		WHERE p.email = ?`
-	InsertSessionStatement = `INSERT INTO session(session_id, person_id, expiration, user_agent) 
+	InsertSessionStatement = `INSERT INTO sessions (session_id, person_id, expiration, user_agent) 
 		VALUES (?, ?, ?, ?)`
 	LoginFailed            = "Login process failed. Please try again"
 	MaxAttempts            = 3
 	SelectUserByEmailQuery = `SELECT person_id, email 
 		FROM people 
 		WHERE email = ?`
-	SetVerificationTokenStatement = `INSERT INTO verification (token, token_expiration, person_id) 
+	SetVerificationTokenStatement = `INSERT INTO verifications (token, token_expiration, person_id) 
 		VALUES (?, ?, ?) 
 		ON CONFLICT (person_id) DO 
 			UPDATE SET token = ?, token_expiration = ?`
-	UpdateAttemptCountStatement = `UPDATE verification 
+	UpdateAttemptCountStatement = `UPDATE verifications 
 		SET attempts = ? 
 		WHERE person_id = ?`
 )
@@ -206,9 +206,7 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 }
 
 func LoginFormHandler(svr *util.ServerUtils) http.Handler {
-
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-
 		ctx := req.Context()
 		span := trace.SpanFromContext(ctx)
 		span.SetName("login_form_handler")
@@ -641,8 +639,7 @@ func setVerificationCode(
 		Not returning this as an error because the main objective (create a
 		verification token and store it in the database for user verification)
 		succeeded. I do want a record of this in the logs though.
-	*/
-	if err != nil {
+	*/if err != nil {
 		svr.Logger.ErrorContext(ctx, "Error getting the number of rows modified when saving a token", slog.String("errorMessage", err.Error()))
 	}
 
@@ -672,7 +669,6 @@ func writeResponse(ctx context.Context,
 	templateFile string,
 	templateDef string,
 ) {
-
 	span.SetAttributes(
 		attribute.Bool("successful", submission.succeeded()),
 	)

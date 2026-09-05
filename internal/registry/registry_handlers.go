@@ -2,14 +2,14 @@ package registry
 
 import (
 	"database/sql"
-	"gift-registry/internal/middleware"
-	"gift-registry/internal/util"
 	"html/template"
-	"iter"
 	"log/slog"
 	"maps"
 	"net/http"
 	"time"
+
+	"gift-registry/internal/middleware"
+	"gift-registry/internal/util"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -34,7 +34,7 @@ type ItemRow struct {
 
 type Registries struct {
 	ErrorMessage string
-	Registries   iter.Seq[RegistryPerson]
+	Registries   []RegistryPerson
 }
 
 type RegistryPerson struct {
@@ -89,9 +89,7 @@ const (
 // RegistryHandler returns the registry items, grouped by person, for
 // bulk display in the UI.
 func RegistryHandler(svr *util.ServerUtils) http.Handler {
-
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-
 		ctx := req.Context()
 		span := trace.SpanFromContext(ctx)
 		span.SetName("registry_handler")
@@ -183,6 +181,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 
 				person = createPerson(rawRowData)
 				people[person.PersonID] = person
+				registries.Registries = append(registries.Registries, person)
 
 			}
 
@@ -199,7 +198,6 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 				slog.Any("person", person),
 			)
 		}
-		registries.Registries = maps.Values(people)
 
 		err = tmpl.ExecuteTemplate(res, "registry-page", registries)
 		if err != nil {
@@ -214,13 +212,10 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 			span.SetAttributes(attribute.String("error_message", errorMessage))
 			return
 		}
-
 	})
-
 }
 
 func createPerson(rowData ItemRow) RegistryPerson {
-
 	return RegistryPerson{
 		PersonID:    rowData.personExtID,
 		DisplayName: rowData.personDispName,
@@ -228,16 +223,20 @@ func createPerson(rowData ItemRow) RegistryPerson {
 
 		Items: map[string]RegistryItem{},
 	}
-
 }
 
 func (person *RegistryPerson) addItem(rowData ItemRow, currentUser int64) {
+	/*
+		This person hasn't requested anything yet, move on.
+	*/
+	if !rowData.itemExtID.Valid || rowData.itemExtID.String == "" {
+		return
+	}
 
 	item, ok := person.Items[rowData.itemExtID.String]
 
 	/* We haven't seen this item yet. */
 	if rowData.itemExtID.Valid && !ok {
-
 		item = RegistryItem{
 			ItemID:   rowData.itemExtID.String,
 			Name:     rowData.itemName.String,
@@ -246,7 +245,6 @@ func (person *RegistryPerson) addItem(rowData ItemRow, currentUser int64) {
 			Notes:    rowData.itemNotes.String,
 			Claims:   []RegistryItemClaim{},
 		}
-
 	}
 
 	/*
@@ -286,5 +284,4 @@ func (person *RegistryPerson) addItem(rowData ItemRow, currentUser int64) {
 	item.Claims = append(item.Claims, claim)
 
 	person.Items[item.ItemID] = item
-
 }
