@@ -33,16 +33,18 @@ INSERT INTO sessions (session_id, person_id, expiration, user_agent)
 ;
 
 INSERT INTO items (item_id, gift_for, added_by, external_id, name, url, notes, quantity)
-    VALUES (1, 3, 1, 'gift-1', 'New bike', NULL, 'He outgrew his last one', 1),
-        (2, 3, 1, 'gift-2', 'New helmet', 'https://www.walmart.com', NULL, 1),
-        (3, 4, 1, 'gift-3', 'Headbands', 'https://www.amazon.com', 'She can never have too many', 10),
-        (4, 4, 1, 'gift-4', 'Doll', NULL, NULL, 1),
-        (5, 1, 1, 'gift-5', 'KitchenAid Attachments', NULL, 'Have the pasta one', 3)
+    VALUES (1, 2, 2, 'gift-1', 'Old gift', NULL, 'This should not appear', 1),
+        (2, 3, 1, 'gift-2', 'New bike', NULL, 'He outgrew his last one', 1),
+        (3, 3, 1, 'gift-3', 'New helmet', 'https://www.walmart.com', NULL, 1),
+        (4, 4, 1, 'gift-4', 'Headbands', 'https://www.amazon.com', 'She can never have too many', 10),
+        (5, 4, 1, 'gift-5', 'Doll', NULL, NULL, 1),
+        (6, 1, 1, 'gift-6', 'KitchenAid Attachments', NULL, 'Have the pasta one', 3)
 ;
 
 INSERT INTO item_claims (item_id, household_id, claimed_by, claim_type, gift_date, quantity)
-    VALUES (1, 2, 5, 'JOINT', Date('now', '+14 days'), 1),
-        (1, 3, 7, 'JOINT', Date('now', '+14 days'), 0),
-        (3, 2, 6, 'PARTIAL', Date('now', '+14 days'), 4),
-        (5, 3, 8, 'FULL', Date('now', '+14 days'), 1)
+    VALUES (1, 1, 1, 'FULL', Date('now', '-30 days'), 1),
+        (2, 2, 5, 'JOINT', Date('now', '+14 days'), 1),
+        (2, 3, 7, 'JOINT', Date('now', '+14 days'), 0),
+        (4, 2, 6, 'PARTIAL', Date('now', '+14 days'), 4),
+        (6, 3, 8, 'FULL', Date('now', '+14 days'), 1)
 ;

@@ -8,6 +8,17 @@
     <link rel="stylesheet" href="css/styles.css" />
     <script src="js/htmx.js"></script>
 
+    <script type="text/javascript">
+        function utcToLocalDates() {
+            
+            document.querySelectorAll(".utc-date").forEach((element) => {
+                const localDate = new Date(element.innerHTML).toLocaleDateString();
+                const id = element.id.replaceAll("-utc", "");
+                document.getElementById(id).innerHTML = localDate;
+            });
+
+        }
+    </script>
 </head>
 
 <body>
@@ -20,9 +31,9 @@
     </div>
 
     <div id="registries">
-        <div id="registry-error-message" class="centered content error flex-column overflow-y shadowed" {{if eq .ErrorMessage ""}}hidden{{end}}>{{.ErrorMessage}}</div>
+        <div id="registry-error-message" class="centered content error overflow-y shadowed" {{if eq .ErrorMessage ""}}hidden{{end}}>{{.ErrorMessage}}</div>
         {{range .Registries}}
-        <div id="registry-{{.PersonID}}" class="centered content flex-column overflow-y shadowed">
+        <div id="registry-{{.PersonID}}" class="centered center-text content overflow-x overflow-y shadowed">
             {{template "registry-table" .}}
         </div>
         {{end}}

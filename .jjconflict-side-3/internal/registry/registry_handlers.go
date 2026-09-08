@@ -1,12 +1,13 @@
 package registry
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"maps"
 	"net/http"
-	"time"
 
 	"gift-registry/internal/middleware"
 	"gift-registry/internal/util"
@@ -29,7 +30,7 @@ type ItemRow struct {
 	claimedHousehold sql.NullString
 	claimedQty       sql.NullInt16
 	claimType        sql.NullString
-	giftDate         sql.NullTime
+	giftDate         sql.NullString
 }
 
 type Registries struct {
@@ -58,12 +59,26 @@ type RegistryItem struct {
 type RegistryItemClaim struct {
 	Claimant     string
 	ClaimedCount int8
-	GiftDate     time.Time
+	GiftDate     string
 	Type         string
 }
 
 const (
-	selectItemsForRegistriesQuery = `	
+	selectItemsForRegistriesQuery = `
+		WITH gift_items AS (SELECT item.item_id,
+				item.gift_for,
+				item.external_id,
+				item.name,
+				item.quantity,
+				item.url,
+				item.notes,
+				claim.household_id,
+				claim.quantity AS claim_quantity,
+				claim.claim_type,
+				claim.gift_date
+			FROM items item
+				LEFT OUTER JOIN item_claims claim ON item.item_id = claim.item_id
+			WHERE (claim.gift_date IS NULL OR claim.gift_date >= Datetime('now')))
 		SELECT person.person_id,
 			person.external_id, 
 			person.display_name, 
@@ -74,15 +89,15 @@ const (
 			item.url, 
 			item.notes, 
 			household.name, 
-			claim.quantity, 
-			claim.claim_type, 
-			claim.gift_date 
+			item.claim_quantity, 
+			item.claim_type, 
+			item.gift_date 
 		FROM people person
-			LEFT OUTER JOIN items item ON person.person_id = item.gift_for 
-			LEFT OUTER JOIN item_claims claim ON item.item_id = claim.item_id 
-			LEFT OUTER JOIN households household ON claim.household_id = household.household_id 
-			ORDER BY person.person_id ASC,
-				item.item_id ASC
+			LEFT OUTER JOIN gift_items item ON person.person_id = item.gift_for 
+			LEFT OUTER JOIN households household ON item.household_id
+			= household.household_id 
+		ORDER BY person.person_id ASC,
+			item.item_id ASC
 	`
 )
 
@@ -100,6 +115,9 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 			pass in.
 		*/
 		funcMap := template.FuncMap{
+			"formatDate": func(datetime string) template.JS {
+				return template.JS(fmt.Sprintf("return new Date(%s).toLocaleDateString();", datetime))
+			},
 			"subtract": func(requested int8, claimed int8) int8 {
 				return requested - claimed
 			},
@@ -185,7 +203,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 
 			}
 
-			person.addItem(rawRowData, curUser)
+			person.addItem(ctx, svr, rawRowData, curUser)
 			cnt++
 
 		}
@@ -225,11 +243,21 @@ func createPerson(rowData ItemRow) RegistryPerson {
 	}
 }
 
-func (person *RegistryPerson) addItem(rowData ItemRow, currentUser int64) {
+func (person *RegistryPerson) addItem(
+	ctx context.Context,
+	svr *util.ServerUtils,
+	rowData ItemRow,
+	currentUser int64) {
+
 	/*
 		This person hasn't requested anything yet, move on.
 	*/
 	if !rowData.itemExtID.Valid || rowData.itemExtID.String == "" {
+		svr.Logger.ErrorContext(
+			ctx,
+			"No item information, skipping",
+			slog.String("itemName", rowData.itemName.String),
+		)
 		return
 	}
 
@@ -247,10 +275,8 @@ func (person *RegistryPerson) addItem(rowData ItemRow, currentUser int64) {
 		}
 	}
 
-	/*
-		This is an unclaimed item, go ahead and return.
-	*/
-	if !rowData.claimedHousehold.Valid {
+	/* This is an unclaimed item, go ahead and return. */
+	if !rowData.claimedHousehold.Valid || !rowData.giftDate.Valid {
 
 		person.Items[item.ItemID] = item
 		return
@@ -260,7 +286,7 @@ func (person *RegistryPerson) addItem(rowData ItemRow, currentUser int64) {
 	claim := RegistryItemClaim{
 		Claimant:     rowData.claimedHousehold.String,
 		ClaimedCount: int8(rowData.claimedQty.Int16),
-		GiftDate:     rowData.giftDate.Time,
+		GiftDate:     rowData.giftDate.String,
 		Type:         rowData.claimType.String,
 	}
 
