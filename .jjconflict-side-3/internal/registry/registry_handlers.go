@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"time"
 
 	"gift-registry/internal/middleware"
 	"gift-registry/internal/util"
@@ -59,7 +60,7 @@ type RegistryItem struct {
 type RegistryItemClaim struct {
 	Claimant     string
 	ClaimedCount int8
-	GiftDate     string
+	GiftDate     time.Time
 	Type         string
 }
 
@@ -283,10 +284,26 @@ func (person *RegistryPerson) addItem(
 
 	}
 
+	giftDate, err := time.Parse(time.DateOnly, rowData.giftDate.String)
+	if err != nil {
+		svr.Logger.ErrorContext(
+			ctx,
+			"Could not convert claim date from the database into a Time",
+			slog.Any("dbDate", rowData.giftDate),
+			slog.String("errorMessage", err.Error()),
+		)
+	}
+
+	svr.Logger.DebugContext(
+		ctx,
+		"Parsed the database date value into a time object",
+		slog.String("dbDate", rowData.giftDate.String),
+		slog.Any("dateObj", giftDate),
+	)
 	claim := RegistryItemClaim{
 		Claimant:     rowData.claimedHousehold.String,
 		ClaimedCount: int8(rowData.claimedQty.Int16),
-		GiftDate:     rowData.giftDate.String,
+		GiftDate:     giftDate.UTC(),
 		Type:         rowData.claimType.String,
 	}
 

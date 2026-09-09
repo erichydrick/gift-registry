@@ -283,24 +283,22 @@ td {
 .item-notes-col {
     max-width: 21rem;
     min-width: 21rem;
-    overflow: scroll;
 }
 
 .item-claimants-col {
-    max-width: 4rem;
-    min-width: 4rem;
+    max-width: 12rem;
+    min-width: 12rem;
 }
 
 .item-gift-dates-col {
-    max-width: 4rem;
-    min-width: 4rem;
+    max-width: 12rem;
+    min-width: 12rem;
 }
 
 .item-claim-btns-col {
-    max-width: 2rem;
-    min-width: 2rem;
+    max-width: 8rem;
+    min-width: 8rem;
 }
-
 
 .left {
     float: left;
@@ -356,6 +354,12 @@ td {
 
 .primary {
     color: var(--primary-color);
+}
+
+.registry-items {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
 }
 
 .right {
