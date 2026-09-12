@@ -8,17 +8,6 @@
     <link rel="stylesheet" href="css/styles.css" />
     <script src="js/htmx.js"></script>
 
-    <script type="text/javascript">
-        function utcToLocalDates() {
-            
-            document.querySelectorAll(".utc-date").forEach((element) => {
-                const localDate = new Date(element.innerHTML).toLocaleDateString();
-                const id = element.id.replaceAll("-utc", "");
-                document.getElementById(id).innerHTML = localDate;
-            });
-
-        }
-    </script>
 </head>
 
 <body>

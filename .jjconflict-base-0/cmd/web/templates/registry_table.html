@@ -29,8 +29,7 @@
             </div>
             <div id="item-{{$key}}-give-on" class="item-gift-dates-col">
                 {{range $idx, $claim := $value.Claims}}
-                <span id="item-{{$key}}-claim-{{$idx}}-gift-date"></span>
-                <span id="item-{{$key}}-claim-{{$idx}}-gift-date-utc" class="utc-date" hidden>{{$claim.GiftDate}}</span>
+                <span id="item-{{$key}}-claim-{{$idx}}-gift-date">{{formatDate $claim.GiftDate}}</span>
                 <br />
                 {{end}}
             </div>
@@ -55,8 +54,5 @@
 <!-- TODO: Change to something with flex-wrap: nowrap -->
 {{else}}
 <div id="registry-{{.PersonID}}-nothing-wanted-msg" class="centered center-text"><em>{{.DisplayName}} is happy and content and wants for nothing.</em></div>
-<script type="text/javascript">
-    utcToLocalDates();
-</script>
 {{end}}
 {{end}}

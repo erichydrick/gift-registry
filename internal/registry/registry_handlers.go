@@ -3,7 +3,6 @@ package registry
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"html/template"
 	"log/slog"
 	"maps"
@@ -60,7 +59,7 @@ type RegistryItem struct {
 type RegistryItemClaim struct {
 	Claimant     string
 	ClaimedCount int8
-	GiftDate     time.Time
+	GiftDate     string
 	Type         string
 }
 
@@ -116,8 +115,18 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 			pass in.
 		*/
 		funcMap := template.FuncMap{
-			"formatDate": func(datetime string) template.JS {
-				return template.JS(fmt.Sprintf("return new Date(%s).toLocaleDateString();", datetime))
+			"formatDate": func(datetime string) string {
+				if parsed, err := time.Parse("2006-01-02", datetime); err != nil {
+					svr.Logger.ErrorContext(
+						ctx,
+						"Error converting date to locale string",
+						slog.String("givenDatetime", datetime),
+						slog.String("errorMessage", err.Error()),
+					)
+					return datetime
+				} else {
+					return parsed.Format("01/02/06")
+				}
 			},
 			"subtract": func(requested int8, claimed int8) int8 {
 				return requested - claimed
@@ -284,26 +293,10 @@ func (person *RegistryPerson) addItem(
 
 	}
 
-	giftDate, err := time.Parse(time.DateOnly, rowData.giftDate.String)
-	if err != nil {
-		svr.Logger.ErrorContext(
-			ctx,
-			"Could not convert claim date from the database into a Time",
-			slog.Any("dbDate", rowData.giftDate),
-			slog.String("errorMessage", err.Error()),
-		)
-	}
-
-	svr.Logger.DebugContext(
-		ctx,
-		"Parsed the database date value into a time object",
-		slog.String("dbDate", rowData.giftDate.String),
-		slog.Any("dateObj", giftDate),
-	)
 	claim := RegistryItemClaim{
 		Claimant:     rowData.claimedHousehold.String,
 		ClaimedCount: int8(rowData.claimedQty.Int16),
-		GiftDate:     giftDate.UTC(),
+		GiftDate:     rowData.giftDate.String[0:10],
 		Type:         rowData.claimType.String,
 	}
 
