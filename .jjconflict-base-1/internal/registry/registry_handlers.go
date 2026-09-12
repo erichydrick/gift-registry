@@ -3,10 +3,12 @@ package registry
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"maps"
 	"net/http"
+	"strings"
 	"time"
 
 	"gift-registry/internal/middleware"
@@ -78,7 +80,7 @@ const (
 				claim.gift_date
 			FROM items item
 				LEFT OUTER JOIN item_claims claim ON item.item_id = claim.item_id
-			WHERE (claim.gift_date IS NULL OR claim.gift_date >= Datetime('now')))
+			WHERE (claim.gift_date %s claim.gift_date %s Datetime('now')))
 		SELECT person.person_id,
 			person.external_id, 
 			person.display_name, 
@@ -94,8 +96,7 @@ const (
 			item.gift_date 
 		FROM people person
 			LEFT OUTER JOIN gift_items item ON person.person_id = item.gift_for 
-			LEFT OUTER JOIN households household ON item.household_id
-			= household.household_id 
+			LEFT OUTER JOIN households household ON item.household_id = household.household_id 
 		ORDER BY person.person_id ASC,
 			item.item_id ASC
 	`
@@ -149,9 +150,33 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 			return
 		}
 
+		comparator := ">="
+		nullCheck := "IS NULL OR"
+
+		historicalParam := req.URL.Query().Get("historical")
+
+		/*
+			Change the query from future gifts to past gifts ONLY if the historical
+			query paramater is present and set to "true" (I'm not parsing the query
+			parameter as if it could have multiple values, because we're ONLY showing
+			historical data if and ONLY if the historical flag is exactly "true"
+		*/
+		if historicalParam != "" {
+
+			historicalParam = strings.ToLower(strings.TrimSpace(historicalParam))
+
+			if historicalParam == "true" {
+
+				comparator = "<"
+				nullCheck = "IS NOT NULL AND"
+
+			}
+
+		}
+
 		results, err := svr.DB.Query(
 			ctx,
-			selectItemsForRegistriesQuery,
+			fmt.Sprintf(selectItemsForRegistriesQuery, nullCheck, comparator),
 		)
 		if err != nil {
 			svr.Logger.ErrorContext(
@@ -165,6 +190,8 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 		registries := Registries{}
 		curUser := middleware.PersonID(res, req)
 		people := map[string]RegistryPerson{}
+
+		now := time.Now()
 
 		cnt := 1
 		for results.Next() {
@@ -213,7 +240,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 
 			}
 
-			person.addItem(ctx, svr, rawRowData, curUser)
+			person.addItem(ctx, svr, rawRowData, curUser, now)
 			cnt++
 
 		}
@@ -257,7 +284,8 @@ func (person *RegistryPerson) addItem(
 	ctx context.Context,
 	svr *util.ServerUtils,
 	rowData ItemRow,
-	currentUser int64) {
+	currentUser int64,
+	now time.Time) {
 
 	/*
 		This person hasn't requested anything yet, move on.
@@ -293,10 +321,21 @@ func (person *RegistryPerson) addItem(
 
 	}
 
+	giftDate, err := time.Parse(time.DateOnly, rowData.giftDate.String[0:10])
+	if err != nil {
+		svr.Logger.ErrorContext(
+			ctx,
+			"Could not parse gift date from database result, skipping.",
+			slog.Bool("databaseDatePresent", rowData.giftDate.Valid),
+			slog.String("databaseDate", rowData.giftDate.String),
+			slog.String("errorMessage", err.Error()),
+		)
+	}
+
 	claim := RegistryItemClaim{
 		Claimant:     rowData.claimedHousehold.String,
 		ClaimedCount: int8(rowData.claimedQty.Int16),
-		GiftDate:     rowData.giftDate.String[0:10],
+		GiftDate:     giftDate.Format(time.DateOnly),
 		Type:         rowData.claimType.String,
 	}
 
@@ -313,7 +352,7 @@ func (person *RegistryPerson) addItem(
 	/*
 		Don't show the user who's getting their upcoming gifts!
 	*/
-	if currentUser == rowData.personID {
+	if currentUser == rowData.personID && !giftDate.Before(now) {
 		claim.Claimant = "???"
 	}
 

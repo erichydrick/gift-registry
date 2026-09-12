@@ -38,7 +38,8 @@ INSERT INTO items (item_id, gift_for, added_by, external_id, name, url, notes, q
         (3, 3, 1, 'gift-3', 'New helmet', 'https://www.walmart.com', NULL, 1),
         (4, 4, 1, 'gift-4', 'Headbands', 'https://www.amazon.com', 'She can never have too many', 10),
         (5, 4, 1, 'gift-5', 'Doll', NULL, NULL, 1),
-        (6, 1, 1, 'gift-6', 'KitchenAid Attachments', NULL, 'Have the pasta one', 3)
+        (6, 1, 1, 'gift-6', 'KitchenAid Attachments', NULL, 'Have the pasta one', 3),
+        (7, 1, 1, 'gift-7', 'Another old gift', NULL, NULL, 1)
 ;
 
 INSERT INTO item_claims (item_id, household_id, claimed_by, claim_type, gift_date, quantity)
@@ -46,5 +47,6 @@ INSERT INTO item_claims (item_id, household_id, claimed_by, claim_type, gift_dat
         (2, 2, 5, 'JOINT', Date('now', '+14 days'), 1),
         (2, 3, 7, 'JOINT', Date('now', '+14 days'), 0),
         (4, 2, 6, 'PARTIAL', Date('now', '+14 days'), 4),
-        (6, 3, 8, 'FULL', Date('now', '+14 days'), 1)
+        (6, 3, 8, 'FULL', Date('now', '+14 days'), 1),
+        (7, 3, 8, 'FULL', Date('now', '-45 days'), 1)
 ;

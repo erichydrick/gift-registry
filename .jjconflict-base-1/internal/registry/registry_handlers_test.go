@@ -2,6 +2,7 @@ package registry_test
 
 import (
 	"context"
+	"fmt"
 	"gift-registry/internal/database"
 	"gift-registry/internal/middleware"
 	"gift-registry/internal/server"
@@ -83,12 +84,17 @@ func TestMain(m *testing.M) {
 
 }
 
+// TestRegistryPage confirms the registry page displays the correct elements
+// for both the currenlty logged in user (who should not see claim information
+// for their future gifts), and other users (who should see everything). It
+// also validates viewing historical gifts.
 func TestRegistryPage(t *testing.T) {
 
 	testData := []struct {
-		elementsFile string
-		testName     string
-		token        string
+		elementsFile   string
+		historicalFlag string
+		testName       string
+		token          string
 	}{
 		{
 			elementsFile: "success_registry_display_page.json",
@@ -104,6 +110,30 @@ func TestRegistryPage(t *testing.T) {
 			elementsFile: "success_registry_display_page_other_person.json",
 			testName:     "Can see claimants for other household member's gifts",
 			token:        "dad-registry-session",
+		},
+		{
+			elementsFile:   "historical_success_registry_display_page.json",
+			historicalFlag: "?historical=true",
+			testName:       "Can see historical gifts when historical=true query param is added (self)",
+			token:          "dad-registry-session",
+		},
+		{
+			elementsFile:   "historical_success_registry_display_page.json",
+			historicalFlag: "?historical=TRUE",
+			testName:       "Can see historical gifts when historical=true query param is added (case-insensitive)",
+			token:          "dad-registry-session",
+		},
+		{
+			elementsFile:   "success_registry_display_page.json",
+			historicalFlag: "?historical=false",
+			testName:       "Shows the regular registry when historical is 'false'",
+			token:          "mom-registry-session",
+		},
+		{
+			elementsFile:   "success_registry_display_page.json",
+			historicalFlag: "?historical=true,other",
+			testName:       "Successful (future gift) registry view when historical is not a boolean string",
+			token:          "mom-registry-session",
 		},
 	}
 	for _, data := range testData {
@@ -121,7 +151,8 @@ func TestRegistryPage(t *testing.T) {
 				Value:    data.token,
 			}
 
-			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/registry", nil)
+			path := fmt.Sprintf("/registry%s", data.historicalFlag)
+			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+path, nil)
 			if err != nil {
 				t.Fatal("Error building registry request", err)
 			}
