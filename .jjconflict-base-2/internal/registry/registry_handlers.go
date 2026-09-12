@@ -110,12 +110,39 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 		span := trace.SpanFromContext(ctx)
 		span.SetName("registry_handler")
 
+		historicalParam := req.URL.Query().Get("historical")
+
+		comparator := ">="
+		nullCheck := "IS NULL OR"
+
+		/*
+			Change the query from future gifts to past gifts ONLY if the historical
+			query paramater is present and set to "true" (I'm not parsing the query
+			parameter as if it could have multiple values, because we're ONLY showing
+			historical data if and ONLY if the historical flag is exactly "true"
+		*/
+		if historicalParam != "" {
+
+			historicalParam = strings.ToLower(strings.TrimSpace(historicalParam))
+
+			if historicalParam == "true" {
+
+				comparator = "<"
+				nullCheck = "IS NOT NULL AND"
+
+			}
+
+		}
+
 		/*
 			We want to track the difference between the REQUESTED quantity and the
 			CLAIMED quantity, but to do that we need a subtraction function we can
 			pass in.
 		*/
 		funcMap := template.FuncMap{
+			"isHistorical": func() bool {
+				return historicalParam == "true"
+			},
 			"formatDate": func(datetime string) string {
 				if parsed, err := time.Parse("2006-01-02", datetime); err != nil {
 					svr.Logger.ErrorContext(
@@ -148,30 +175,6 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 			res.Write([]byte("Error rendering the profile page"))
 			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
-		}
-
-		comparator := ">="
-		nullCheck := "IS NULL OR"
-
-		historicalParam := req.URL.Query().Get("historical")
-
-		/*
-			Change the query from future gifts to past gifts ONLY if the historical
-			query paramater is present and set to "true" (I'm not parsing the query
-			parameter as if it could have multiple values, because we're ONLY showing
-			historical data if and ONLY if the historical flag is exactly "true"
-		*/
-		if historicalParam != "" {
-
-			historicalParam = strings.ToLower(strings.TrimSpace(historicalParam))
-
-			if historicalParam == "true" {
-
-				comparator = "<"
-				nullCheck = "IS NOT NULL AND"
-
-			}
-
 		}
 
 		results, err := svr.DB.Query(

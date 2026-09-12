@@ -42,16 +42,16 @@
                 This text should also be dynamic, need to decided if that's here or 
                 when I implement this as a button.
             -->
-            <div id="item-{{$key}}-claim-button" class="item-claim-btns-col"><button class="btn primary">We'll get this</button></div>
+            
+            <div id="item-{{$key}}-claim-button" class="item-claim-btns-col">
+                {{if ne true isHistorical}} 
+                <button class="btn primary">We'll get this</button>
+                {{end}}
+            </div>
     </div>
     {{end}}
     </div>
 </div>
-<!-- 
-    TODO: Maybe I need to move from a Tailwind-style CSS for types of changes 
-    and instead put styling on type of component. 
--->
-<!-- TODO: Change to something with flex-wrap: nowrap -->
 {{else}}
 <div id="registry-{{.PersonID}}-nothing-wanted-msg" class="centered center-text"><em>{{.DisplayName}} is happy and content and wants for nothing.</em></div>
 {{end}}

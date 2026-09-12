@@ -102,6 +102,9 @@
     "item-gift-1-give-on": {
         "visible": true
     },
+    "item-gift-1-claim-button": {
+        "visible": true
+    },
     "item-gift-7-name": {
         "visible": true,
         "value": "Another old gift"
@@ -126,6 +129,9 @@
         "visible": true
     },
     "item-gift-7-give-on": {
+        "visible": true
+    },
+    "item-gift-7-claim-button": {
         "visible": true
     }
 }
