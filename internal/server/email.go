@@ -95,6 +95,7 @@ func (es *emailSender) SendVerificationEmail(ctx context.Context, to []string, c
 	if err != nil {
 		span.SetAttributes(attribute.String("emailError", err.Error()))
 	}
+	span.SetAttributes(attribute.Bool("emailSuccess", err != nil))
 
 	return err
 }
