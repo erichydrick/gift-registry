@@ -1,0 +1,32 @@
+{
+  "profile-form-valid-household": { "visible": true },
+  "profile-header-valid-household": {
+    "value": "Valid Household Profile",
+    "visible": true
+  },
+  "first-name-valid-household": {
+    "value": "Valid",
+    "visible": true
+  },
+  "last-name-valid-household": {
+    "value": "Household",
+    "visible": true
+  },
+  "display-name-valid-household": {
+    "value": "Valid",
+    "visible": true
+  },
+  "email-valid-household": {
+    "value": "validhouseholdname@localhost.com",
+    "visible": true
+  },
+  "household-name-valid-household": {
+    "value": "New valid household name",
+    "visible": true
+  },
+  "profile-submit-valid-household": { "visible": true },
+  "first-name-error-valid-household": { "visible": false },
+  "household-error-valid-household": { "visible": false },
+  "last-name-error-valid-household": { "visible": false },
+  "profile-error-valid-household": { "visible": false }
+}

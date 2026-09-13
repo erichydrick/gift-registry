@@ -1,0 +1,11 @@
+{
+    "application-header": {
+        "visible": true
+    },
+    "page-content": {
+        "visible": true
+    },
+    "redirector": {
+        "visible": true
+    }
+}

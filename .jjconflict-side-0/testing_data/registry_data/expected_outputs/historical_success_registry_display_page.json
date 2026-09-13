@@ -1,0 +1,137 @@
+{
+    "registry-error-message": {
+        "visible": false
+    },
+    "registry-person-one": {
+        "visible": true
+    },
+    "registry-person-one-label": {
+        "visible": true,
+        "value": "Mom's Registry"
+    },
+    "registry-person-two": {
+        "visible": true
+    },
+    "registry-person-two-label": {
+        "visible": true,
+        "value": "Dad's Registry"
+    },
+    "registry-person-three": {
+        "visible": true
+    },
+    "registry-person-three-label": {
+        "visible": true,
+        "value": "Son's Registry"
+    },
+    "registry-person-three-nothing-wanted-msg": {
+        "visible": true
+    },
+    "registry-person-four": {
+        "visible": true
+    },
+    "registry-person-four-label": {
+        "visible": true,
+        "value": "Daughter's Registry"
+    },
+    "registry-person-four-nothing-wanted-msg": {
+        "visible": true
+    },
+    "registry-person-five": {
+        "visible": true
+    },
+    "registry-person-five-label": {
+        "visible": true,
+        "value": "Grandpa's Registry"
+    },
+    "registry-person-five-nothing-wanted-msg": {
+        "visible": true
+    },
+    "registry-person-six": {
+        "visible": true
+    },
+    "registry-person-six-label": {
+        "visible": true,
+        "value": "Grandma's Registry"
+    },
+    "registry-person-six-nothing-wanted-msg": {
+        "visible": true
+    },
+    "registry-person-seven": {
+        "visible": true
+    },
+    "registry-person-seven-label": {
+        "visible": true,
+        "value": "Aunt's Registry"
+    },
+    "registry-person-seven-nothing-wanted-msg": {
+        "visible": true
+    },
+    "registry-person-eight": {
+        "visible": true
+    },
+    "registry-person-eight-label": {
+        "visible": true,
+        "value": "Uncle's Registry"
+    },
+    "registry-person-eight-nothing-wanted-msg": {
+        "visible": true
+    },
+    "item-gift-1-name": {
+        "visible": true,
+        "value": "Old gift"
+    },
+    "item-gift-1-quantity": {
+        "visible": true,
+        "value": "0 / 1"
+    },
+    "item-gift-1-url": {
+        "visible": true,
+        "value": ""
+    },
+    "item-gift-1-notes": {
+        "visible": true,
+        "value": "This should not appear"
+    },
+    "item-gift-1-claimant-0": {
+        "visible": true,
+        "value": "The Testers"
+    },
+    "item-gift-1-claim-0-gift-date": {
+        "visible": true
+    },
+    "item-gift-1-give-on": {
+        "visible": true
+    },
+    "item-gift-1-claim-button": {
+        "visible": true
+    },
+    "item-gift-7-name": {
+        "visible": true,
+        "value": "Another old gift"
+    },
+    "item-gift-7-quantity": {
+        "visible": true,
+        "value": "0 / 1"
+    },
+    "item-gift-7-url": {
+        "visible": true,
+        "value": ""
+    },
+    "item-gift-7-notes": {
+        "visible": true,
+        "value": ""
+    },
+    "item-gift-7-claimant-0": {
+        "visible": true,
+        "value": "The OtherFamily"
+    },
+    "item-gift-7-claim-0-gift-date": {
+        "visible": true
+    },
+    "item-gift-7-give-on": {
+        "visible": true
+    },
+    "item-gift-7-claim-button": {
+        "visible": true
+    }
+}

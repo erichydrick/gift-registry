@@ -1,0 +1,44 @@
+{
+    "profile-form-bad-first-name": {
+        "visible": true
+    },
+    "profile-header-bad-first-name": {
+        "value": "Sudo Name Profile",
+        "visible": true
+    },
+    "first-name-bad-first-name": {
+        "value": "",
+        "visible": true
+    },
+    "last-name-bad-first-name": {
+        "value": "Name",
+        "visible": true
+    },
+    "display-name-bad-first-name": {
+        "value": "Sudo",
+        "visible": true
+    },
+    "email-bad-first-name": {
+        "value": "failedupdatenofirstname@localhost.com",
+        "visible": true
+    },
+    "household-name-bad-first-name": {
+        "value": "Failed update first name house",
+        "visible": true
+    },
+    "profile-submit-bad-first-name": {
+        "visible": true
+    },
+    "first-name-error-bad-first-name": {
+        "visible": true
+    },
+    "household-error-bad-first-name": {
+        "visible": false
+    },
+    "last-name-error-bad-first-name": {
+        "visible": false
+    },
+    "profile-error-bad-first-name": {
+        "visible": false
+    }
+}
