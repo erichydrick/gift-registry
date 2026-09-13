@@ -16,6 +16,7 @@ import (
 
 	"gift-registry/internal/database"
 	"gift-registry/internal/server"
+	"gift-registry/internal/test"
 
 	"golang.org/x/net/html"
 )
