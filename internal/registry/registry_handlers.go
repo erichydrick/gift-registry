@@ -111,26 +111,21 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 		span.SetName("registry_handler")
 
 		historicalParam := req.URL.Query().Get("historical")
+		historicalParam = strings.ToLower(strings.TrimSpace(historicalParam))
 
 		comparator := ">="
 		nullCheck := "IS NULL OR"
 
 		/*
-			Change the query from future gifts to past gifts ONLY if the historical
-			query paramater is present and set to "true" (I'm not parsing the query
-			parameter as if it could have multiple values, because we're ONLY showing
-			historical data if and ONLY if the historical flag is exactly "true"
+			Change the query from future gifts to past gifts if and ONLY if the
+			historical query paramater is present and set to "true" (I'm not parsing
+			the query parameter as if it could have multiple values, because we're ONLY
+			showing historical data if and ONLY if the historical flag is exactly "true"
 		*/
-		if historicalParam != "" {
+		if historicalParam == "true" {
 
-			historicalParam = strings.ToLower(strings.TrimSpace(historicalParam))
-
-			if historicalParam == "true" {
-
-				comparator = "<"
-				nullCheck = "IS NOT NULL AND"
-
-			}
+			comparator = "<"
+			nullCheck = "IS NOT NULL AND"
 
 		}
 
@@ -172,7 +167,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 				slog.String("errorMessage", err.Error()),
 			)
 			res.WriteHeader(500)
-			res.Write([]byte("Error rendering the profile page"))
+			res.Write([]byte("Error loading the registry page"))
 			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
@@ -266,7 +261,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 				slog.String("errorMessage", errorMessage),
 			)
 			res.WriteHeader(500)
-			res.Write([]byte("Error loading registry page"))
+			res.Write([]byte("Error rendering registry page"))
 			span.SetAttributes(attribute.String("error_message", errorMessage))
 			return
 		}
