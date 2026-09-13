@@ -24,16 +24,13 @@ const (
 	InsertMigrationStatement = "INSERT INTO migrations (filename, applied_on) VALUES (?, CURRENT_TIMESTAMP)"
 )
 
-var (
-	ErrMigration = fmt.Errorf("could not apply database migration")
-)
+var ErrMigration = fmt.Errorf("could not apply database migration")
 
 // Checks for any pending database migrations and applies them
 func (dbConn DBConn) runMigrations(
 	ctx context.Context,
 	getenv func(string) string,
 ) (errs []error) {
-
 	ctx, span := tracer.Start(ctx, "RunMigrations")
 	defer span.End()
 
@@ -88,6 +85,7 @@ func (dbConn DBConn) runMigrations(
 		ctx,
 		"Listing the migration files",
 		slog.String("migrationsDirectory", getenv("MIGRATIONS_DIR")),
+		slog.Any("dataMigrationsDirectory", getenv("DATA_MIGRATIONS")),
 	)
 	dirList := []string{getenv("MIGRATIONS_DIR")}
 
@@ -97,6 +95,11 @@ func (dbConn DBConn) runMigrations(
 	*/
 	if dataMigrationsDir := getenv("DATA_MIGRATIONS"); dataMigrationsDir != "" {
 
+		dbConn.logger.DebugContext(
+			ctx,
+			"Listing the data migrations",
+			slog.String("migrationsDirectory", getenv("DATA_MIGRATIONS")),
+		)
 		dirList = append(dirList, dataMigrationsDir)
 
 	}
@@ -209,7 +212,6 @@ func (dbConn DBConn) runMigrations(
 	span.SetAttributes(attributes...)
 
 	return
-
 }
 
 func (dbConn DBConn) applyMigration(
@@ -218,7 +220,6 @@ func (dbConn DBConn) applyMigration(
 	tx *sql.Tx,
 	migration migrationFile,
 ) (int64, error) {
-
 	var totalRowsAffected int64 = 0
 	sqlBytes, err := fs.ReadFile(migration.fs, migration.name)
 	if err != nil {
@@ -231,9 +232,7 @@ func (dbConn DBConn) applyMigration(
 	rawMigration := string(sqlBytes)
 
 	if len(strings.TrimSpace(rawMigration)) < 1 {
-
 		return 0, fmt.Errorf("empty migration file")
-
 	}
 
 	result, err := tx.ExecContext(ctx, rawMigration)
@@ -260,19 +259,15 @@ func (dbConn DBConn) applyMigration(
 		slog.String("statement", rawMigration),
 	)
 	return totalRowsAffected, nil
-
 }
 
 // Create the migrations table if this is a fresh file
 func (dbConn DBConn) createMigrationsTable(ctx context.Context) error {
-
 	_, err := dbConn.Execute(ctx, "CREATE TABLE migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, filename VARCHAR (255), applied_on TIMESTAMP)")
 	return err
-
 }
 
 func listMigrations(migrationsDir fs.FS, root string) ([]migrationFile, error) {
-
 	sqlFiles := []migrationFile{}
 
 	migrationFiles, err := fs.ReadDir(migrationsDir, root)
@@ -292,11 +287,9 @@ func listMigrations(migrationsDir fs.FS, root string) ([]migrationFile, error) {
 	}
 
 	return sqlFiles, nil
-
 }
 
 func (dbConn DBConn) readAppliedMigrations(ctx context.Context) ([]string, error) {
-
 	var migratedFiles []string
 	rows, err := dbConn.Query(ctx, FindMigrationsQuery)
 	if err != nil {
@@ -319,18 +312,14 @@ func (dbConn DBConn) readAppliedMigrations(ctx context.Context) ([]string, error
 }
 
 func rollback(ctx context.Context, tx *sql.Tx, logger *slog.Logger, migrationFilename string) {
-
 	err := tx.Rollback()
 	if err != nil {
 		logger.ErrorContext(ctx, "Error rolling migration query!", slog.String("migrationFile", migrationFilename), slog.String("errorMessage", err.Error()))
 		/* Panicing here because the database may well be in an invalid state */
 		panic(err)
 	}
-
 }
 
 func sortDirEntries(left migrationFile, right migrationFile) int {
-
 	return strings.Compare(left.name, right.name)
-
 }

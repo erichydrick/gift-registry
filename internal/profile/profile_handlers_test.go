@@ -34,7 +34,6 @@ type person struct {
 // Connection details for the test database
 const (
 	dbName                 = "profile_test"
-	userAgent              = "test-user-agent"
 	lookupUpdatedUserQuery = `
 		SELECT p.person_id, 
 			h.household_id,
@@ -51,12 +50,12 @@ const (
 
 // Test-specific values
 var (
-	ctx        context.Context
-	db         database.Database
-	dataPath   string
-	getenv     func(string) string
-	logger     *slog.Logger
-	testServer *httptest.Server
+	ctx              context.Context
+	db               database.Database
+	elementsFilePath string
+	getenv           func(string) string
+	logger           *slog.Logger
+	testServer       *httptest.Server
 )
 
 func TestMain(m *testing.M) {
@@ -67,7 +66,7 @@ func TestMain(m *testing.M) {
 	logger = slog.New(handler)
 
 	var err error
-	dataPath, err = filepath.Abs(filepath.Join("..", "..", "testing_data", "profile_data", "expected_outputs"))
+	elementsFilePath, err = filepath.Abs(filepath.Join("..", "..", "testing_data", "profile_data", "expected_outputs"))
 	if err != nil {
 		log.Fatal("Could not find the directory holding expected test output files.")
 	}
@@ -78,8 +77,8 @@ func TestMain(m *testing.M) {
 	}
 
 	env := map[string]string{
-		"DB_NAME":          dbPath,
 		"DATA_MIGRATIONS":  filepath.Join("..", "..", "testing_data", "profile_data", "sql"),
+		"DB_NAME":          dbPath,
 		"MIGRATIONS_DIR":   filepath.Join("..", "..", "internal", "database", "migrations"),
 		"STATIC_FILES_DIR": filepath.Join("..", "..", "cmd", "web"),
 		"TEMPLATES_DIR":    filepath.Join("..", "..", "cmd", "web", "templates"),
@@ -110,6 +109,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestProfilePage(t *testing.T) {
+
 	testData := []struct {
 		elementsFile string
 		testName     string
@@ -133,7 +133,9 @@ func TestProfilePage(t *testing.T) {
 	}
 
 	for _, data := range testData {
+
 		t.Run(data.testName, func(t *testing.T) {
+
 			t.Parallel()
 
 			sessCookie := http.Cookie{
@@ -151,7 +153,7 @@ func TestProfilePage(t *testing.T) {
 			}
 
 			req.AddCookie(&sessCookie)
-			req.Header.Set("User-Agent", userAgent)
+			req.Header.Set("User-Agent", test.DefaultUserAgent)
 			req.Header.Set("Sec-Fetch-Dest", "document")
 			req.Header.Set("Sec-Fetch-Mode", "same-origin")
 			req.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -172,7 +174,7 @@ func TestProfilePage(t *testing.T) {
 				t.Fatal("Error parsing response body!", err)
 			}
 
-			expectedElements, err := test.LoadExpectedElements(dataPath, data.elementsFile)
+			expectedElements, err := test.LoadExpectedElements(elementsFilePath, data.elementsFile)
 			if err != nil {
 				t.Fatal("Could not load expected elements", err)
 			}
@@ -252,7 +254,7 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 			}
 
 			req.AddCookie(&sessCookie)
-			req.Header.Set("User-Agent", userAgent)
+			req.Header.Set("User-Agent", test.DefaultUserAgent)
 			req.Header.Set("Sec-Fetch-Dest", "document")
 			req.Header.Set("Sec-Fetch-Mode", "same-origin")
 			req.Header.Set("Sec-Fetch-Site", "same-origin")
@@ -272,6 +274,7 @@ func TestProfileEndpointsBadTemplates(t *testing.T) {
 }
 
 func TestProfileUpdates(t *testing.T) {
+
 	testData := []struct {
 		elementsFile    string
 		success         bool
@@ -363,15 +366,9 @@ func TestProfileUpdates(t *testing.T) {
 			},
 		},
 	}
-
 	for _, data := range testData {
 		t.Run(data.testName, func(t *testing.T) {
 			t.Parallel()
-
-			expectedElements, err := test.LoadExpectedElements(dataPath, data.elementsFile)
-			if err != nil {
-				t.Fatal("Could not load expected elements", err)
-			}
 
 			sessCookie := http.Cookie{
 				HttpOnly: true,
@@ -397,7 +394,7 @@ func TestProfileUpdates(t *testing.T) {
 			}
 
 			req.AddCookie(&sessCookie)
-			req.Header.Set("User-Agent", userAgent)
+			req.Header.Set("User-Agent", test.DefaultUserAgent)
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			req.Header.Set("Sec-Fetch-Dest", "document")
 			req.Header.Set("Sec-Fetch-Mode", "same-origin")
@@ -417,6 +414,11 @@ func TestProfileUpdates(t *testing.T) {
 			doc, err := html.Parse(res.Body)
 			if err != nil {
 				t.Fatal("Error parsing response body!", err)
+			}
+
+			expectedElements, err := test.LoadExpectedElements(elementsFilePath, data.elementsFile)
+			if err != nil {
+				t.Fatal("Could not load expected elements", err)
 			}
 
 			err = test.ValidatePage(doc, expectedElements)
