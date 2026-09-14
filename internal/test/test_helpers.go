@@ -2,23 +2,14 @@ package test
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
-	"gift-registry/internal/database"
-
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 	"golang.org/x/net/html"
 )
 
@@ -63,50 +54,6 @@ func (em *EmailMock) SendVerificationEmail(ctx context.Context, to []string, cod
 	return nil
 }
 
-func AddHouseholdPerson(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData, personID int64) (int64, error) {
-	var householdID int64
-	_ = db.QueryRow(ctx, "SELECT household_id FROM household WHERE name = ?",
-		userData.HouseholdName).Scan(&householdID)
-
-	/*
-		Add the test user to the household
-	*/
-
-	if res, err := db.Execute(ctx, "INSERT INTO household_people (household_id, person_id) VALUES(?, ?)", householdID, personID); err != nil {
-		return 0, fmt.Errorf("could not add test user to newly-created household %v: %v", householdID, err)
-	} else if added, err := res.RowsAffected(); err != nil {
-		log.Println("Error getting the last inserted ID from the test household creation.")
-		return 0, err
-	} else if added < 1 {
-		log.Println("Don't have an ID value for the newly-created household!")
-		return 0, err
-	}
-
-	return householdID, nil
-}
-
-func BuildDBContainer(ctx context.Context, initScripts string, dbName string, dbUser string, dbPass string) (*postgres.PostgresContainer, string, error) {
-	dbCont, err := postgres.Run(
-		ctx,
-		"postgres:17.2",
-		postgres.WithDatabase(dbName),
-		postgres.WithUsername(dbUser),
-		postgres.WithPassword(dbPass),
-		postgres.WithInitScripts(initScripts),
-		testcontainers.WithWaitStrategyAndDeadline(20*time.Second, wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(5*time.Second)),
-	)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to launch the database test container! %v", err)
-	}
-
-	dbURL, err := dbCont.Endpoint(ctx, "")
-	if err != nil {
-		return nil, "", fmt.Errorf("error getting the database endpoint %v", err)
-	}
-
-	return dbCont, dbURL, nil
-}
-
 func CheckElement(root html.Node, id string) (html.Node, bool) {
 
 	/*
@@ -144,121 +91,6 @@ func CleanupDatabase(targetDB string) error {
 	}
 
 	return nil
-}
-
-func CreateHousehold(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData, personID int64) (int64, error) {
-	/*
-		I don't want to have to make external IDs for every test, just use a string
-		timestamp as a "good enough" placeholder
-	*/
-	if userData.ExternalID == "" {
-
-		externalID := time.Now().String()
-		userData.ExternalID = externalID[0:externalIDLength]
-
-	}
-
-	/*
-		Create the household
-	*/
-	res, err := db.Execute(
-		ctx,
-		"INSERT INTO HOUSEHOLD (external_id, name) VALUES (?, ?)",
-		userData.ExternalID,
-		userData.HouseholdName,
-	)
-	if err != nil {
-		return 0, fmt.Errorf("could not create a household record for testing: %v", err)
-	} else if added, err := res.RowsAffected(); err != nil {
-		log.Println("Error getting the last inserted ID from the test household creation.")
-		return 0, err
-	} else if added < 1 {
-		log.Println("Don't have an ID value for the newly-created household!")
-		return 0, err
-	}
-
-	return AddHouseholdPerson(ctx, logger, db, userData, personID)
-}
-
-func CreateSession(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData, timeLeft time.Duration, userAgent string) (string, error) {
-	personID, err := CreateUser(ctx, logger, db, userData)
-	if err != nil {
-		log.Println("Could not create user for", userData, err)
-		return "", err
-	}
-
-	token := rand.Text()
-
-	/*
-		Write the session record and sanity check that it's there.
-	*/
-	if res, err := db.Execute(ctx, "INSERT INTO session(session_id, person_id, expiration, user_agent) VALUES (?, ?, ?, ?)", token, personID, time.Now().UTC().Add(timeLeft), userAgent); err != nil {
-		return "", err
-	} else if modified, err := res.RowsAffected(); err != nil {
-		return "", err
-	} else if modified != 1 {
-		return "", fmt.Errorf("didn't have the expected number of database rows modified")
-	}
-
-	return token, nil
-}
-
-func CreateUser(ctx context.Context, logger *slog.Logger, db database.Database, userData UserData) (int64, error) {
-	id := int64(0)
-
-	/*
-		I don't want to have to make external IDs for every test, just use a string
-		timestamp as a "good enough" placeholder
-	*/
-	if userData.ExternalID == "" {
-
-		externalID := time.Now().String()
-		userData.ExternalID = externalID[0:externalIDLength]
-
-	}
-
-	/*
-		Put an explicit default on the type for testing
-	*/
-	if userData.Type == "" {
-		userData.Type = "NORMAL"
-	}
-
-	/*
-		Do the insertion and make sure it worked. We're going to t.Fatal() if this
-		fails, so I'm not going to worry about Rollback() calls erroring, the
-		database is going to be deleted anyhow
-	*/
-	if res, err := db.Execute(ctx, "INSERT INTO people (external_id, email, first_name, last_name, display_name, type) VALUES (?, ?, ?, ?, ?, ?)", userData.ExternalID, userData.Email, userData.FirstName, userData.LastName, userData.DisplayName, userData.Type); err != nil {
-		log.Println("Error adding a new test person to the database.")
-		return 0, err
-	} else if added, err := res.RowsAffected(); err != nil {
-		log.Println("Error getting the last inserted ID from the test person creation.")
-		return 0, err
-	} else if added < 1 {
-		log.Println("Don't have an ID value for the newly-created person!")
-		return 0, err
-	}
-
-	err := db.QueryRow(ctx, "SELECT person_id FROM people WHERE external_id = ?", userData.ExternalID).Scan(&id)
-	if err != nil {
-		log.Println("Error reading the created user's ID")
-		return 0, fmt.Errorf("error reading the created user's id: %v", err)
-	}
-
-	/* Household information is not required for all tests.*/
-	if userData.CreateHousehold && userData.HouseholdName != "" {
-
-		_, err = CreateHousehold(ctx, logger, db, userData, id)
-		if err != nil {
-			return 0, fmt.Errorf("error adding the new test user to a household: %v", err)
-		}
-
-	} else {
-		AddHouseholdPerson(ctx, logger, db, userData, id)
-	}
-
-	return id, nil
 }
 
 // Checks if the element has the hidden property or hidden class.

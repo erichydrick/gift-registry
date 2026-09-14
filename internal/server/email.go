@@ -61,7 +61,12 @@ func (es emailSender) String() string {
 // Send the login email to the given address used for registering an account
 // to confirm the poerson who tried to log in is the person who owns the
 // address.
-func (es *emailSender) SendVerificationEmail(ctx context.Context, to []string, code string, getenv func(string) string) error {
+func (es *emailSender) SendVerificationEmail(
+	ctx context.Context,
+	to []string, code string,
+	getenv func(string) string,
+) error {
+
 	_, span := tracer.Start(ctx, "sendVerificationEmail")
 	defer span.End()
 
@@ -95,6 +100,8 @@ func (es *emailSender) SendVerificationEmail(ctx context.Context, to []string, c
 	if err != nil {
 		span.SetAttributes(attribute.String("emailError", err.Error()))
 	}
+	span.SetAttributes(attribute.Bool("emailSuccess", err == nil))
 
 	return err
+
 }
