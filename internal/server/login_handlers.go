@@ -86,11 +86,13 @@ const (
 		WHERE person_id = ?`
 )
 
-// Starts the login process by checking the provided email address against the
-// person table. If there's an account associated with that email, triggers an
-// email with a verification token to complete the login process.
+// LoginHandler starts the login process by checking the provided email address
+// against the person table. If there's an account associated with that email,
+// triggers an email with a verification token to complete the login process.
 func LoginHandler(svr *util.ServerUtils) http.Handler {
+
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
 		ctx := req.Context()
 		span := trace.SpanFromContext(ctx)
 		span.SetName("login_handler")
@@ -155,11 +157,18 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 
 		}
 
-		var emailErr error = nil
 		if modified == 1 {
 
-			svr.Logger.DebugContext(ctx, "Sending user email with the login token", slog.String("userEmail", userData.Email), slog.Any("emailer", emailer))
-			emailErr = emailer.SendVerificationEmail(ctx, []string{userData.Email}, token, svr.Getenv)
+			/*
+				Do this in a virtual thread so we can return immediately.
+			*/
+			go sendVerificationEmail(
+				ctx,
+				userData.Email,
+				token,
+				svr.Logger,
+				svr.Getenv,
+			)
 
 		}
 
@@ -167,7 +176,6 @@ func LoginHandler(svr *util.ServerUtils) http.Handler {
 		span.SetAttributes(
 			attribute.Int64("person_id", personID),
 			attribute.Bool("email_found", modified == 1),
-			attribute.Bool("email_success", emailErr == nil),
 		)
 
 		tmplPath := fmt.Sprintf("%s/%s", svr.Getenv("TEMPLATES_DIR"), "/verify_login.html")
@@ -753,4 +761,25 @@ func (vf verificationForm) succeeded() bool {
 
 func (vf verificationForm) Error() string {
 	return fmt.Sprintf("formErrors=%s, codeErrors=%s", vf.Errors.ErrorMessage, vf.Errors.Code)
+}
+
+func sendVerificationEmail(
+	ctx context.Context,
+	userEmail string,
+	token string,
+	logger *slog.Logger,
+	getenv func(string) string,
+) {
+
+	logger.DebugContext(ctx, "Sending user email with the login token", slog.String("userEmail", userEmail), slog.Any("emailer", emailer))
+
+	emailErr := emailer.SendVerificationEmail(ctx, []string{userEmail}, token, getenv)
+	if emailErr != nil {
+		logger.ErrorContext(
+			ctx,
+			"Error sending verification email",
+			slog.String("errorMessage", emailErr.Error()),
+		)
+	}
+
 }
