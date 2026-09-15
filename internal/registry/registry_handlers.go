@@ -31,6 +31,7 @@ type ItemRow struct {
 	itemNotes        sql.NullString
 	claimedHousehold sql.NullString
 	claimedQty       sql.NullInt16
+	claimNotes       sql.NullString
 	claimType        sql.NullString
 	giftDate         sql.NullString
 }
@@ -61,6 +62,7 @@ type RegistryItem struct {
 type RegistryItemClaim struct {
 	Claimant     string
 	ClaimedCount int8
+	Notes        string
 	GiftDate     string
 	Type         string
 }
@@ -73,9 +75,10 @@ const (
 				item.name,
 				item.quantity,
 				item.url,
-				item.notes,
+				item.notes AS item_notes,
 				claim.household_id,
 				claim.quantity AS claim_quantity,
+				claim.notes AS claim_notes,	
 				claim.claim_type,
 				claim.gift_date
 			FROM items item
@@ -89,9 +92,10 @@ const (
 			item.name, 
 			item.quantity, 
 			item.url, 
-			item.notes, 
+			item.item_notes, 
 			household.name, 
 			item.claim_quantity, 
+			item.claim_notes,
 			item.claim_type, 
 			item.gift_date 
 		FROM people person
@@ -208,6 +212,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 				&rawRowData.itemNotes,
 				&rawRowData.claimedHousehold,
 				&rawRowData.claimedQty,
+				&rawRowData.claimNotes,
 				&rawRowData.claimType,
 				&rawRowData.giftDate,
 			)
@@ -333,6 +338,7 @@ func (person *RegistryPerson) addItem(
 	claim := RegistryItemClaim{
 		Claimant:     rowData.claimedHousehold.String,
 		ClaimedCount: int8(rowData.claimedQty.Int16),
+		Notes:        rowData.claimNotes.String,
 		GiftDate:     giftDate.Format(time.DateOnly),
 		Type:         rowData.claimType.String,
 	}
