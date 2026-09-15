@@ -2,6 +2,7 @@ package middleware_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -167,6 +168,19 @@ func TestAuthMiddleware(t *testing.T) {
 
 			if res.StatusCode != data.expectedStatus {
 				t.Fatal("Expected a status of ", data.expectedStatus, "but got", res.StatusCode)
+			}
+
+			if data.path == "registry" {
+
+				cacheHeaders := res.Header.Get("cache-control")
+				if !strings.Contains(cacheHeaders, "no-cache") ||
+					!strings.Contains(cacheHeaders, "no-store") ||
+					!strings.Contains(cacheHeaders, "max-age=0") {
+
+					t.Fatal("/registry response missing cache control header values")
+
+				}
+
 			}
 
 			doc, err := html.Parse(res.Body)
