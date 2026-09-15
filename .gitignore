@@ -37,5 +37,5 @@ docker-compose-prod.yml
 **/private_migrations/*
 **/data_migrations/*
 
-# DB
-gift_registry.db
+# Worktrees
+worktrees/
