@@ -200,6 +200,7 @@ func authNext(
 ) {
 
 	if pass || isPublic(ctx, svr, req) {
+
 		/*
 			Redirect straight to the registry if trying to load the login page with a
 			valid session
@@ -211,6 +212,7 @@ func authNext(
 
 		} else {
 
+			res.Header().Set("Cache-Control", "no-cache,no-store,max-age=0")
 			next.ServeHTTP(res, req)
 			return
 
