@@ -8,6 +8,24 @@
     <link rel="stylesheet" href="css/styles.css" />
     <script src="js/htmx.js"></script>
 
+    <script type="text/javascript">
+
+        function openModal(id) {
+            
+            document.getElementById("add-item-modal").classList.remove("hidden");
+            document.getElementById("add-item-modal").classList.add("open-modal");
+
+        }
+
+        function closeModal() {
+
+            document.getElementById("add-item-modal").classList.remove("open-modal");
+            document.getElementById("add-item-modal").classList.add("hidden");
+
+        }
+
+    </script>
+
 </head>
 
 <body>
@@ -28,8 +46,18 @@
         {{end}}
     </div>
 
-    <!-- TODO: REGISTER GIFT BUTTON -- MOVE TO BOTTOM RIGHT OF DISPLAY VIEW -->
     <button id="register-gift-btn" class="btn btn-contained create-new-btn primary shadowed">Request Gift</button>
+
+    <div id="add-item-modal" class="hidden">
+        <div class="flex-column">
+            <div>
+                <h3>Modal header goes here</h3>
+            </div>
+            <div>
+                <h3>Modal body goes here</h3>
+            </div>
+        </div>
+    </div>
 
 </body>
 
