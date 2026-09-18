@@ -4,7 +4,7 @@
 <div class="scrollable-x">
     <div id="item-list-{{.PersonID}}" class="registry-items">
         <div class="center-text item-name-col">Item</div>
-        <div class="center-text item-qty-col">Still Wants</div>
+        <div class="center-text item-qty-col">Still Wants</div> <!-- TODO: RENAME THIS? --> 
         <div class="center-text item-url-col">Link</div>
         <div class="center-text item-notes-col">Extra Notes</div>
         <div class="center-text item-claimants-col">Claimed By</div>
@@ -44,12 +44,22 @@
             -->
             
             <div id="item-{{$key}}-claim-button" class="item-claim-btns-col">
-                {{if ne true isHistorical}} 
+                {{if and (ne true isHistorical) (ne 0 (subtract $value.Quantity $value.TotalClaimed))}} 
                 <button class="btn primary">We'll get this</button>
                 {{end}}
             </div>
     </div>
     {{end}}
+    <form id="new-item-{{.PersonID}}" hidden>
+        <input id="new-item-{{.PersonID}}-name" name="itemName" type="text" class="item-name-col"></input>
+        <input id="new-item-{{.PersonID}}-qty" name="itemQty" type="number" class="item-qty-col" min="1" max="1000000"></input>
+        <input id="new-item-{{.PersonID}}-url" name="itemURL" type="text" class="item-url-col"></input>
+        <input id="new-item-{{.PersonID}}-notes" name="itemNotes" type="text" class="item-notes-col"></input>
+        <div class="item-claimants-col"></div>
+        <div class="item-gift-dates-col"></div>
+        <button class="btn">Never mind</button>
+        <button class="btn secondary-contained">Please</button>
+    </form>
     </div>
 </div>
 {{else}}
