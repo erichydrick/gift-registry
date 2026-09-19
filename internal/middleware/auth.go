@@ -176,7 +176,6 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 
 		/* Session's valid, continue the request */
 		svr.Logger.DebugContext(ctx, "Session validated")
-		pass = true
 		newExp := time.Now().Add(5 * time.Minute).UTC()
 		cookie.MaxAge = int(time.Until(newExp).Seconds())
 		http.SetCookie(res, cookie)
@@ -200,23 +199,40 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 		var householdID int64
 		if err := svr.DB.QueryRow(ctx, LookupHouseholdQuery, sessInfo.personID).
 			Scan(&householdID); err != nil {
-			svr.Logger.ErrorContext(
+			svr.Logger.WarnContext(
 				ctx,
 				"Could not find a household associated with the user",
 				slog.String("errorMessage", err.Error()),
 				slog.Int64("personID", sessInfo.personID),
 			)
-		} else {
-			ctx = context.WithValue(ctx, loggedInHousehold, householdID)
+			authNext(ctx, svr, res, req, next, pass)
 		}
 
+		ctx = context.WithValue(ctx, loggedInHousehold, householdID)
+
 		req = req.WithContext(ctx)
+		pass = true
 		authNext(ctx, svr, res, req, next, pass)
 	})
 }
 
 func PersonID(req *http.Request) int64 {
 	return req.Context().Value(loggedInUser).(int64)
+}
+
+func HouseholdID(req *http.Request) int64 {
+
+	/*
+		While there's technically nothing FORCING a user to be in a household,
+		the middleware logic that populates this context fails (and redirects users
+		to the login page) if we can't find the household ID in the database,
+		effectively creating the requirement here. I'm sticking with that rather
+		going back and treating it as optional because I'm liking the idea of
+		households as a unit and grouping mechanism so having a soft requirement
+		in the middleware enforces that.
+	*/
+	return req.Context().Value(loggedInHousehold).(int64)
+
 }
 
 func authNext(

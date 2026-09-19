@@ -39,7 +39,7 @@
 
     <div id="registries">
         <div id="registry-error-message" class="centered content error overflow-y shadowed" {{if eq .ErrorMessage ""}}hidden{{end}}>{{.ErrorMessage}}</div>
-        {{range .Registries}}
+        {{range .Wishlists}}
         <div id="registry-{{.PersonID}}" class="centered center-text content overflow-x overflow-y shadowed">
             {{template "registry-table" .}}
         </div>

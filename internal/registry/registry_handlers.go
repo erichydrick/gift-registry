@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
-	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -37,8 +36,9 @@ type ItemRow struct {
 }
 
 type Registries struct {
-	ErrorMessage string
-	Registries   []RegistryPerson
+	EditablePeople []string
+	ErrorMessage   string
+	Wishlists      []RegistryPerson
 }
 
 type RegistryPerson struct {
@@ -68,6 +68,13 @@ type RegistryItemClaim struct {
 }
 
 const (
+	selectEditableWishtlists = `
+		SELECT person.external_id
+		FROM people person
+			INNER JOIN household_people hp ON hp.person_id = person.person_id
+		WHERE person.person_id = ? 
+			OR (hp.household_id = ? AND person.type = 'MANAGED')
+	`
 	selectItemsForRegistriesQuery = `
 		WITH gift_items AS (SELECT item.item_id,
 				item.gift_for,
@@ -176,6 +183,10 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 			return
 		}
 
+		curUser := middleware.PersonID(req)
+		household := middleware.HouseholdID(req)
+
+		/* TODO: THIS QUERY (AND PROCESSOR) CAN GO IN A GO FUNC WHILE WE GET MANAGED PEOPLE */
 		results, err := svr.DB.Query(
 			ctx,
 			fmt.Sprintf(selectItemsForRegistriesQuery, nullCheck, comparator),
@@ -190,7 +201,6 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 		}
 
 		registries := Registries{}
-		curUser := middleware.PersonID(req)
 		people := map[string]RegistryPerson{}
 
 		now := time.Now()
@@ -239,7 +249,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 
 				person = createPerson(rawRowData)
 				people[person.PersonID] = person
-				registries.Registries = append(registries.Registries, person)
+				registries.Wishlists = append(registries.Wishlists, person)
 
 			}
 
@@ -248,15 +258,36 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 
 		}
 
-		res.WriteHeader(200)
-		for person := range maps.Values(people) {
-			svr.Logger.DebugContext(
+		editableWisthlists := []string{}
+		editableIDs, err := svr.DB.Query(ctx, selectEditableWishtlists, curUser, household)
+		if err != nil {
+			svr.Logger.ErrorContext(
 				ctx,
-				"Registry ready for rendering",
-				slog.Any("person", person),
+				"Could not look up which wishlists this user can edit.",
+				slog.String("errorMessage", err.Error()),
+				slog.Int64("personID", curUser),
 			)
 		}
 
+		for editableIDs.Next() {
+
+			var id string
+			err = editableIDs.Scan(&id)
+			if err != nil {
+				svr.Logger.ErrorContext(
+					ctx,
+					"Could not read at least 1 of the IDs from the list of editable wishlists, skipping it.",
+					slog.String("errorMessage", err.Error()),
+				)
+				continue
+			}
+
+			editableWisthlists = append(editableWisthlists, id)
+		}
+
+		registries.EditablePeople = editableWisthlists
+
+		res.WriteHeader(200)
 		err = tmpl.ExecuteTemplate(res, "registry-page", registries)
 		if err != nil {
 			errorMessage := err.Error()
