@@ -192,7 +192,7 @@ func TestAuthMiddleware(t *testing.T) {
 				Auth-protected endpoints include cache-related headers and request context
 				that need to be validated.
 			*/
-			if data.path == "registry" {
+			if data.path == "/registry" {
 
 				cacheHeaders := res.Header.Get("cache-control")
 				if !strings.Contains(cacheHeaders, "no-cache") ||
