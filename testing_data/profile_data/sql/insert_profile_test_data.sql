@@ -18,7 +18,8 @@ INSERT INTO people (person_id, external_id, email, display_name, first_name, las
 INSERT INTO households (household_id, external_id, name) 
     VALUES (1, 'disp-household', 'Disp'),
         (2, 'update-profile-existing-household', 'Existing Household Success'),
-        (3, 'update-household-name-succ', 'Valid household');
+        (3, 'update-household-name-succ', 'Valid household'), 
+        (4, 'unusued', 'Unused household');
 
 INSERT INTO household_people (household_id, person_id) 
     VALUES (1, 1),
@@ -26,6 +27,8 @@ INSERT INTO household_people (household_id, person_id)
         (1, 3),
         (1, 4),
         (1, 5),
+        (4, 6),
+        (4, 7),
         (2, 8),
         (2, 9),
         (2, 10),

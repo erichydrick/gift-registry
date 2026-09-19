@@ -6,10 +6,15 @@ INSERT INTO people (person_id, external_id, email, display_name, first_name, las
     (5, 'protected-endpoint-user-with-household', 'protectedEndpointWithHouseholdTest@localhost.com', 'With', 'With', 'Household', 'NORMAL');
 
 INSERT INTO households (household_id, external_id, name)
-    VALUES (1, 'protected-endpoint-household', 'Protected With House');
+    VALUES (1, 'protected-endpoint-household', 'Protected With House'),
+        (2, 'middleware-rejected-household', 'Middleware Rejection');
 
 INSERT INTO household_people (household_id, person_id)
-    VALUES (1, 5);
+    VALUES (1, 2),
+        (1, 5),
+        (2, 1), 
+        (2, 3),
+        (2, 4);
 
 INSERT INTO sessions (session_id, person_id, expiration, user_agent)
     VALUES ('protected-endpoint-access', 2, Datetime('now', '+5 minutes'), 'test-user-agent'),
