@@ -186,7 +186,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 		}
 
 		registries := Registries{}
-		curUser := middleware.PersonID(res, req)
+		curUser := middleware.PersonID(req)
 		people := map[string]RegistryPerson{}
 
 		now := time.Now()

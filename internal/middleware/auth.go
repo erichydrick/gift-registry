@@ -186,7 +186,7 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 	})
 }
 
-func PersonID(res http.ResponseWriter, req *http.Request) int64 {
+func PersonID(req *http.Request) int64 {
 	return req.Context().Value(loggedInUser).(int64)
 }
 
