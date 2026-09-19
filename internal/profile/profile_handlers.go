@@ -120,7 +120,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 		}
 
 		var person userData
-		personID := middleware.PersonID(res, req)
+		personID := middleware.PersonID(req)
 		profileIDs := []int64{personID}
 		span.SetAttributes(attribute.Int64("person_id", personID))
 		err = svr.DB.QueryRow(ctx, lookupPersonQuery, personID).
@@ -247,7 +247,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 		span := trace.SpanFromContext(ctx)
 		span.SetName("profile_update")
 
-		personID := middleware.PersonID(res, req)
+		personID := middleware.PersonID(req)
 		externalID := req.PathValue("externalID")
 
 		err := req.ParseForm()

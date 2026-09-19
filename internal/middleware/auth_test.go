@@ -16,7 +16,9 @@ func TestAuthMiddleware(t *testing.T) {
 	testData := []struct {
 		elementsFile   string
 		expectedStatus int
+		householdID    int64
 		path           string
+		personID       int64
 		sfDest         string
 		sfMode         string
 		sfSite         string
@@ -80,13 +82,29 @@ func TestAuthMiddleware(t *testing.T) {
 			validSession:   true,
 		},
 		{
+			elementsFile:   "middleware_auth_registry_page_elements.json",
 			expectedStatus: http.StatusOK,
 			path:           "/registry",
+			personID:       2,
 			sfDest:         "document",
 			sfMode:         "same-origin",
 			sfSite:         "same-origin",
 			testName:       "Valid session",
 			token:          "protected-endpoint-access",
+			userAgent:      test.DefaultUserAgent,
+			validSession:   true,
+		},
+		{
+			elementsFile:   "middleware_auth_registry_page_with_household_elements.json",
+			expectedStatus: http.StatusOK,
+			householdID:    1,
+			path:           "/registry",
+			personID:       5,
+			sfDest:         "document",
+			sfMode:         "same-origin",
+			sfSite:         "same-origin",
+			testName:       "Valid session with household",
+			token:          "protected-endpoint-user-with-household-access",
 			userAgent:      test.DefaultUserAgent,
 			validSession:   true,
 		},
@@ -170,6 +188,10 @@ func TestAuthMiddleware(t *testing.T) {
 				t.Fatal("Expected a status of ", data.expectedStatus, "but got", res.StatusCode)
 			}
 
+			/*
+				Auth-protected endpoints include cache-related headers and request context
+				that need to be validated.
+			*/
 			if data.path == "registry" {
 
 				cacheHeaders := res.Header.Get("cache-control")
@@ -180,6 +202,17 @@ func TestAuthMiddleware(t *testing.T) {
 					t.Fatal("/registry response missing cache control header values")
 
 				}
+
+				if data.personID > 0 {
+
+					personID := middleware.PersonID(req)
+					if personID != data.personID {
+						t.Fatal("Person ID in the request context didn't match. Wanted", data.personID, "got", personID)
+					}
+
+				}
+
+				/* TODO: VALIDATE HOUSEHOLD ID IN CONTEXT */
 
 			}
 
@@ -197,6 +230,7 @@ func TestAuthMiddleware(t *testing.T) {
 			if err != nil {
 				t.Fatal("Page validation failed:", err)
 			}
+
 		})
 	}
 }
