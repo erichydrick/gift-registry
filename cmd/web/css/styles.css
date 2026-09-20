@@ -198,11 +198,17 @@ td {
 }
 
 .create-new-btn {
-    bottom: 0;
-    margin-bottom: .625rem;
-    position: fixed;
-    margin-right: .625rem;
-    right: 0;
+    background-color: var(--primary-color);
+    box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+    color: var(--white-color);
+    float: right;
+    margin: .625rem;
+    -webkit-box-shadow: 0 3px 1px -2px rgba(0, 0, 0, .2), 0 2px 2px 0 rgba(0, 0, 0, .14), 0 1px 5px 0 rgba(0, 0, 0, .12);
+}
+
+.create-new-btn:hover {
+    background-color: var(--primary-color-300);
+    color: var(--white-color) !important;
 }
 
 .danger {
