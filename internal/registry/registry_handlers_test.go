@@ -11,8 +11,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -186,6 +188,85 @@ func TestRegistryPage(t *testing.T) {
 			err = test.ValidatePage(doc, expectedElements)
 			if err != nil {
 				t.Fatal("Output validation failed!", err)
+			}
+
+		})
+
+	}
+
+}
+
+func TestBadTemplates(t *testing.T) {
+
+	env := map[string]string{
+		"STATIC_FILES_DIR": filepath.Join("..", "..", "cmd", "web"),
+		"TEMPLATES_DIR":    "templates",
+	}
+	testGetenv := func(name string) string { return env[name] }
+
+	appHandler, err := server.NewServer(testGetenv, db, logger, nil)
+	if err != nil {
+		log.Fatal("Error setting up the test handler", err)
+	}
+
+	testData := []struct {
+		formData url.Values
+		method   string
+		path     string
+		token    string
+		testName string
+	}{
+		{
+			method:   http.MethodGet,
+			path:     "/registry",
+			token:    "dad-registry-session",
+			testName: "View registry page",
+		},
+	}
+
+	for _, data := range testData {
+
+		t.Run(data.testName, func(t *testing.T) {
+
+			t.Parallel()
+
+			templatesServer := httptest.NewServer(appHandler)
+			defer templatesServer.Close()
+
+			sessCookie := http.Cookie{
+				HttpOnly: true,
+				MaxAge:   time.Now().UTC().Add(time.Minute * 1).Second(),
+				Name:     middleware.SessionCookie,
+				SameSite: http.SameSiteStrictMode,
+				Secure:   true,
+				Value:    data.token,
+			}
+
+			req, err := http.NewRequestWithContext(
+				ctx,
+				data.method,
+				templatesServer.URL+data.path,
+				strings.NewReader(data.formData.Encode()),
+			)
+			if err != nil {
+				t.Fatal("Error building profile update request", err)
+			}
+
+			req.AddCookie(&sessCookie)
+			req.Header.Set("User-Agent", test.DefaultUserAgent)
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "same-origin")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
+			res, err := http.DefaultClient.Do(req)
+			defer func() {
+				if res != nil && res.Body != nil {
+					_ = res.Body.Close()
+				}
+			}()
+			if err != nil {
+				t.Fatal("Error getting the updated profile page!", err)
+			} else if res.StatusCode != http.StatusInternalServerError {
+				t.Fatal("Expected a 500 from the server, but got", res.StatusCode)
 			}
 
 		})
