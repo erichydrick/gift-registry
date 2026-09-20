@@ -65,4 +65,7 @@
 {{else}}
 <div id="registry-{{.PersonID}}-nothing-wanted-msg" class="centered center-text"><em>{{.DisplayName}} is happy and content and wants for nothing.</em></div>
 {{end}}
+    {{if and .Editable (ne true isHistorical)}} 
+    <button id="register-gift-btn-{{.PersonID}}" class="btn create-new-btn shadowed">Request Gift</button>
+    {{end}}
 {{end}}

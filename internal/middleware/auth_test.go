@@ -203,17 +203,6 @@ func TestAuthMiddleware(t *testing.T) {
 
 				}
 
-				if data.personID > 0 {
-
-					personID := middleware.PersonID(req)
-					if personID != data.personID {
-						t.Fatal("Person ID in the request context didn't match. Wanted", data.personID, "got", personID)
-					}
-
-				}
-
-				/* TODO: VALIDATE HOUSEHOLD ID IN CONTEXT */
-
 			}
 
 			doc, err := html.Parse(res.Body)

@@ -53,6 +53,9 @@
     "registry-person-six-nothing-wanted-msg": {
         "visible": true
     },
+    "register-gift-btn-person-six": {
+        "visible": true
+    },
     "registry-person-seven": {
         "visible": true
     },

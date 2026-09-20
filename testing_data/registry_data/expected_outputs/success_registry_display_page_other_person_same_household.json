@@ -9,9 +9,6 @@
         "visible": true,
         "value": "Mom's Registry"
     },
-    "register-gift-btn-person-one": {
-        "visible": true
-    },
     "registry-person-two": {
         "visible": true
     },
@@ -22,6 +19,9 @@
     "registry-person-two-nothing-wanted-msg": {
         "visible": true
     },
+    "register-gift-btn-person-two": {
+        "visible": true
+    },
     "registry-person-three": {
         "visible": true
     },
@@ -29,18 +29,12 @@
         "visible": true,
         "value": "Son's Registry"
     },
-    "register-gift-btn-person-three": {
-        "visible": true
-    },
     "registry-person-four": {
         "visible": true
     },
     "registry-person-four-label": {
         "visible": true,
         "value": "Daughter's Registry"
-    },
-    "register-gift-btn-person-four": {
-        "visible": true
     },
     "registry-person-five": {
         "visible": true
@@ -203,7 +197,7 @@
     },
     "item-gift-6-claimant-0": {
         "visible": true,
-        "value": "???"
+        "value": "The OtherFamily"
     },
     "item-gift-6-claim-0-gift-date": {
         "visible": true

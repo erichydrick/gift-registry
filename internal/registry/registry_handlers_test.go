@@ -107,7 +107,7 @@ func TestRegistryPage(t *testing.T) {
 			token:        "grandma-registry-session",
 		},
 		{
-			elementsFile: "success_registry_display_page_other_person.json",
+			elementsFile: "success_registry_display_page_other_person_same_household.json",
 			testName:     "Can see claimants for other household member's gifts",
 			token:        "dad-registry-session",
 		},

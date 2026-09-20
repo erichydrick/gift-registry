@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -35,14 +36,15 @@ type ItemRow struct {
 }
 
 type Registries struct {
-	EditablePeople []string
-	ErrorMessage   string
-	Wishlists      []RegistryPerson
+	ErrorMessage string
+	Wishlists    []RegistryPerson
 }
 
 type RegistryPerson struct {
+	dbID        int64
 	PersonID    string
 	DisplayName string
+	Editable    bool
 	LastName    string
 
 	Items map[string]RegistryItem
@@ -67,7 +69,7 @@ type RegistryItemClaim struct {
 
 const (
 	selectEditableWishtlists = `
-		SELECT person.external_id
+		SELECT person.person_id
 		FROM people person
 			INNER JOIN household_people hp ON hp.person_id = person.person_id
 		WHERE person.person_id = ? 
@@ -112,7 +114,9 @@ const (
 // RegistryHandler returns the registry items, grouped by person, for
 // bulk display in the UI.
 func RegistryHandler(svr *util.ServerUtils) http.Handler {
+
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
 		ctx := req.Context()
 		span := trace.SpanFromContext(ctx)
 		span.SetName("registry_handler")
@@ -136,12 +140,10 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 
 		}
 
-		/*
-			We want to track the difference between the REQUESTED quantity and the
-			CLAIMED quantity, but to do that we need a subtraction function we can
-			pass in.
-		*/
 		funcMap := template.FuncMap{
+			"editable": func(editableLists []string, id string) bool {
+				return slices.Contains(editableLists, id)
+			},
 			"isHistorical": func() bool {
 				return historicalParam == "true"
 			},
@@ -181,6 +183,17 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 
 		curUser := middleware.PersonID(req)
 		household := middleware.HouseholdID(req)
+
+		/*
+			A person is "editable" if they're the current active user or it's someone managed
+			by this user.
+		*/
+		selfAndMangedPeople := editablePeople(
+			ctx,
+			svr,
+			curUser,
+			household,
+		)
 
 		/* TODO: THIS QUERY (AND PROCESSOR) CAN GO IN A GO FUNC WHILE WE GET MANAGED PEOPLE */
 		results, err := svr.DB.Query(
@@ -243,6 +256,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 			if !ok {
 
 				person = createPerson(rawRowData)
+				person.Editable = slices.Contains(selfAndMangedPeople, person.dbID)
 				people[person.PersonID] = person
 				registries.Wishlists = append(registries.Wishlists, person)
 
@@ -252,35 +266,6 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 			cnt++
 
 		}
-
-		editableWisthlists := []string{}
-		editableIDs, err := svr.DB.Query(ctx, selectEditableWishtlists, curUser, household)
-		if err != nil {
-			svr.Logger.ErrorContext(
-				ctx,
-				"Could not look up which wishlists this user can edit.",
-				slog.String("errorMessage", err.Error()),
-				slog.Int64("personID", curUser),
-			)
-		}
-
-		for editableIDs.Next() {
-
-			var id string
-			err = editableIDs.Scan(&id)
-			if err != nil {
-				svr.Logger.ErrorContext(
-					ctx,
-					"Could not read at least 1 of the IDs from the list of editable wishlists, skipping it.",
-					slog.String("errorMessage", err.Error()),
-				)
-				continue
-			}
-
-			editableWisthlists = append(editableWisthlists, id)
-		}
-
-		registries.EditablePeople = editableWisthlists
 
 		res.WriteHeader(200)
 		err = tmpl.ExecuteTemplate(res, "registry-page", registries)
@@ -301,12 +286,51 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 
 func createPerson(rowData ItemRow) RegistryPerson {
 	return RegistryPerson{
+		dbID:        rowData.personID,
 		PersonID:    rowData.personExtID,
 		DisplayName: rowData.personDispName,
 		LastName:    rowData.personLastName,
 
 		Items: map[string]RegistryItem{},
 	}
+}
+
+func addClaim(
+	ctx context.Context,
+	svr *util.ServerUtils,
+	rowData ItemRow,
+	item *RegistryItem) (RegistryItemClaim, time.Time) {
+
+	giftDate, err := time.Parse(time.DateOnly, rowData.giftDate.String[0:10])
+	if err != nil {
+		svr.Logger.ErrorContext(
+			ctx,
+			"Could not parse gift date from database result, skipping.",
+			slog.Bool("databaseDatePresent", rowData.giftDate.Valid),
+			slog.String("databaseDate", rowData.giftDate.String),
+			slog.String("errorMessage", err.Error()),
+		)
+	}
+
+	claim := RegistryItemClaim{
+		Claimant:     rowData.claimedHousehold.String,
+		ClaimedCount: int8(rowData.claimedQty.Int16),
+		GiftDate:     giftDate.Format(time.DateOnly),
+		Type:         rowData.claimType.String,
+	}
+
+	/*
+		The second (and beyond) joint claim should not impact the count that people
+		have committed to getting. Only adjust the claimed count if nobody has
+		already committed to getting it or 2+ separate people are making 2+ separate
+		purchases (e.g. 2+ partial claims)
+	*/
+	if len(item.Claims) == 0 || (claim.Type != "" && claim.Type != "JOINT") {
+		item.TotalClaimed += claim.ClaimedCount
+	}
+
+	return claim, giftDate
+
 }
 
 func (person *RegistryPerson) addItem(
@@ -350,33 +374,7 @@ func (person *RegistryPerson) addItem(
 
 	}
 
-	giftDate, err := time.Parse(time.DateOnly, rowData.giftDate.String[0:10])
-	if err != nil {
-		svr.Logger.ErrorContext(
-			ctx,
-			"Could not parse gift date from database result, skipping.",
-			slog.Bool("databaseDatePresent", rowData.giftDate.Valid),
-			slog.String("databaseDate", rowData.giftDate.String),
-			slog.String("errorMessage", err.Error()),
-		)
-	}
-
-	claim := RegistryItemClaim{
-		Claimant:     rowData.claimedHousehold.String,
-		ClaimedCount: int8(rowData.claimedQty.Int16),
-		GiftDate:     giftDate.Format(time.DateOnly),
-		Type:         rowData.claimType.String,
-	}
-
-	/*
-		The second (and beyond) joint claim should not impact the count that people
-		have committed to getting. Only adjust the claimed count if nobody has
-		already committed to getting it or 2+ separate people are making 2+ separate
-		purchases (e.g. 2+ partial claims)
-	*/
-	if len(item.Claims) == 0 || (claim.Type != "" && claim.Type != "JOINT") {
-		item.TotalClaimed += claim.ClaimedCount
-	}
+	claim, giftDate := addClaim(ctx, svr, rowData, &item)
 
 	/*
 		Don't show the user who's getting their upcoming gifts!
@@ -386,6 +384,44 @@ func (person *RegistryPerson) addItem(
 	}
 
 	item.Claims = append(item.Claims, claim)
-
 	person.Items[item.ItemID] = item
+
+}
+
+func editablePeople(
+	ctx context.Context,
+	svr *util.ServerUtils,
+	curUser int64,
+	household int64) []int64 {
+
+	editableLists := []int64{}
+	editableIDs, err := svr.DB.Query(ctx, selectEditableWishtlists, curUser, household)
+	if err != nil {
+		svr.Logger.ErrorContext(
+			ctx,
+			"Could not look up which wishlists this user can edit.",
+			slog.String("errorMessage", err.Error()),
+			slog.Int64("personID", curUser),
+		)
+	}
+
+	for editableIDs.Next() {
+
+		var id int64
+		err = editableIDs.Scan(&id)
+		if err != nil {
+			svr.Logger.ErrorContext(
+				ctx,
+				"Could not read at least 1 of the IDs from the list of editable wishlists, skipping it.",
+				slog.String("errorMessage", err.Error()),
+			)
+			continue
+		}
+
+		editableLists = append(editableLists, id)
+
+	}
+
+	return editableLists
+
 }
