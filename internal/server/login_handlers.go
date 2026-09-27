@@ -265,7 +265,7 @@ func LogoutHandler(svr *util.ServerUtils) http.Handler {
 			return
 		}
 		cookie.Expires = time.Unix(0, 0)
-		cookie.MaxAge = 0
+		cookie.MaxAge = -1
 
 		if _, err := svr.DB.Execute(ctx, DeleteSessionStatement, cookie.Value); err != nil {
 			svr.Logger.ErrorContext(
