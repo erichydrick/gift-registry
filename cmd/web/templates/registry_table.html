@@ -1,6 +1,5 @@
 {{define "registry-table"}}
 <h3 id="registry-{{.PersonID}}-label" class="center-text mb-3">{{.DisplayName}}'s Registry</h3>
-{{if .Items}}
 <div class="scrollable-x">
     <div id="item-list-{{.PersonID}}" class="registry-items">
         <div class="center-text item-name-col">Item</div>
@@ -12,6 +11,7 @@
         <div class="center-text item-claim-btns-col"><!-- Adding an unlabeled column for the claim this button --></div>
     </div>
     <div>
+    {{if .Items}}
     {{ range $key, $value := .Items}}
     <div id="item-{{$key}}" class="registry-items">
             <div id="item-{{$key}}-name" class="item-name-col">{{$value.Name}}</div>
@@ -50,6 +50,12 @@
             </div>
     </div>
     {{end}}
+    </div>
+</div>
+{{else}}
+<div id="registry-{{.PersonID}}-nothing-wanted-msg" class="centered center-text"><em>{{.DisplayName}} is happy and content and wants for nothing.</em></div>
+{{end}}
+    {{if and .Editable (ne true isHistorical)}} 
     <form id="new-item-{{.PersonID}}" hidden>
         <input id="new-item-{{.PersonID}}-name" name="itemName" type="text" class="item-name-col"></input>
         <input id="new-item-{{.PersonID}}-qty" name="itemQty" type="number" class="item-qty-col" min="1" max="1000000"></input>
@@ -60,12 +66,6 @@
         <button class="btn">Never mind</button>
         <button class="btn secondary-contained">Please</button>
     </form>
-    </div>
-</div>
-{{else}}
-<div id="registry-{{.PersonID}}-nothing-wanted-msg" class="centered center-text"><em>{{.DisplayName}} is happy and content and wants for nothing.</em></div>
-{{end}}
-    {{if and .Editable (ne true isHistorical)}} 
-    <button id="register-gift-btn-{{.PersonID}}" class="btn create-new-btn shadowed">Request Gift</button>
+    <button id="register-gift-btn-{{.PersonID}}" class="btn create-new-btn shadowed" onclick="showForm({{.PersonID}})">Ask for something</button>
     {{end}}
 {{end}}
