@@ -13,12 +13,29 @@
         function hideForm(id) {
 
             document.getElementById("new-item-" + id).hidden = true;
+            const listHeaders = document.getElementById("list-" + id); 
+
+            /* Re-hide the headers if there isn't an existing item */
+            if (!listHeaders) {
+
+                document.getElementById("item-list-" + id).hidden = true;
+                document.getElementById("registry-" + id + "-nothing-wanted-msg").hidden = false;
+
+            }
 
         }
 
         function showForm(id) {
-            
+      
+            document.getElementById("item-list-" + id).hidden = false;
             document.getElementById("new-item-" + id).hidden = false;
+
+            const notWantedMsg = document.getElementById("registry-" + id + "-nothing-wanted-msg");
+            if (notWantedMsg) {
+
+                notWantedMsg.hidden = true;
+
+            }
 
         }
 
