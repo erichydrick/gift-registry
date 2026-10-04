@@ -196,6 +196,110 @@ func TestRegistryPage(t *testing.T) {
 
 }
 
+// TestAddItem validates the behavior around adding an item to a wish list.
+func TestAddItem(t *testing.T) {
+
+	testData := []struct {
+		elementsFile string
+		itemLink     string
+		itemName     string
+		itemNotes    string
+		itemQuantity string
+		personID     string
+		testName     string
+		token        string
+	}{
+		{
+			elementsFile: "add_item_registry_handling_start_empty.json",
+			itemLink:     "https://www.amazon.com",
+			itemName:     "Imaginary gift",
+			itemNotes:    "I wish I could get this",
+			itemQuantity: "1",
+			personID:     "person-nine",
+			testName:     "Add item to empty list",
+			token:        "tiny-tim-session",
+		},
+		{
+			elementsFile: "add_item_registry_handling_existing_items.json",
+			itemLink:     "https://www.walmart.com",
+			itemName:     "Additional gift",
+			itemNotes:    "I would want this",
+			itemQuantity: "3",
+			personID:     "person-three",
+			testName:     "Add item to existing list",
+			token:        "person-three-session",
+		},
+	}
+
+	for _, data := range testData {
+
+		t.Run(data.testName, func(t *testing.T) {
+
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+			defer cancel()
+
+			sessionCookie := http.Cookie{
+				HttpOnly: true,
+				MaxAge:   time.Now().UTC().Add(time.Minute * 1).Second(),
+				Name:     middleware.SessionCookie,
+				SameSite: http.SameSiteStrictMode,
+				Secure:   true,
+				Value:    data.token,
+			}
+
+			form := url.Values{}
+			form.Add("name", data.itemName)
+			form.Add("quantity", data.itemQuantity)
+			form.Add("name", data.itemLink)
+			form.Add("name", data.itemNotes)
+
+			req, err := http.NewRequestWithContext(ctx, "POST", testServer.URL+"/registries/"+data.personID, strings.NewReader(form.Encode()))
+			if err != nil {
+				t.Fatal("Error creating test request")
+			}
+
+			req.AddCookie(&sessionCookie)
+			req.Header.Set("User-Agent", test.DefaultUserAgent)
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "same-origin")
+			req.Header.Set("Sec-Fetch-Site", "same-origin")
+
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal("Error adding an item to it's new registry")
+			}
+			defer func() {
+				if res != nil && res.Body != nil {
+					_ = res.Body.Close()
+				}
+			}()
+
+			doc, err := html.Parse(res.Body)
+			if err != nil {
+				t.Fatal("Error parsing server response!", err.Error())
+			}
+			expectedElements, err := test.LoadExpectedElements(expectedElementsPath, data.elementsFile)
+
+			if err != nil {
+				t.Fatal("Error trying to load expected response elements")
+			}
+
+			err = test.ValidatePage(doc, expectedElements)
+			if err != nil {
+				t.Fatal("Error validating page")
+			}
+
+		})
+
+	}
+
+}
+
+// TestBadTempaltes verifies we return a 500 and an error message if the
+// configs point to a bad templates directory.
 func TestBadTemplates(t *testing.T) {
 
 	env := map[string]string{
@@ -209,6 +313,7 @@ func TestBadTemplates(t *testing.T) {
 		log.Fatal("Error setting up the test handler", err)
 	}
 
+	// TODO: ADD CASE FOR REQUESTING AN ITEM
 	testData := []struct {
 		formData url.Values
 		method   string

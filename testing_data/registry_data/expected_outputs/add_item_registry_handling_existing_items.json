@@ -1,0 +1,18 @@
+{
+    "registry-person-three": {
+        "visible": true
+    },
+    "registry-person-three-label": {
+        "visible": true,
+        "value": "Son's Registry"
+    },
+    "item-list-person-three": {
+        "visible": true
+    },
+    "item-list-person-three": {
+        "visible": true
+    },
+    "register-gift-btn-person-three": {
+        "visible": true
+    }
+}

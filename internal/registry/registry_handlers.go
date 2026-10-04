@@ -115,6 +115,14 @@ const (
 	`
 )
 
+func AddItemHandler(svr *util.ServerUtils) http.Handler {
+
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
+	})
+
+}
+
 // RegistryHandler returns the registry items, grouped by person, for
 // bulk display in the UI.
 func RegistryHandler(svr *util.ServerUtils) http.Handler {
