@@ -56,12 +56,12 @@
         <div id="registry-{{.PersonID}}-nothing-wanted-msg" class="centered center-text"><em>{{.DisplayName}} is happy and content and wants for nothing.</em></div>
         {{end}} 
         {{if and .Editable (ne true isHistorical)}} 
-        <div class="reistry-items">
-            <form id="new-item-{{.PersonID}}" hidden>
-                <input id="new-item-{{.PersonID}}-name" name="itemName" type="text" class="item-name-col"></input>
-                <input id="new-item-{{.PersonID}}-qty" name="itemQty" type="number" class="item-qty-col" min="1" max="1000000"></input>
-                <input id="new-item-{{.PersonID}}-url" name="itemURL" type="text" class="item-url-col"></input>
-                <input id="new-item-{{.PersonID}}-notes" name="itemNotes" type="text" class="item-notes-col"></input>
+        <div class="registry-items">
+            <form id="new-item-{{.PersonID}}" {{if .ErrorMsg}}hidden{{end}}>
+                <input id="new-item-{{.PersonID}}-name" name="itemName" type="text" class="item-name-col" value="{{.NewItemName}}"></input>
+                <input id="new-item-{{.PersonID}}-qty" name="itemQty" type="number" class="item-qty-col" min="1" max="1000000" value="{{max 1 .NewItemQty}}"></input>
+                <input id="new-item-{{.PersonID}}-url" name="itemURL" type="text" class="item-url-col" value="{{.NewItemURL}}"></input>
+                <input id="new-item-{{.PersonID}}-notes" name="itemNotes" type="text" class="item-notes-col" value="{{.NewItemNotes}}"></input>
                 <div class="item-claimants-col"></div>
                 <div class="item-gift-dates-col"></div>
                 <br />

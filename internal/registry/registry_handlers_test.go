@@ -255,7 +255,7 @@ func TestAddItem(t *testing.T) {
 			form.Add("name", data.itemLink)
 			form.Add("name", data.itemNotes)
 
-			req, err := http.NewRequestWithContext(ctx, "POST", testServer.URL+"/registries/"+data.personID, strings.NewReader(form.Encode()))
+			req, err := http.NewRequestWithContext(ctx, "POST", testServer.URL+"/registry/"+data.personID, strings.NewReader(form.Encode()))
 			if err != nil {
 				t.Fatal("Error creating test request")
 			}
@@ -281,7 +281,8 @@ func TestAddItem(t *testing.T) {
 			if err != nil {
 				t.Fatal("Error parsing server response!", err.Error())
 			}
-			expectedElements, err := test.LoadExpectedElements(expectedElementsPath, data.elementsFile)
+			expectedElements, err := test.LoadExpectedElements(expectedElementsPath,
+				data.elementsFile)
 
 			if err != nil {
 				t.Fatal("Error trying to load expected response elements")
@@ -289,7 +290,7 @@ func TestAddItem(t *testing.T) {
 
 			err = test.ValidatePage(doc, expectedElements)
 			if err != nil {
-				t.Fatal("Error validating page")
+				t.Fatal("Error validating page", err.Error())
 			}
 
 		})

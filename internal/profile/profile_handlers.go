@@ -242,7 +242,9 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 
 // Updates the person's information with the values provided from form input.
 func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
+
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
 		ctx := req.Context()
 		span := trace.SpanFromContext(ctx)
 		span.SetName("profile_update")

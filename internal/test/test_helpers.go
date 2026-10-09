@@ -60,7 +60,9 @@ func CheckElement(root html.Node, id string) (html.Node, bool) {
 		If this element has the ID we're looking for, return true.
 	*/
 	if slices.Contains(root.Attr, html.Attribute{Key: "id", Val: id}) {
+
 		return root, true
+
 	}
 
 	/*
@@ -68,9 +70,13 @@ func CheckElement(root html.Node, id string) (html.Node, bool) {
 		to see if any of them match the ID we're looking for.
 	*/
 	for node := range root.Descendants() {
+
 		if childNode, ok := CheckElement(*node, id); ok {
+
 			return childNode, true
+
 		}
+
 	}
 
 	return html.Node{}, false
@@ -161,6 +167,7 @@ func LoadExpectedElements(dirPath string, filename string) (map[string]ElementVa
 // properties.
 /* TODO: SHOULD I INCLUDE A NOT ON PAGE CHECK? */
 func ValidatePage(page *html.Node, elements map[string]ElementValidation) error {
+
 	for id, validationInfo := range elements {
 
 		if pageElem, ok := CheckElement(*page, id); !ok {

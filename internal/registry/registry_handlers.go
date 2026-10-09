@@ -8,8 +8,11 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"gift-registry/internal/middleware"
 	"gift-registry/internal/util"
@@ -18,17 +21,26 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+type item struct {
+	externalID string
+	name       string
+	quantity   int
+	url        sql.NullString
+	notes      sql.NullString
+}
+
 type ItemRow struct {
 	personID       int64
 	personExtID    string
 	personDispName string
 	personLastName string
 
-	itemExtID        sql.NullString
-	itemName         sql.NullString
-	itemQty          sql.NullInt16
-	itemURL          sql.NullString
-	itemNotes        sql.NullString
+	itemExtID sql.NullString
+	itemName  sql.NullString
+	itemNotes sql.NullString
+	itemQty   sql.NullInt16
+	itemURL   sql.NullString
+
 	claimedHousehold sql.NullString
 	claimedQty       sql.NullInt16
 	claimNotes       sql.NullString
@@ -42,11 +54,16 @@ type Registries struct {
 }
 
 type RegistryPerson struct {
-	dbID        int64
-	PersonID    string
-	DisplayName string
-	Editable    bool
-	LastName    string
+	dbID         int64
+	DisplayName  string
+	Editable     bool
+	ErrorMsg     string
+	LastName     string
+	NewItemName  string
+	NewItemQty   int
+	NewItemURL   string
+	NewItemNotes string
+	PersonID     string
 
 	Items map[string]RegistryItem
 }
@@ -70,6 +87,31 @@ type RegistryItemClaim struct {
 }
 
 const (
+	insertNewItemStatement = `
+		INSERT INTO items (gift_for, 
+			added_by,
+			last_updated_by,
+			external_id,
+			name,
+			quantity,
+			url,
+			notes,
+			added_on,
+			last_updated_on
+		)
+		VALUES ((SELECT person_id FROM people WHERE external_id = ?),
+			?,
+			?,
+			?,
+			?,
+			?,
+			?,
+			?,
+			Datetime('now'),
+			Datetime('now')
+		)
+	`
+
 	selectEditableWishtlists = `
 		SELECT person.person_id
 		FROM people person
@@ -77,6 +119,7 @@ const (
 		WHERE person.person_id = ? 
 			OR (hp.household_id = ? AND person.type = 'MANAGED')
 	`
+
 	selectItemsForRegistriesQuery = `
 		WITH gift_items AS (SELECT item.item_id,
 				item.gift_for,
@@ -113,11 +156,264 @@ const (
 		ORDER BY person.person_id ASC,
 			item.item_id ASC
 	`
+
+	/*
+		Querying by external ID since it's possible to add an item for someone
+		other than yourself
+	*/
+	selectPersonDetails = `
+		SELECT person.person_id,
+			person.external_id, 
+			person.display_name,
+			person.last_name
+		FROM people person
+		WHERE person.external_id = ? 
+	`
+
+	selectPersonalWishlist = `
+		SELECT item.external_id,
+			item.name,
+			item.quantity,
+			item.url,
+			item.notes AS item_notes,
+			claim.household_id,
+			claim.quantity AS claim_quantity,
+			claim.notes AS claim_notes,	
+			claim.claim_type,
+			claim.gift_date
+		FROM items item
+			LEFT OUTER JOIN item_claims claim ON item.item_id = claim.item_id
+		WHERE item.gift_for = ? 
+			AND (claim.gift_date IS NULL OR claim.gift_date >= Datetime('now')) 
+	`
 )
 
 func AddItemHandler(svr *util.ServerUtils) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+
+		ctx := req.Context()
+		span := trace.SpanFromContext(ctx)
+		span.SetName("add_item")
+
+		funcMap := registryFuncMap(ctx, svr, false)
+
+		templatesDir := svr.Getenv("TEMPLATES_DIR")
+		tmpl, err := template.New("registry_template").
+			Funcs(funcMap).
+			ParseFiles(templatesDir + "/registry_table.html")
+		if err != nil {
+			svr.Logger.ErrorContext(
+				ctx,
+				"Error loading registry template",
+				slog.String("errorMessage", err.Error()),
+			)
+			res.WriteHeader(500)
+			res.Write([]byte("Error loading the registry page"))
+			span.SetAttributes(attribute.String("error_message", err.Error()))
+			return
+		}
+
+		personID := middleware.PersonID(req)
+		giftFor := req.PathValue("externalID")
+
+		externalID := uuid.New()
+		quantity, err := strconv.Atoi(req.FormValue("quantity"))
+		if err != nil {
+			svr.Logger.WarnContext(
+				ctx,
+				"Could not read quanity from the form data, defaulting to 1",
+				slog.String("formValue", req.FormValue("quantity")),
+				slog.String("errorMessage", err.Error()),
+			)
+			quantity = 1
+		}
+
+		/* URL and notes are optional, so they're nullable in the DB */
+		link := sql.NullString{
+			String: req.FormValue("url"),
+			Valid:  req.FormValue("url") != "",
+		}
+
+		notes := sql.NullString{
+			String: req.FormValue("notes"),
+			Valid:  req.FormValue("notes") != "",
+		}
+
+		newItem := item{
+			externalID: externalID.String(),
+			name:       req.FormValue("name"),
+			quantity:   quantity,
+			url:        link,
+			notes:      notes,
+		}
+
+		span.SetAttributes(
+			attribute.String("external_id", newItem.externalID),
+			attribute.String("name", newItem.name),
+			attribute.Int("quantity", newItem.quantity),
+		)
+
+		if newItem.url.Valid {
+
+			span.SetAttributes(attribute.String("url", newItem.url.String))
+
+		}
+
+		if newItem.notes.Valid {
+
+			span.SetAttributes(attribute.String("notes", newItem.notes.String))
+
+		}
+
+		person := RegistryPerson{
+			Editable:     true,
+			Items:        map[string]RegistryItem{},
+			NewItemName:  newItem.name,
+			NewItemQty:   newItem.quantity,
+			NewItemURL:   newItem.url.String,
+			NewItemNotes: newItem.notes.String,
+		}
+
+		result, err := svr.DB.Execute(
+			ctx,
+			insertNewItemStatement,
+			giftFor,
+			personID,
+			personID,
+			externalID,
+			newItem.name,
+			newItem.quantity,
+			newItem.url,
+			newItem.notes,
+		)
+
+		if err != nil {
+			svr.Logger.ErrorContext(
+				ctx,
+				"Could not save new item",
+				slog.String("name", newItem.name),
+				slog.Int("quantity", newItem.quantity),
+				slog.String("errorMessage", err.Error()),
+			)
+			person.updateErrorMessage("Sorry, we couldn't save that for some reason.")
+		}
+
+		if rowCnt, err := result.RowsAffected(); err != nil {
+			svr.Logger.WarnContext(
+				ctx,
+				"Could not get the rows affected from the insert. Did it not stick?",
+				slog.String("errorMessage", err.Error()),
+			)
+		} else {
+			span.SetAttributes(attribute.Int64("items_added", rowCnt))
+		}
+
+		err = svr.DB.QueryRow(
+			ctx,
+			selectPersonDetails,
+			giftFor,
+		).Scan(&person.dbID, &person.PersonID, &person.DisplayName, &person.LastName)
+		if err != nil {
+			svr.Logger.ErrorContext(
+				ctx,
+				"Couldn't look persnoal details",
+				slog.String("requestor", giftFor),
+				slog.String("errorMesssage", err.Error()),
+			)
+
+			person.updateErrorMessage("Sorry, we had a problem looking up your details.")
+
+		}
+
+		results, err := svr.DB.Query(
+			ctx,
+			selectPersonalWishlist,
+			person.dbID,
+		)
+		if err != nil {
+			svr.Logger.ErrorContext(
+				ctx,
+				"Error writing template!",
+				slog.String("errorMessage", err.Error()),
+			)
+			res.WriteHeader(500)
+			err = tmpl.ExecuteTemplate(res, "registry-table", person)
+
+			if err != nil {
+				errorMessage := err.Error()
+				svr.Logger.ErrorContext(
+					ctx,
+					"Error writing template!",
+					slog.String("errorMessage", errorMessage),
+				)
+				res.WriteHeader(500)
+				res.Write([]byte("Error rendering registry items"))
+				span.SetAttributes(attribute.String("error_message", errorMessage))
+				return
+			}
+
+		}
+
+		now := time.Now()
+		for results.Next() {
+
+			var rowData ItemRow
+			err = results.Scan(
+				&rowData.itemExtID,
+				&rowData.itemName,
+				&rowData.itemQty,
+				&rowData.itemURL,
+				&rowData.itemNotes,
+				&rowData.claimedHousehold,
+				&rowData.claimedQty,
+				&rowData.claimNotes,
+				&rowData.claimType,
+				&rowData.giftDate,
+			)
+			if err != nil {
+				svr.Logger.ErrorContext(
+					ctx,
+					"Error reading item information from the database",
+					slog.String("errorMessage", err.Error()),
+				)
+				person.updateErrorMessage("Sorry, we had problem reading your wishlist.")
+			}
+
+			person.addItem(
+				ctx,
+				svr,
+				rowData,
+				personID,
+				now,
+			)
+
+		}
+
+		/*
+			We successfully saved the item and re-loaded the wishlist. Clear the form
+			for the next new item (when needed). Quantity still defaults to 1 because
+			asking for 0 soemthing is stupid.
+		*/
+		person.NewItemName = ""
+		person.NewItemQty = 1
+		person.NewItemURL = ""
+		person.NewItemNotes = ""
+
+		res.WriteHeader(200)
+		err = tmpl.ExecuteTemplate(res, "registry-table", person)
+		if err != nil {
+			errorMessage := err.Error()
+			svr.Logger.ErrorContext(
+				ctx,
+				"Error writing template!",
+				slog.String("errorMessage", errorMessage),
+			)
+			res.WriteHeader(500)
+			res.Write([]byte("Error rendering registry page"))
+			span.SetAttributes(attribute.String("error_message", errorMessage))
+			return
+		}
 
 	})
 
@@ -152,30 +448,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 
 		}
 
-		funcMap := template.FuncMap{
-			"editable": func(editableLists []string, id string) bool {
-				return slices.Contains(editableLists, id)
-			},
-			"isHistorical": func() bool {
-				return historicalParam == "true"
-			},
-			"formatDate": func(datetime string) string {
-				if parsed, err := time.Parse("2006-01-02", datetime); err != nil {
-					svr.Logger.ErrorContext(
-						ctx,
-						"Error converting date to locale string",
-						slog.String("givenDatetime", datetime),
-						slog.String("errorMessage", err.Error()),
-					)
-					return datetime
-				} else {
-					return parsed.Format("01/02/06")
-				}
-			},
-			"subtract": func(requested int8, claimed int8) int8 {
-				return requested - claimed
-			},
-		}
+		funcMap := registryFuncMap(ctx, svr, historicalParam == "true")
 
 		templatesDir := svr.Getenv("TEMPLATES_DIR")
 		tmpl, err := template.New("registry_template").
@@ -208,16 +481,22 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 		)
 
 		/* TODO: THIS QUERY (AND PROCESSOR) CAN GO IN A GO FUNC WHILE WE GET MANAGED PEOPLE */
+		/* Assigning to a variable so I can capture how the %s flags formatted */
+		query := fmt.Sprintf(
+			selectItemsForRegistriesQuery,
+			nullCheck,
+			comparator,
+		)
 		results, err := svr.DB.Query(
 			ctx,
-			fmt.Sprintf(selectItemsForRegistriesQuery, nullCheck, comparator),
+			query,
 		)
 		if err != nil {
 			svr.Logger.ErrorContext(
 				ctx,
 				"Error looking up gift registries for all users",
 				slog.String("errorMessage", err.Error()),
-				slog.String("query", selectItemsForRegistriesQuery),
+				slog.String("query", query),
 			)
 		}
 
@@ -253,7 +532,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 					"Error reading DB row. Skipping...",
 					slog.Int("resultNum", cnt),
 					slog.String("errorMessage", err.Error()),
-					slog.String("query", selectItemsForRegistriesQuery),
+					slog.String("query", query),
 				)
 				registries.ErrorMessage = "Error reading some of the registry data"
 				continue
@@ -436,5 +715,57 @@ func editablePeople(
 	}
 
 	return editableLists
+
+}
+
+func registryFuncMap(
+	ctx context.Context,
+	svr *util.ServerUtils,
+	historicalParam bool,
+) template.FuncMap {
+
+	return template.FuncMap{
+		"editable": func(editableLists []string, id string) bool {
+			return slices.Contains(editableLists, id)
+		},
+		"isHistorical": func() bool {
+			return historicalParam
+		},
+		"formatDate": func(datetime string) string {
+			if parsed, err := time.Parse("2006-01-02", datetime); err != nil {
+				svr.Logger.ErrorContext(
+					ctx,
+					"Error converting date to locale string",
+					slog.String("givenDatetime", datetime),
+					slog.String("errorMessage", err.Error()),
+				)
+				return datetime
+			} else {
+				return parsed.Format("01/02/06")
+			}
+		},
+		"max": func(leftNum int, rightNum int) int {
+			return max(leftNum, rightNum)
+		},
+		"subtract": func(requested int8, claimed int8) int8 {
+			return requested - claimed
+		},
+	}
+
+}
+
+func (person *RegistryPerson) updateErrorMessage(newMessage string) {
+
+	/*
+		We could have more than 1 error being returned.
+		Just put each on its own line.
+	*/
+	if person.ErrorMsg != "" {
+
+		person.ErrorMsg += "<br />"
+
+	}
+
+	person.ErrorMsg += newMessage
 
 }
