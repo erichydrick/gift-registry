@@ -1,0 +1,16 @@
+{{define "new-item-form"}}
+<div id="new-item-{{.PersonID}}" class="registry-items">
+    <form {{if not .ErrorMsg}}hidden{{end}} hx-disable="#register-gift-btn-{{.PersonID}}" hx-target="registry-{{.PersonID}}" hx-status:4xx="target:#new-item-{{.PersonID}}">
+        <div id="new-item-{{.PersonID}}-error-msg" class="danger mt-2" {{if not .ErrorMsg}}hidden{{end}}>{{.ErrorMsg}}</div>
+        <input id="new-item-{{.PersonID}}-name" name="itemName" type="text" class="item-name-col" value="{{.NewItemName}}"></input>
+        <input id="new-item-{{.PersonID}}-qty" name="itemQty" type="number" class="item-qty-col" min="1" max="1000000" value="{{max 1 .NewItemQuantity}}"></input>
+        <input id="new-item-{{.PersonID}}-url" name="itemURL" type="text" class="item-url-col" value="{{.NewItemURL}}"></input>
+        <input id="new-item-{{.PersonID}}-notes" name="itemNotes" type="text" class="item-notes-col" value="{{.NewItemNotes}}"></input>
+        <div class="item-claimants-col"></div>
+        <div class="item-gift-dates-col"></div>
+        <br />
+        <button class="btn" onclick="hideFrom({{.PersonID}}">Never mind</button>
+        <button class="btn secondary-contained" onclick="console.log('clicked')">Please</button>
+    </form>
+</div>
+{{end}}

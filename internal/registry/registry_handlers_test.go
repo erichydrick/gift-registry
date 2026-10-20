@@ -2,6 +2,8 @@ package registry_test
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"gift-registry/internal/database"
 	"gift-registry/internal/middleware"
@@ -14,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -21,9 +24,28 @@ import (
 	"golang.org/x/net/html"
 )
 
+type itemValidation struct {
+	giftFor   int64
+	itemName  string
+	itemQty   int
+	itemURL   sql.NullString
+	itemNotes sql.NullString
+}
+
 const (
-	dbName    = "registry_test"
-	userAgent = "test-user-agent"
+	dbName          = "registry_test"
+	userAgent       = "test-user-agent"
+	selectItemQuery = `
+		SELECT item.name,
+			item.gift_for,
+			item.quantity,
+			item.url,
+			item.notes
+		FROM items item 
+			INNER JOIN people person ON item.gift_for = person.person_id
+		WHERE person.external_id = ?
+			AND item.name = ?
+	`
 )
 
 var (
@@ -204,8 +226,9 @@ func TestAddItem(t *testing.T) {
 		itemLink     string
 		itemName     string
 		itemNotes    string
-		itemQuantity string
+		itemQuantity int
 		personID     string
+		statusCode   int
 		testName     string
 		token        string
 	}{
@@ -214,8 +237,9 @@ func TestAddItem(t *testing.T) {
 			itemLink:     "https://www.amazon.com",
 			itemName:     "Imaginary gift",
 			itemNotes:    "I wish I could get this",
-			itemQuantity: "1",
+			itemQuantity: 1,
 			personID:     "person-nine",
+			statusCode:   200,
 			testName:     "Add item to empty list",
 			token:        "tiny-tim-session",
 		},
@@ -224,11 +248,46 @@ func TestAddItem(t *testing.T) {
 			itemLink:     "https://www.walmart.com",
 			itemName:     "Additional gift",
 			itemNotes:    "I would want this",
-			itemQuantity: "3",
+			itemQuantity: 3,
 			personID:     "person-three",
+			statusCode:   200,
 			testName:     "Add item to existing list",
-			token:        "person-three-session",
+			token:        "mom-registry-session",
 		},
+		{
+			elementsFile: "invalid_new_item.json",
+			itemName:     "Toilet seat",
+			itemQuantity: 0,
+			personID:     "person-ten",
+			statusCode:   400,
+			testName:     "Invalid new request",
+			token:        "cant-add-session",
+		},
+		{
+			elementsFile: "invalid_additional_item.json",
+			itemName:     "Sword",
+			itemNotes:    "Every conquerer needs a weapon",
+			itemQuantity: 0,
+			personID:     "person-four",
+			statusCode:   400,
+			testName:     "Invalid additional request",
+			token:        "dad-registry-session",
+		},
+		{
+			elementsFile: "invalid_person_new_item.json",
+			itemName:     "Toilet seat",
+			itemQuantity: 1,
+			personID:     "person-ten-thousand",
+			statusCode:   500,
+			testName:     "Invalid person",
+			token:        "cant-add-session",
+		},
+		/*
+			TODO:
+			TEST CASES NEEDED (TO VERIFY SHOWING ERROR MESSAGES AND KEEP FORM VALUES):
+			2. INVALID ITEM ALREADY IN DB (NOT SURE I CAN DO THAT...)
+				-> SHOULD BE PART OF THE VIEW TESTS, BUT WHAT DO I WANT THIS TO ACTUALLY *DO*?
+		*/
 	}
 
 	for _, data := range testData {
@@ -250,10 +309,10 @@ func TestAddItem(t *testing.T) {
 			}
 
 			form := url.Values{}
-			form.Add("name", data.itemName)
-			form.Add("quantity", data.itemQuantity)
-			form.Add("name", data.itemLink)
-			form.Add("name", data.itemNotes)
+			form.Add("itemName", data.itemName)
+			form.Add("itemQty", strconv.Itoa(data.itemQuantity))
+			form.Add("itemURL", data.itemLink)
+			form.Add("itemNotes", data.itemNotes)
 
 			req, err := http.NewRequestWithContext(ctx, "POST", testServer.URL+"/registry/"+data.personID, strings.NewReader(form.Encode()))
 			if err != nil {
@@ -277,6 +336,13 @@ func TestAddItem(t *testing.T) {
 				}
 			}()
 
+			if res.StatusCode != data.statusCode {
+
+				t.Fatal("Expected the add item call to have a status of ",
+					data.statusCode, "but it returned", res.StatusCode)
+
+			}
+
 			doc, err := html.Parse(res.Body)
 			if err != nil {
 				t.Fatal("Error parsing server response!", err.Error())
@@ -285,12 +351,59 @@ func TestAddItem(t *testing.T) {
 				data.elementsFile)
 
 			if err != nil {
-				t.Fatal("Error trying to load expected response elements")
+				t.Fatal("Error trying to load expected response elements", err.Error())
 			}
 
 			err = test.ValidatePage(doc, expectedElements)
 			if err != nil {
 				t.Fatal("Error validating page", err.Error())
+			}
+
+			var savedItem itemValidation
+			err = db.QueryRow(
+				ctx,
+				selectItemQuery,
+				data.personID,
+				data.itemName,
+			).Scan(
+				&savedItem.itemName,
+				&savedItem.giftFor,
+				&savedItem.itemQty,
+				&savedItem.itemURL,
+				&savedItem.itemNotes,
+			)
+
+			/*
+				Some of these tests intentionally fail (and thus don't write to the DB).
+				Don't let no rows automatically fail the test
+			*/
+			if err != nil && err != sql.ErrNoRows {
+				t.Fatal("Error reading the saved item from the database.", err.Error())
+			}
+
+			/*
+				Read the record from the database (if present), and validate what's
+				in the database with what's expected.
+			*/
+			if data.statusCode > 300 {
+
+				err = savedItem.validateItemNotSaved()
+				if err != nil {
+					t.Fatal("Expected to not have a record in the database, but 1 found anyways", err)
+				}
+
+			} else {
+
+				err = savedItem.validateItemSaved(
+					data.itemName,
+					data.itemQuantity,
+					data.itemNotes,
+					data.itemLink,
+				)
+				if err != nil {
+					t.Fatal("Database record mismatch with expected!", err)
+				}
+
 			}
 
 		})
@@ -378,5 +491,73 @@ func TestBadTemplates(t *testing.T) {
 		})
 
 	}
+
+}
+
+func (newItem itemValidation) validateItemNotSaved() (err error) {
+
+	nullDBValue := sql.NullString{
+		Valid:  false,
+		String: "",
+	}
+
+	if newItem.itemName != "" ||
+		newItem.itemQty != 0 ||
+		newItem.itemNotes != nullDBValue ||
+		newItem.itemURL != nullDBValue {
+
+		err = fmt.Errorf("had data in the database despite the fact the item shouldn't have been saved")
+
+	}
+
+	return err
+
+}
+
+func (newItem itemValidation) validateItemSaved(
+	expectedName string,
+	expectedQty int,
+	expectedNotes string,
+	expectedURL string,
+) error {
+
+	var errList []error
+
+	if newItem.itemName != expectedName {
+
+		errList = append(
+			errList,
+			fmt.Errorf("name didn't match, expected %v, but got %v", expectedName, newItem.itemName))
+
+	}
+
+	if newItem.itemQty != expectedQty {
+
+		errList = append(
+			errList,
+			fmt.Errorf("quantities didn't match, expected %v, but got %v", expectedQty, newItem.itemQty),
+		)
+
+	}
+
+	if expectedNotes != newItem.itemNotes.String {
+
+		errList = append(
+			errList,
+			fmt.Errorf("notes didn't match, expected %v, but got %v", expectedNotes, newItem.itemNotes.String),
+		)
+
+	}
+
+	if expectedURL != newItem.itemURL.String {
+
+		errList = append(
+			errList,
+			fmt.Errorf("urls didn't match, expected %v, but got %v", expectedURL, newItem.itemURL.String),
+		)
+
+	}
+
+	return errors.Join(errList...)
 
 }

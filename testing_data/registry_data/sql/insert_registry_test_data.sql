@@ -7,13 +7,15 @@ INSERT INTO people (person_id, external_id, email, display_name, first_name, las
         (6, 'person-six', 'grandma_persona@localhost.com', 'Grandma', 'Grandmother', 'Grandtester', 'NORMAL'),
         (7, 'person-seven', 'aunt_persona@localhost.com', 'Aunt', 'Sister', 'OtherFamily', 'NORMAL'),
         (8, 'person-eight', 'uncle_persona@localhost.com', 'Uncle', 'BiL', 'OtherFamily', 'NORMAL'),
-        (9, 'person-nine', 'empty_list_persona@localhost.com', 'Tiny Tim', 'Tim', 'Cractchett', 'NORMAL')
+        (9, 'person-nine', 'empty_list_persona@localhost.com', 'Tiny Tim', 'Tim', 'Cractchett', 'NORMAL'),
+        (10, 'person-ten', 'add_errors_persona@localhost.com', 'Cannot add', 'Addless', 'User', 'NORMAL')
 ;
 
 INSERT INTO households (household_id, external_id, name)
     VALUES (1, 'house-one', 'The Testers'),
         (2, 'house-two', 'Grandma & Grandpa'), 
-        (3, 'house-three', 'The OtherFamily') 
+        (3, 'house-three', 'The OtherFamily'), 
+        (4, 'house-four', 'Add Tests')
 ;
 
 INSERT INTO household_people (household_id, person_id)
@@ -25,15 +27,16 @@ INSERT INTO household_people (household_id, person_id)
         (2, 6),
         (3, 7), 
         (3, 8),
-        (1, 9)
+        (4, 9),
+        (4, 10)
 ;
 
 INSERT INTO sessions (session_id, person_id, expiration, user_agent)
     VALUES ('mom-registry-session', 1, Datetime('now', '+5 minutes'), 'test-user-agent'),
         ('grandma-registry-session', 6, Datetime('now', '+5 minutes'), 'test-user-agent'),
         ('dad-registry-session', 2, Datetime('now', '+5 minutes'), 'test-user-agent'),
-        ('person-three-session', 3, Datetime('now', '+5 minutes'), 'test-user-agent'),
-        ('tiny-tim-session', 9, Datetime('now', '+5 minutes'), 'test-user-agent')
+        ('tiny-tim-session', 9, Datetime('now', '+5 minutes'), 'test-user-agent'),
+        ('cant-add-session', 10, Datetime('now', '+5 minutes'), 'test-user-agent')
 ;
 
 INSERT INTO items (item_id, gift_for, added_by, external_id, name, url, notes, quantity)
