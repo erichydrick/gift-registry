@@ -8,6 +8,45 @@
     <link rel="stylesheet" href="css/styles.css" />
     <script src="js/htmx.js"></script>
 
+    <script type="text/javascript">
+
+        function cancelRequest(id) {
+
+            /* Reset the request item form */
+            document.getElementById("new-item-form-" + id).reset();
+
+            /* Hide the form's div and show the request item button */
+            document.getElementById("new-item-" + id).hidden = true; 
+            document.getElementById("register-gift-btn-" + id).hidden = false;
+
+            /* Re-hide the headers if there isn't an existing item */
+            const listHeaders = document.getElementById("list-table-" + id); 
+            if (!listHeaders) {
+
+                document.getElementById("item-list-" + id).hidden = true;
+                document.getElementById("registry-" + id + "-nothing-wanted-msg").hidden = false;
+
+            }
+
+        }
+
+        function showForm(id) {
+
+            document.getElementById("item-list-" + id).hidden = false;
+            document.getElementById("new-item-" + id).hidden = false;
+            document.getElementById("register-gift-btn-" + id).hidden = true;
+
+            const notWantedMsg = document.getElementById("registry-" + id + "-nothing-wanted-msg");
+            if (notWantedMsg) {
+
+                notWantedMsg.hidden = true;
+
+            }
+
+        }
+
+    </script>
+
 </head>
 
 <body>
@@ -20,16 +59,11 @@
     </div>
 
     <div id="registries">
-        <div id="registry-error-message" class="centered content error overflow-y shadowed" {{if eq .ErrorMessage ""}}hidden{{end}}>{{.ErrorMessage}}</div>
-        {{range .Registries}}
-        <div id="registry-{{.PersonID}}" class="centered center-text content overflow-x overflow-y shadowed">
-            {{template "registry-table" .}}
-        </div>
+        <div id="registry-error-message" class="centered content error overflow-y shadowed" {{if eq .ErrorMsg ""}}hidden{{end}}>{{.ErrorMsg}}</div>
+        {{range .Wishlists}}
+        {{template "registry-table" .}}
         {{end}}
     </div>
-
-    <!-- TODO: REGISTER GIFT BUTTON -- MOVE TO BOTTOM RIGHT OF DISPLAY VIEW -->
-    <button id="register-gift-btn" class="btn btn-contained create-new-btn primary shadowed">Request Gift</button>
 
 </body>
 

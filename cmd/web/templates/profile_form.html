@@ -1,6 +1,6 @@
 {{define "profile-form"}}
 <h3 id="profile-header-{{.ExternalID}}" class="center-text mb-3">{{.DisplayName}} {{.LastName}} Profile</h3>
-<form id="profile-form-{{.ExternalID}}" hx-disabled-elt="#profile-submit-{{.ExternalID}}"
+<form id="profile-form-{{.ExternalID}}" hx-disable="#profile-submit-{{.ExternalID}}"
     hx-post="/profile/{{.ExternalID}}" hx-target="#profile-{{.ExternalID}}" class="flex-column">
     <div id="profile-error-{{.ExternalID}}" class="danger flex-row" {{if ne .Errors.ErrorMessage ""
         }}{{else}}hidden{{end}}>

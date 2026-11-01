@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS items (
     item_id INTEGER PRIMARY KEY AUTOINCREMENT CHECK (item_id > 0),
     gift_for INTEGER REFERENCES people (person_id),
     added_by INTEGER REFERENCES people (person_id),
+    last_updated_by INTEGER REFERENCES people (person_id),
     external_id VARCHAR(40) UNIQUE NOT NULL CHECK (TRIM(external_id) <> ''),
     name VARCHAR(255) NOT NULL CHECK (TRIM(name) <> ''),
     url TEXT,

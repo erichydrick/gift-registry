@@ -1,0 +1,24 @@
+{
+    "new-item-person-ten": {
+        "visible": true
+    },
+    "new-item-person-ten-name": {
+        "visible": true,
+        "value": "Toilet seat"
+    },
+    "new-item-person-ten-qty": {
+        "visible": true,
+        "value": "1"
+    },
+    "new-item-person-ten-url": {
+        "visible": true,
+        "value": ""
+    },
+    "new-item-person-ten-notes": {
+        "visible": true,
+        "value": ""
+    },
+    "new-item-person-ten-error-msg": {
+        "visible": true
+    }
+}

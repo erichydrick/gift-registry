@@ -1,0 +1,24 @@
+{
+    "new-item-person-four": {
+        "visible": true
+    },
+    "new-item-person-four-name": {
+        "visible": true,
+        "value": "Sword"
+    },
+    "new-item-person-four-qty": {
+        "visible": true,
+        "value": "1"
+    },
+    "new-item-person-four-url": {
+        "visible": true,
+        "value": ""
+    },
+    "new-item-person-four-notes": {
+        "visible": true,
+        "value": "Every conquerer needs a weapon"
+    },
+    "new-item-person-four-error-msg": {
+        "visible": true
+    }
+}

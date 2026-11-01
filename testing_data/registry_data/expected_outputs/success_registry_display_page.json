@@ -9,6 +9,9 @@
         "visible": true,
         "value": "Mom's Registry"
     },
+    "register-gift-btn-person-one": {
+        "visible": true
+    },
     "registry-person-two": {
         "visible": true
     },
@@ -26,12 +29,18 @@
         "visible": true,
         "value": "Son's Registry"
     },
+    "register-gift-btn-person-three": {
+        "visible": true
+    },
     "registry-person-four": {
         "visible": true
     },
     "registry-person-four-label": {
         "visible": true,
         "value": "Daughter's Registry"
+    },
+    "register-gift-btn-person-four": {
+        "visible": true
     },
     "registry-person-five": {
         "visible": true

@@ -1,0 +1,18 @@
+{
+    "registries": {
+        "visible": true
+    },
+    "registry-error-message": {
+        "visible": false
+    },
+    "registry-protected-endpoint-user-with-household": {
+        "visible": true
+    },
+    "registry-protected-endpoint-user-with-household-label": {
+        "value": "With's Registry",
+        "visible": true
+    },
+    "registry-protected-endpoint-user-with-household-nothing-wanted-msg": {
+        "visible": true
+    }
+}

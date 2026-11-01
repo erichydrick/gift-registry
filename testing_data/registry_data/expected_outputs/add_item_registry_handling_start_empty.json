@@ -1,0 +1,18 @@
+{
+    "registry-person-nine": {
+        "visible": true
+    },
+    "registry-person-nine-label": {
+        "visible": true,
+        "value": "Tiny Tim's Registry"
+    },
+    "item-list-person-nine": {
+        "visible": true
+    },
+    "item-list-person-nine": {
+        "visible": true
+    },
+    "register-gift-btn-person-nine": {
+        "visible": true
+    }
+}

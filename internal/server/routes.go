@@ -42,6 +42,7 @@ func registerRoutes() (http.Handler, error) {
 
 	/* Registry routes */
 	handleFunc("GET /registry", registry.RegistryHandler(appSrv))
+	handleFunc("POST /registry/{externalID}", registry.AddItemHandler(appSrv))
 
 	handler := otelhttp.NewHandler(
 		middleware.Cors(

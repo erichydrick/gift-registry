@@ -1,5 +1,18 @@
 {
-    "registry-data": {
+    "registries": {
+        "visible": true
+    },
+    "registry-error-message": {
+        "visible": false
+    },
+    "registry-protected-endpoint-user": {
+        "visible": true
+    },
+    "registry-protected-endpoint-user-label": {
+        "value": "Protected's Registry",
+        "visible": true
+    },
+    "registry-protected-endpoint-user-nothing-wanted-msg": {
         "visible": true
     }
 }
