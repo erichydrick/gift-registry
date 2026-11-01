@@ -104,6 +104,7 @@ td {
 .btn {
     background: none;
     border: none;
+    float: right;
     font-weight: 600;
     justify-content: center;
     min-height: 3rem;

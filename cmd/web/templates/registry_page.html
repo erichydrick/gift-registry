@@ -10,12 +10,17 @@
 
     <script type="text/javascript">
 
-        function hideForm(id) {
+        function cancelRequest(id) {
 
-            document.getElementById("new-item-" + id).hidden = true;
-            const listHeaders = document.getElementById("list-" + id); 
+            /* Reset the request item form */
+            document.getElementById("new-item-form-" + id).reset();
+
+            /* Hide the form's div and show the request item button */
+            document.getElementById("new-item-" + id).hidden = true; 
+            document.getElementById("register-gift-btn-" + id).hidden = false;
 
             /* Re-hide the headers if there isn't an existing item */
+            const listHeaders = document.getElementById("list-table-" + id); 
             if (!listHeaders) {
 
                 document.getElementById("item-list-" + id).hidden = true;
@@ -26,9 +31,10 @@
         }
 
         function showForm(id) {
-      
+
             document.getElementById("item-list-" + id).hidden = false;
             document.getElementById("new-item-" + id).hidden = false;
+            document.getElementById("register-gift-btn-" + id).hidden = true;
 
             const notWantedMsg = document.getElementById("registry-" + id + "-nothing-wanted-msg");
             if (notWantedMsg) {

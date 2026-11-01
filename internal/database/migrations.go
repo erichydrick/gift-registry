@@ -85,7 +85,7 @@ func (dbConn DBConn) runMigrations(
 		ctx,
 		"Listing the migration files",
 		slog.String("migrationsDirectory", getenv("MIGRATIONS_DIR")),
-		slog.Any("dataMigrationsDirectory", getenv("DATA_MIGRATIONS")),
+		slog.String("dataMigrationsDirectory", getenv("DATA_MIGRATIONS")),
 	)
 	dirList := []string{getenv("MIGRATIONS_DIR")}
 
