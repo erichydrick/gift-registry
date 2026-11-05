@@ -1,0 +1,28 @@
+{{define "login-page"}}
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>Family gift registry</title>
+    <link rel="stylesheet" href="css/styles.css" />
+    <script src="js/htmx.js"></script>
+
+</head>
+
+<body>
+
+    <div id="application-header" class="center-text content shadowed" id="page-header">
+        <h1 class="centered">
+            Gift Registry
+        </h1>
+    </div>
+
+    <div id="page-content" class="centered content flex-column overflow-y shadowed">
+        {{template "login-form"}}
+    </div>
+
+</body>
+
+</html>
+{{end}}

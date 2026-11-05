@@ -11,6 +11,7 @@ services:
       - "8080:8080"
     volumes:
       - ${DB_PATH}:/app/database
+      # TODO: ADD MISSING DATA DIR PATH
     environment:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS}
       DB_NAME: ${DB_NAME}
@@ -24,10 +25,3 @@ services:
       STATIC_FILES_DIR: "."
       PORT: ${GR_PORT}
       TEMPLATES_DIR: "templates"
-    networks:
-      - telemetry
-
-networks:
-  telemetry:
-    name: local-bridge-network
-    external: true

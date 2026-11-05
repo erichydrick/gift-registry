@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"gift-registry/internal/middleware"
+	"gift-registry/internal/templates"
 	"gift-registry/internal/util"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -186,22 +187,6 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 
 		funcMap := mapRegistryFuncs(ctx, svr, false)
 
-		templatesDir := svr.Getenv("TEMPLATES_DIR")
-		tmpl, err := template.New("registry_template").
-			Funcs(funcMap).
-			ParseFiles(templatesDir+"/registry_table.html", templatesDir+"/new_item_form.html")
-		if err != nil {
-			svr.Logger.ErrorContext(
-				ctx,
-				"Error loading registry template",
-				slog.String("errorMessage", err.Error()),
-			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error loading the registry"))
-			span.SetAttributes(attribute.String("error_message", err.Error()))
-			return
-		}
-
 		personID := middleware.PersonID(req)
 		household := middleware.HouseholdID(req)
 		giftFor := req.PathValue("externalID")
@@ -216,17 +201,25 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				slog.String("errorMessage", err.Error()),
 				slog.Any("requested", requested),
 			)
-			res.WriteHeader(400)
-			err = tmpl.ExecuteTemplate(res, "new-item-form", requested)
-			if err != nil {
-				errorMessage := err.Error()
+			tmplErr := templates.WriteResponseTemplate(
+				res,
+				400,
+				"new-item-form",
+				[]string{"templates/new_item_form.html"},
+				requested,
+				funcMap,
+			)
+			if tmplErr != nil {
+				errorMessage := fmt.Errorf(
+					"Could not write error response: %v - caused by: %v",
+					tmplErr,
+					err,
+				).Error()
 				svr.Logger.ErrorContext(
 					ctx,
 					"Error writing item back for editing!",
 					slog.String("errorMessage", errorMessage),
 				)
-				res.WriteHeader(500)
-				res.Write([]byte("Error rendering new item form"))
 				span.SetAttributes(attribute.String("error_message", errorMessage))
 			}
 			return
@@ -246,24 +239,31 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				slog.String("giftFor", giftFor),
 				slog.String("errorMessage", err.Error()),
 			)
-			res.WriteHeader(500)
 			requested.ErrorMsg = "Sorry, we had some technical difficulties. Please reload the page and try again."
-			err = tmpl.ExecuteTemplate(res, "new-item-form", requested)
-			if err != nil {
-				errorMessage := err.Error()
+			tmplErr := templates.WriteResponseTemplate(
+				res,
+				500,
+				"new-item-form",
+				[]string{"templates/new_item_form.html"},
+				requested,
+				funcMap,
+			)
+			if tmplErr != nil {
+				errorMessage := fmt.Errorf(
+					"could not find recipient: %v - caused by: %v",
+					tmplErr,
+					err,
+				).Error()
 				svr.Logger.ErrorContext(
 					ctx,
 					"Error writing item back for editing!",
 					slog.String("errorMessage", errorMessage),
 				)
-				res.WriteHeader(500)
-				res.Write([]byte("Error rendering new item form"))
 				span.SetAttributes(attribute.String("error_message", errorMessage))
 			}
 			return
 		}
 
-		svr.Logger.DebugContext(ctx, "GOT THE RECIPIENT'S ID")
 		result, err := svr.DB.Execute(
 			ctx,
 			insertNewItemStatement,
@@ -287,16 +287,25 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				slog.String("itemNotes", requested.NewItemNotes),
 				slog.String("errorMessage", err.Error()),
 			)
-			res.WriteHeader(500)
-			err = tmpl.ExecuteTemplate(res, "new-item-form", requested)
-			if err != nil {
-				errorMessage := err.Error()
+			tmplErr := templates.WriteResponseTemplate(
+				res,
+				500,
+				"new-item-form",
+				[]string{"templates/new_item_form.html"},
+				requested,
+				funcMap,
+			)
+			if tmplErr != nil {
+				errorMessage := fmt.Errorf(
+					"could not write save new item failure response: %v - caused by %v",
+					tmplErr,
+					err,
+				).Error()
 				svr.Logger.ErrorContext(
 					ctx,
 					"Error writing item back for editing!",
 					slog.String("errorMessage", errorMessage),
 				)
-				res.Write([]byte("Error rendering new item form"))
 				span.SetAttributes(attribute.String("error_message", errorMessage))
 			}
 			return
@@ -336,18 +345,25 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 			// slog.Any("wishlist", wishlist.Wishlists[0]),
 			slog.Any("items", wishlist.Wishlists[0].Items),
 		)
-		err = tmpl.ExecuteTemplate(res, "registry-table", wishlist.Wishlists[0])
+		err = templates.WriteResponseTemplate(
+			res,
+			200,
+			"registry-table",
+			[]string{
+				"templates/registry_table.html",
+				"templates/new_item_form.html",
+			},
+			wishlist.Wishlists[0],
+			funcMap,
+		)
 		if err != nil {
-			res.WriteHeader(500)
 			errorMessage := err.Error()
 			svr.Logger.ErrorContext(
 				ctx,
 				"Error writing item back for editing!",
 				slog.String("errorMessage", errorMessage),
 			)
-			res.Write([]byte("Error rendering new item form"))
 			span.SetAttributes(attribute.String("error_message", errorMessage))
-			return
 		}
 
 	})
@@ -368,22 +384,6 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 
 		funcMap := mapRegistryFuncs(ctx, svr, historicalParam == "true")
 
-		templatesDir := svr.Getenv("TEMPLATES_DIR")
-		tmpl, err := template.New("registry_template").
-			Funcs(funcMap).
-			ParseFiles(templatesDir+"/registry_page.html", templatesDir+"/registry_table.html", templatesDir+"/new_item_form.html")
-		if err != nil {
-			svr.Logger.ErrorContext(
-				ctx,
-				"Error loading registry template",
-				slog.String("errorMessage", err.Error()),
-			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error loading the registry page"))
-			span.SetAttributes(attribute.String("error_message", err.Error()))
-			return
-		}
-
 		curUser := middleware.PersonID(req)
 		household := middleware.HouseholdID(req)
 
@@ -395,21 +395,20 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 			curUser,
 			household,
 		)
-		if err != nil {
-			errorMessage := err.Error()
-			svr.Logger.ErrorContext(
-				ctx,
-				"Error writing template!",
-				slog.String("errorMessage", errorMessage),
-			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error rendering registry page"))
-			span.SetAttributes(attribute.String("error_message", errorMessage))
-			return
-		}
 
-		res.WriteHeader(200)
-		err = tmpl.ExecuteTemplate(res, "registry-page", registries)
+		err = templates.WriteResponsePage(
+			res,
+			200,
+			"registry-page",
+			[]string{
+				"templates/new_item_form.html",
+				"templates/registry_page.html",
+				"templates/registry_table.html",
+			},
+			registries,
+			funcMap,
+		)
+
 		if err != nil {
 			errorMessage := err.Error()
 			svr.Logger.ErrorContext(
@@ -417,10 +416,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 				"Error writing template!",
 				slog.String("errorMessage", errorMessage),
 			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error rendering registry page"))
 			span.SetAttributes(attribute.String("error_message", errorMessage))
-			return
 		}
 	})
 }
