@@ -1,0 +1,22 @@
+{{define "test-page"}}
+<!DOCTYPE html>
+<html>
+
+    <head>
+        <title>Test template page</title>
+    </head>
+
+
+    <body>
+
+        <div id="header">
+            <div class="centered content overflow-y shadowed">
+                <h1 id="test-page-label">Test page content</h1>
+            </div>
+            {{template "test-page-content" .}}
+        </div>
+
+    </body>
+
+</html>
+{{end}}

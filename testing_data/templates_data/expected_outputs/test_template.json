@@ -1,0 +1,9 @@
+{
+    "greeting": {
+        "value": "Hello, Tester.",
+        "visible": true
+    },
+    "test-content-div": {
+        "visible": true
+    }
+}

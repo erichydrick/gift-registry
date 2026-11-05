@@ -1,0 +1,6 @@
+{
+    "user-message": {
+        "value": "Don't be pulled by the template contents, Non-Web. This is just for testing something that ISN'T being sent to the browser, like a verification email",
+        "visible": true
+    }
+}

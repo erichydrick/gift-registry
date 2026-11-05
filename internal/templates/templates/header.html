@@ -1,0 +1,14 @@
+{{define "header"}}
+<div id="application-header" class="center-text content shadowed" id="page-header">
+    <h1 class="centered">
+        Gift Registry
+    </h1>
+    <div id="nav-links">
+        {{if and (eq .loggedIn true) (ne .pageName "profile")}}<a href="/profile">Profile</a>{{end}}
+        {{if and (eq .loggedIn true) (ne .pageName "registry")}}<a href="/registry">Registry</a>{{end}}
+        {{if eq .loggedIn true}}<a href="/logout">Logout</a>{{end}}
+    </div>
+</div>
+
+
+{{end}}

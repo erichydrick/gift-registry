@@ -12,12 +12,7 @@
 
 <body>
 
-    <div id="application-header" class="center-text content shadowed" id="page-header">
-        <h1 class="centered">
-            Gift Registry
-        </h1>
-    </div>
-
+    {{template "header" (dict "pageName" "login" "loggedIn" false)}}
     <div id="page-content" class="centered content flex-column overflow-y shadowed">
         {{template "login-form"}}
     </div>

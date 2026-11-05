@@ -3,10 +3,10 @@ package health
 import (
 	"context"
 	"fmt"
+	"gift-registry/internal/templates"
 	"gift-registry/internal/util"
 	"log/slog"
 	"net/http"
-	"text/template"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -58,8 +58,6 @@ func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 			attribute.String("dbError", status.DBHealth.Error),
 		)
 
-		tmpl, tmplErr := template.ParseFiles(svr.Getenv("TEMPLATES_DIR") + "/health.html")
-
 		svr.Logger.InfoContext(ctx,
 			fmt.Sprintf("Finished the operation %s", req.URL.Path),
 			slog.Bool("healthy", status.Healthy),
@@ -67,32 +65,22 @@ func HealthCheckHandler(svr *util.ServerUtils) http.Handler {
 			slog.String("dbError", status.DBHealth.Error),
 		)
 
-		if tmplErr != nil {
-			svr.Logger.ErrorContext(
-				ctx,
-				"Error loading the health check template",
-				slog.String("errorMessage", tmplErr.Error()),
-			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error rendering the health check page"))
-			span.SetAttributes(attribute.String("error_message", err.Error()))
-			return
-		}
-
-		svr.Logger.DebugContext(
+		svr.Logger.InfoContext(
 			ctx,
 			"Writing health check results",
 			slog.Any("results", status),
 		)
-		res.WriteHeader(200)
-		err = tmpl.ExecuteTemplate(res, "health", status)
+
+		err = templates.WriteResponsePage(
+			ctx,
+			res,
+			200,
+			"health",
+			[]string{"health.html"},
+			status,
+		)
 		if err != nil {
-			svr.Logger.ErrorContext(ctx, "Error writing health check template!",
-				slog.String("errorMessage", err.Error()))
-			res.WriteHeader(500)
-			res.Write([]byte("Error loading health dashboard"))
 			span.SetAttributes(attribute.String("error_message", err.Error()))
-			return
 		}
 
 	})

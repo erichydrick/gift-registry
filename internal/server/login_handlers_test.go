@@ -44,7 +44,7 @@ func TestLoginEmailValidationForm(t *testing.T) {
 			elementsFile:       "login_form_elements_email_error.json",
 			email:              "no",
 			expectedEmailSent:  false,
-			expectedStatusCode: 200,
+			expectedStatusCode: 400,
 			testName:           "Invalid email",
 		},
 	}

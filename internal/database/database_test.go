@@ -44,7 +44,6 @@ func TestMain(m *testing.M) {
 	env = map[string]string{
 		"DATA_MIGRATIONS": filepath.Join("..", "..", "testing_data", "database_data", "sql"),
 		"DB_NAME":         dbPath,
-		"MIGRATIONS_DIR":  filepath.Join("migrations_test", "success"),
 	}
 
 	exitCode := m.Run()
