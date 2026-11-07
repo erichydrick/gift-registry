@@ -31,6 +31,7 @@ import (
 
 	"gift-registry/internal/database"
 	"gift-registry/internal/server"
+	"gift-registry/internal/templates"
 )
 
 const (
@@ -70,6 +71,9 @@ func Run(
 		logger.Error("Error getting the database connection", slog.String("errorMessage", err.Error()))
 		return fmt.Errorf("error getting the database connection: %s", err.Error())
 	}
+
+	/* Set up logging any errors while writing templates */
+	templates.Initialize(logger)
 
 	/* Set up the routing and middleware, we'll start the server in a sec */
 	appHandler, err := server.NewServer(getenv, db, logger, server.SetupEmailer(getenv))

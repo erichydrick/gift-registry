@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"gift-registry/internal/middleware"
+	"gift-registry/internal/templates"
 	"gift-registry/internal/util"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -101,20 +102,6 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 		span := trace.SpanFromContext(ctx)
 		span.SetName("profile_handler")
 
-		templatesDir := svr.Getenv("TEMPLATES_DIR")
-		tmpl, err := template.ParseFiles(templatesDir+"/profile_page.html", templatesDir+"/profile_form.html")
-		if err != nil {
-			svr.Logger.ErrorContext(
-				ctx,
-				"Error loading the profile page template",
-				slog.String("errorMessage", err.Error()),
-			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error rendering the profile page"))
-			span.SetAttributes(attribute.String("error_message", err.Error()))
-			return
-		}
-
 		profile := pageData{
 			Profiles: []userData{},
 		}
@@ -123,7 +110,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 		personID := middleware.PersonID(req)
 		profileIDs := []int64{personID}
 		span.SetAttributes(attribute.Int64("person_id", personID))
-		err = svr.DB.QueryRow(ctx, lookupPersonQuery, personID).
+		err := svr.DB.QueryRow(ctx, lookupPersonQuery, personID).
 			Scan(
 				&person.personID,
 				&person.householdID,
@@ -136,6 +123,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 				&person.HouseholdName,
 			)
 		if err != nil {
+			errorMessage := err.Error()
 			svr.Logger.ErrorContext(
 				ctx,
 				"Error looking up profile information",
@@ -148,19 +136,22 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 					ErrorMessage: "Could not look up profile information.",
 				},
 			}
-			res.WriteHeader(500)
-			err = tmpl.ExecuteTemplate(res, "profile-page", profile)
-			if err != nil {
-				svr.Logger.ErrorContext(
-					ctx,
-					"Error writing template!",
-					slog.String("errorMessage", err.Error()),
-				)
-				res.WriteHeader(500)
-				res.Write([]byte("Error loading your profile page"))
-				span.SetAttributes(attribute.String("error_message", err.Error()))
-				return
+			tmplErr := templates.WriteResponsePage(
+				ctx,
+				res,
+				500,
+				"profile-page",
+				[]string{
+					"templates/profile_page.html",
+					"templates/profile_form.html",
+				},
+				profile,
+				template.FuncMap{},
+			)
+			if tmplErr != nil {
+				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
 			}
+			span.SetAttributes(attribute.String("error_message", errorMessage))
 			return
 		}
 
@@ -224,18 +215,20 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 
 		span.SetAttributes(attribute.String("profiles_returned", fmt.Sprintf("%v", profileIDs)))
 
-		res.WriteHeader(200)
-		err = tmpl.ExecuteTemplate(res, "profile-page", profile)
+		err = templates.WriteResponsePage(
+			ctx,
+			res,
+			200,
+			"profile-page",
+			[]string{
+				"templates/profile_page.html",
+				"templates/profile_form.html",
+			},
+			profile,
+			template.FuncMap{},
+		)
 		if err != nil {
-			svr.Logger.ErrorContext(
-				ctx,
-				"Error writing template!",
-				slog.String("errorMessage", err.Error()),
-			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error loading your profile page"))
 			span.SetAttributes(attribute.String("error_message", err.Error()))
-			return
 		}
 	})
 }
@@ -260,7 +253,7 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 				slog.String("errorMessage", err.Error()),
 			)
 			res.WriteHeader(400)
-			res.Write([]byte("Could not user data"))
+			res.Write([]byte("Could not read user data"))
 			span.SetAttributes(attribute.String("error_message", err.Error()))
 			return
 		}
@@ -291,19 +284,6 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			attribute.String("updated_last_name", user.LastName),
 		)
 
-		tmpl, err := template.ParseFiles(svr.Getenv("TEMPLATES_DIR") + "/profile_form.html")
-		if err != nil {
-			svr.Logger.ErrorContext(
-				ctx,
-				"Error loading the profile page template",
-				slog.String("errorMessage", err.Error()),
-			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error loading the profile page template!"))
-			span.SetAttributes(attribute.String("error_message", err.Error()))
-			return
-		}
-
 		err = svr.DB.QueryRow(ctx, externalIDLookupQuery, externalID, personID, personID).
 			Scan(
 				&user.personID,
@@ -312,26 +292,29 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			)
 			/* We can't validate the profile details, so we can't do an update */
 		if err != nil {
+			errorMessage := err.Error()
 			svr.Logger.ErrorContext(ctx,
 				"Error looking up profile to update",
 				slog.String("query", externalIDLookupQuery),
 				slog.String("externalID", externalID),
 				slog.Int64("personID", personID),
-				slog.String("errorMessage", err.Error()),
+				slog.String("errorMessage", errorMessage),
 			)
 			user.Errors.ErrorMessage = "Could not update profile"
-			err = tmpl.ExecuteTemplate(res, "profile-form", user)
-			if err != nil {
-				svr.Logger.ErrorContext(
-					ctx,
-					"Error returning error to user",
-					slog.String("errorMessage", err.Error()),
-				)
-				res.WriteHeader(500)
-				res.Write([]byte("Error saving profile information"))
-				span.SetAttributes(attribute.String("error_message", err.Error()))
-				return
+			tmplErr := templates.WriteResponseTemplate(
+				ctx,
+				res,
+				200,
+				"profile-form",
+				[]string{"templates/profile_form.html"},
+				user,
+				template.FuncMap{},
+			)
+			if tmplErr != nil {
+				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
 			}
+			span.SetAttributes(attribute.String("error_message", errorMessage))
+			return
 
 		}
 		span.SetAttributes(attribute.Int64("updated_person_id", user.personID))
@@ -349,21 +332,20 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 		span.SetAttributes(attribute.Bool("data_valid", user.valid))
 
 		if !user.valid {
-
-			res.WriteHeader(200)
-			err = tmpl.ExecuteTemplate(res, "profile-form", user)
+			errorMessage := fmt.Errorf("%v", user.Errors).Error()
+			err = templates.WriteResponseTemplate(
+				ctx,
+				res,
+				200,
+				"profile-form",
+				[]string{"templates/profile_form.html"},
+				user,
+				template.FuncMap{},
+			)
 			if err != nil {
-				svr.Logger.ErrorContext(
-					ctx,
-					"Error writing the profile page error messages",
-					slog.String("errorMessage", err.Error()),
-				)
-				/*
-					We're returning early error or no, so don't need a return statement here
-				*/
-				span.SetAttributes(attribute.String("error_message", err.Error()))
+				errorMessage = fmt.Sprintf("%v: %v", err, errorMessage)
 			}
-
+			span.SetAttributes(attribute.String("error_message", errorMessage))
 			return
 		}
 
@@ -403,32 +385,33 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 				)
 
 				user.Errors.ErrorMessage = "Could not save the profile update"
-				err = tmpl.ExecuteTemplate(res, "profile-form", user)
+				err = templates.WriteResponseTemplate(
+					ctx,
+					res,
+					200,
+					"profile-form",
+					[]string{"templates/profile_form.html"},
+					user,
+					template.FuncMap{},
+				)
 				if err != nil {
-					svr.Logger.ErrorContext(
-						ctx,
-						"Error writing the profile page error messages",
-						slog.String("errorMessage", err.Error()),
-					)
-					res.WriteHeader(500)
-					res.Write([]byte("Error loading your profile page"))
 					span.SetAttributes(attribute.String("error_message", err.Error()))
 					return
 				}
 			}
 		}
 
-		err = tmpl.ExecuteTemplate(res, "profile-form", user)
+		err = templates.WriteResponseTemplate(
+			ctx,
+			res,
+			200,
+			"profile-form",
+			[]string{"templates/profile_form.html"},
+			user,
+			template.FuncMap{},
+		)
 		if err != nil {
-			svr.Logger.ErrorContext(
-				ctx,
-				"Error reading updated values into response",
-				slog.String("errorMessage", err.Error()),
-			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error loading your profile page"))
 			span.SetAttributes(attribute.String("error_message", err.Error()))
-			return
 		}
 	})
 }
