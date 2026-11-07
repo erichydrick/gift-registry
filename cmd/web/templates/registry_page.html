@@ -1,6 +1,4 @@
 {{define "registry-page"}}
-{{define $pageName = "registry"}}
-{{define $loggedIn = false}}
 <!DOCTYPE html>
 <html>
 
@@ -53,7 +51,7 @@
 
 <body>
 
-    {{template "header" $pageName}} 
+    {{template "header" dict "pageName" "registry" "loggedIn" true}} 
     <div id="registries">
         <div id="registry-error-message" class="centered content error overflow-y shadowed" {{if eq .ErrorMsg ""}}hidden{{end}}>{{.ErrorMsg}}</div>
         {{range .Wishlists}}

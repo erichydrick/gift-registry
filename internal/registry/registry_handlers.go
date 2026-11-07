@@ -193,6 +193,7 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 
 		requested, err := buildRequestedItem(req, giftFor)
 		if err != nil {
+			errorMessage := err.Error()
 			svr.Logger.ErrorContext(
 				ctx,
 				"Error building item request",
@@ -202,6 +203,7 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				slog.Any("requested", requested),
 			)
 			tmplErr := templates.WriteResponseTemplate(
+				ctx,
 				res,
 				400,
 				"new-item-form",
@@ -210,18 +212,9 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				funcMap,
 			)
 			if tmplErr != nil {
-				errorMessage := fmt.Errorf(
-					"Could not write error response: %v - caused by: %v",
-					tmplErr,
-					err,
-				).Error()
-				svr.Logger.ErrorContext(
-					ctx,
-					"Error writing item back for editing!",
-					slog.String("errorMessage", errorMessage),
-				)
-				span.SetAttributes(attribute.String("error_message", errorMessage))
+				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
 			}
+			span.SetAttributes(attribute.String("error_message", errorMessage))
 			return
 		}
 
@@ -233,6 +226,7 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 			giftFor,
 		).Scan(&recipientID)
 		if err != nil {
+			errorMessage := err.Error()
 			svr.Logger.ErrorContext(
 				ctx,
 				"Error looking up the recipient for the requested item",
@@ -241,6 +235,7 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 			)
 			requested.ErrorMsg = "Sorry, we had some technical difficulties. Please reload the page and try again."
 			tmplErr := templates.WriteResponseTemplate(
+				ctx,
 				res,
 				500,
 				"new-item-form",
@@ -249,18 +244,9 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				funcMap,
 			)
 			if tmplErr != nil {
-				errorMessage := fmt.Errorf(
-					"could not find recipient: %v - caused by: %v",
-					tmplErr,
-					err,
-				).Error()
-				svr.Logger.ErrorContext(
-					ctx,
-					"Error writing item back for editing!",
-					slog.String("errorMessage", errorMessage),
-				)
-				span.SetAttributes(attribute.String("error_message", errorMessage))
+				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
 			}
+			span.SetAttributes(attribute.String("error_message", errorMessage))
 			return
 		}
 
@@ -277,6 +263,7 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 			requested.newItemSQLNotes,
 		)
 		if err != nil {
+			errorMessage := err.Error()
 			svr.Logger.ErrorContext(
 				ctx,
 				"Error saving the requested item to the database",
@@ -288,6 +275,7 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				slog.String("errorMessage", err.Error()),
 			)
 			tmplErr := templates.WriteResponseTemplate(
+				ctx,
 				res,
 				500,
 				"new-item-form",
@@ -296,18 +284,9 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				funcMap,
 			)
 			if tmplErr != nil {
-				errorMessage := fmt.Errorf(
-					"could not write save new item failure response: %v - caused by %v",
-					tmplErr,
-					err,
-				).Error()
-				svr.Logger.ErrorContext(
-					ctx,
-					"Error writing item back for editing!",
-					slog.String("errorMessage", errorMessage),
-				)
-				span.SetAttributes(attribute.String("error_message", errorMessage))
+				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
 			}
+			span.SetAttributes(attribute.String("error_message", errorMessage))
 			return
 		} else if rowsAdded, err := result.RowsAffected(); err == nil {
 			span.SetAttributes(attribute.Int64("item_rows_added", rowsAdded))
@@ -339,13 +318,8 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 		}
 
 		res.WriteHeader(200)
-		svr.Logger.DebugContext(
-			ctx,
-			"WRITING DATA BACK",
-			// slog.Any("wishlist", wishlist.Wishlists[0]),
-			slog.Any("items", wishlist.Wishlists[0].Items),
-		)
 		err = templates.WriteResponseTemplate(
+			ctx,
 			res,
 			200,
 			"registry-table",
@@ -395,8 +369,31 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 			curUser,
 			household,
 		)
+		if err != nil {
+			errorMessage := err.Error()
+			registries.ErrorMsg = "We had a problem building the wishlists. We're looking into this now."
+			tmplErr := templates.WriteResponsePage(
+				ctx,
+				res,
+				500,
+				"registry-page",
+				[]string{
+					"templates/new_item_form.html",
+					"templates/registry_page.html",
+					"templates/registry_table.html",
+				},
+				registries,
+				funcMap,
+			)
+			if tmplErr != nil {
+				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
+			}
+			span.SetAttributes(attribute.String("error_message", errorMessage))
+			return
+		}
 
 		err = templates.WriteResponsePage(
+			ctx,
 			res,
 			200,
 			"registry-page",
@@ -410,13 +407,7 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 		)
 
 		if err != nil {
-			errorMessage := err.Error()
-			svr.Logger.ErrorContext(
-				ctx,
-				"Error writing template!",
-				slog.String("errorMessage", errorMessage),
-			)
-			span.SetAttributes(attribute.String("error_message", errorMessage))
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 		}
 	})
 }
