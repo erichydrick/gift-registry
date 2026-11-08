@@ -8,6 +8,7 @@ import (
 	"gift-registry/internal/database"
 	"gift-registry/internal/middleware"
 	"gift-registry/internal/server"
+	"gift-registry/internal/templates"
 	"gift-registry/internal/test"
 	"log"
 	"log/slog"
@@ -64,6 +65,8 @@ func TestMain(m *testing.M) {
 	options := &slog.HandlerOptions{Level: slog.LevelDebug, AddSource: true}
 	handler := slog.NewTextHandler(os.Stderr, options)
 	logger = slog.New(handler)
+
+	templates.Initialize(logger)
 
 	dbPath, err := filepath.Abs(filepath.Join(".", dbName))
 	if err != nil {

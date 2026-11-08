@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -39,7 +38,6 @@ var (
 	getenv           func(string) string
 	liveDB           database.Database
 	logger           *slog.Logger
-	port             int
 	start            time.Time
 )
 
@@ -278,74 +276,6 @@ func TestHealthCheckBadDB(t *testing.T) {
 				t.Fatal("Error validating the health check output", err)
 			}
 
-		})
-	}
-}
-
-// TestHealthCheck validates the health check endpoint by connecting to the
-// testing database container, starting an application server, calling the
-// health check endpoint, and validating the output
-func TestHealthCheckInvalidTemplate(t *testing.T) {
-	env = map[string]string{
-		"DB_NAME":        dbName,
-		"PORT":           strconv.Itoa(port),
-		"MIGRATIONS_DIR": filepath.Join("..", "..", "internal", "database", "migrations"),
-		"TEMPLATES_DIR":  "templates",
-	}
-	getenv = func(key string) string { return env[key] }
-
-	testData := []struct {
-		dbError               bool
-		expectedDBStatusClass string
-		expectedHttpStatus    int
-		healthy               string
-		templates             string
-		testName              string
-	}{
-		{
-			dbError:               false,
-			expectedDBStatusClass: "healthy",
-			expectedHttpStatus:    http.StatusInternalServerError,
-			healthy:               "Healthy",
-			templates:             "templates",
-			testName:              "Invalid templates dir",
-		},
-	}
-
-	for _, data := range testData {
-		t.Run(data.testName, func(t *testing.T) {
-			t.Parallel()
-
-			var emailer server.Emailer = &test.EmailMock{}
-			appHandler, err := server.NewServer(getenv, liveDB, logger, emailer)
-			if err != nil {
-				t.Fatal("error setting up the test handler", err)
-			}
-
-			testServer := httptest.NewServer(appHandler)
-			defer testServer.Close()
-
-			req, err := http.NewRequestWithContext(ctx, "GET", testServer.URL+"/health", nil)
-			if err != nil {
-				t.Fatal("error building health check request", err)
-			}
-
-			req.Header.Set("Sec-Fetch-Dest", "document")
-			req.Header.Set("Sec-Fetch-Mode", "same-origin")
-			req.Header.Set("Sec-Fetch-Site", "same-origin")
-			res, err := http.DefaultClient.Do(req)
-			defer func() {
-				if res != nil && res.Body != nil {
-					_ = res.Body.Close()
-				}
-			}()
-			if err != nil {
-				logger.Error(fmt.Sprintf("Server call failed %v", err))
-			}
-
-			if res.StatusCode != data.expectedHttpStatus {
-				t.Fatal("Expected a ", data.expectedHttpStatus, "status, but got a ", res.StatusCode, "response")
-			}
 		})
 	}
 }

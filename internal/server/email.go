@@ -79,6 +79,7 @@ func (es *emailSender) SendVerificationEmail(
 		Code: code,
 	}
 
+	/* TODO: SUPPORT THIS IN TEMPLATES */
 	templates := getenv("TEMPLATES_DIR")
 	tmpl, err := template.ParseFiles(templates + "/login_email.html")
 	if err != nil {

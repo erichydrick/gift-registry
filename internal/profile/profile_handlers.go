@@ -6,7 +6,6 @@ package profile
 import (
 	"database/sql"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 
@@ -142,11 +141,10 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 				500,
 				"profile-page",
 				[]string{
-					"templates/profile_page.html",
-					"templates/profile_form.html",
+					"profile_page.html",
+					"profile_form.html",
 				},
 				profile,
-				template.FuncMap{},
 			)
 			if tmplErr != nil {
 				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
@@ -221,11 +219,10 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 			200,
 			"profile-page",
 			[]string{
-				"templates/profile_page.html",
-				"templates/profile_form.html",
+				"profile_page.html",
+				"profile_form.html",
 			},
 			profile,
-			template.FuncMap{},
 		)
 		if err != nil {
 			span.SetAttributes(attribute.String("error_message", err.Error()))
@@ -306,9 +303,8 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 				res,
 				200,
 				"profile-form",
-				[]string{"templates/profile_form.html"},
+				[]string{"profile_form.html"},
 				user,
-				template.FuncMap{},
 			)
 			if tmplErr != nil {
 				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
@@ -338,9 +334,8 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 				res,
 				200,
 				"profile-form",
-				[]string{"templates/profile_form.html"},
+				[]string{"profile_form.html"},
 				user,
-				template.FuncMap{},
 			)
 			if err != nil {
 				errorMessage = fmt.Sprintf("%v: %v", err, errorMessage)
@@ -390,9 +385,8 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 					res,
 					200,
 					"profile-form",
-					[]string{"templates/profile_form.html"},
+					[]string{"profile_form.html"},
 					user,
-					template.FuncMap{},
 				)
 				if err != nil {
 					span.SetAttributes(attribute.String("error_message", err.Error()))
@@ -406,9 +400,8 @@ func ProfileUpdateHandler(svr *util.ServerUtils) http.Handler {
 			res,
 			200,
 			"profile-form",
-			[]string{"templates/profile_form.html"},
+			[]string{"profile_form.html"},
 			user,
-			template.FuncMap{},
 		)
 		if err != nil {
 			span.SetAttributes(attribute.String("error_message", err.Error()))

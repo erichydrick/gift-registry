@@ -1,6 +1,7 @@
 package server
 
 import (
+	"embed"
 	"gift-registry/internal/health"
 	"gift-registry/internal/middleware"
 	"gift-registry/internal/profile"
@@ -9,6 +10,12 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
+
+//go:embed css/*
+var cssFS embed.FS
+
+//go:embed js/*
+var jsFS embed.FS
 
 // All HTTP routes go here so devs can get an overview of the application
 func registerRoutes() (http.Handler, error) {
@@ -23,8 +30,8 @@ func registerRoutes() (http.Handler, error) {
 	}
 
 	/* Static files */
-	handleFunc("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir(appSrv.Getenv("STATIC_FILES_DIR")+"/css"))))
-	handleFunc("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir(appSrv.Getenv("STATIC_FILES_DIR")+"/js"))))
+	handleFunc("/css/", http.FileServer(http.FS(cssFS)))
+	handleFunc("/js/", http.FileServer(http.FS(jsFS)))
 
 	/* Base routes */
 	handleFunc("GET /{$}", IndexHandler(appSrv))

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -63,6 +62,7 @@ type registryPerson struct {
 	DisplayName     string
 	Editable        bool
 	ErrorMsg        string
+	Historical      bool
 	LastName        string
 	NewItemName     string
 	NewItemQuantity int
@@ -185,8 +185,6 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 		span := trace.SpanFromContext(ctx)
 		span.SetName("add_item")
 
-		funcMap := mapRegistryFuncs(ctx, svr, false)
-
 		personID := middleware.PersonID(req)
 		household := middleware.HouseholdID(req)
 		giftFor := req.PathValue("externalID")
@@ -207,9 +205,8 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				res,
 				400,
 				"new-item-form",
-				[]string{"templates/new_item_form.html"},
+				[]string{"new_item_form.html"},
 				requested,
-				funcMap,
 			)
 			if tmplErr != nil {
 				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
@@ -239,9 +236,8 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				res,
 				500,
 				"new-item-form",
-				[]string{"templates/new_item_form.html"},
+				[]string{"new_item_form.html"},
 				requested,
-				funcMap,
 			)
 			if tmplErr != nil {
 				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
@@ -279,9 +275,8 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				res,
 				500,
 				"new-item-form",
-				[]string{"templates/new_item_form.html"},
+				[]string{"new_item_form.html"},
 				requested,
-				funcMap,
 			)
 			if tmplErr != nil {
 				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
@@ -324,11 +319,10 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 			200,
 			"registry-table",
 			[]string{
-				"templates/registry_table.html",
-				"templates/new_item_form.html",
+				"registry_table.html",
+				"new_item_form.html",
 			},
 			wishlist.Wishlists[0],
-			funcMap,
 		)
 		if err != nil {
 			errorMessage := err.Error()
@@ -356,8 +350,6 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 		historicalParam := req.URL.Query().Get("historical")
 		historicalParam = strings.ToLower(strings.TrimSpace(historicalParam))
 
-		funcMap := mapRegistryFuncs(ctx, svr, historicalParam == "true")
-
 		curUser := middleware.PersonID(req)
 		household := middleware.HouseholdID(req)
 
@@ -378,12 +370,11 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 				500,
 				"registry-page",
 				[]string{
-					"templates/new_item_form.html",
-					"templates/registry_page.html",
-					"templates/registry_table.html",
+					"new_item_form.html",
+					"registry_page.html",
+					"registry_table.html",
 				},
 				registries,
-				funcMap,
 			)
 			if tmplErr != nil {
 				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
@@ -398,12 +389,11 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 			200,
 			"registry-page",
 			[]string{
-				"templates/new_item_form.html",
-				"templates/registry_page.html",
-				"templates/registry_table.html",
+				"new_item_form.html",
+				"registry_page.html",
+				"registry_table.html",
 			},
 			registries,
-			funcMap,
 		)
 
 		if err != nil {
@@ -412,11 +402,12 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 	})
 }
 
-func createPerson(rowData itemRow) registryPerson {
+func createPerson(rowData itemRow, historical bool) registryPerson {
 	return registryPerson{
 		dbID:        rowData.personID,
 		PersonID:    rowData.personExtID,
 		DisplayName: rowData.personDispName,
+		Historical:  historical,
 		LastName:    rowData.personLastName,
 
 		Items: map[string]registryItem{},
@@ -626,7 +617,7 @@ func buildRegistries(
 		*/
 		if !ok {
 
-			person = createPerson(rawRowData)
+			person = createPerson(rawRowData, historical)
 			person.Editable = slices.Contains(selfAndMangedPeople, person.dbID)
 			people[person.PersonID] = person
 			registries.Wishlists = append(registries.Wishlists, person)
@@ -749,41 +740,5 @@ func findEditablePeople(
 	}
 
 	return editableLists
-
-}
-
-func mapRegistryFuncs(
-	ctx context.Context,
-	svr *util.ServerUtils,
-	historicalParam bool,
-) template.FuncMap {
-
-	return template.FuncMap{
-		"editable": func(editableLists []string, id string) bool {
-			return slices.Contains(editableLists, id)
-		},
-		"isHistorical": func() bool {
-			return historicalParam
-		},
-		"formatDate": func(datetime string) string {
-			if parsed, err := time.Parse("2006-01-02", datetime); err != nil {
-				svr.Logger.ErrorContext(
-					ctx,
-					"Error converting date to locale string",
-					slog.String("givenDatetime", datetime),
-					slog.String("errorMessage", err.Error()),
-				)
-				return datetime
-			} else {
-				return parsed.Format("01/02/06")
-			}
-		},
-		"max": func(leftNum int, rightNum int) int {
-			return max(leftNum, rightNum)
-		},
-		"subtract": func(requested int8, claimed int8) int8 {
-			return requested - claimed
-		},
-	}
 
 }

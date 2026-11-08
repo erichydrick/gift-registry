@@ -13,6 +13,7 @@
         </div>
         {{if .Items}}
         <div id="list-table-{{.PersonID}}"> 
+            {{$historical := .Historical}}
             {{ range $key, $value := .Items}}
             <div id="item-{{$key}}" class="registry-items">
                     <div id="item-{{$key}}-name" class="item-name-col">{{$value.Name}}</div>
@@ -45,7 +46,7 @@
                     -->
                     
                     <div id="item-{{$key}}-claim-button" class="item-claim-btns-col">
-                        {{if ne true isHistorical}} 
+                        {{if ne true $historical}} 
                         <button class="btn primary">We'll get this</button>
                         {{end}}
                     </div>
@@ -55,7 +56,7 @@
         {{else}}
         <div id="registry-{{.PersonID}}-nothing-wanted-msg" class="centered center-text"><em>{{.DisplayName}} is happy and content and wants for nothing.</em></div>
         {{end}} 
-        {{if and .Editable (ne true isHistorical)}} 
+        {{if and .Editable (ne true .Historical)}} 
         {{template "new-item-form" .}}
         <!-- TODO: THIS NEEDS TO HAVE DIFFERENT TEXT ON DIFFERENT REGISTRIES -->
         <button id="register-gift-btn-{{.PersonID}}" class="btn create-new-btn shadowed" onclick="showForm({{.PersonID}})">Ask for something</button>

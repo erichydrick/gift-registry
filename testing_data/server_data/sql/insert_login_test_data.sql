@@ -1,6 +1,6 @@
 INSERT INTO people (person_id, external_id, email, display_name, first_name, last_name, `type`) 
     VALUES (1, 'registered-user', 'registeredUser@localhost.com', 'Allgood', 'Valid', 'Email', 'NORMAL'),
-        (2, 'unregistered-user', 'unregisteredUser@localhost.com', 'Whoami', 'Unregistered', 'User', 'NORMAL'),
+        (2, 'valid-user', 'validemailtest@localhost.com', 'Valid', 'Valid', 'Email', 'NORMAL'),
         (3, 'expired-token-user', 'expiredTokenTest@localhost.com', 'Expired', 'Expired', 'Token', 'NORMAL'),
         (4, 'attempts-exceeeded-user', 'exceededAttemptsTokenTest@localhost.com', 'Exceeded', 'Exceeded', 'Attempts', 'NORMAL'),
         (5, 'attempts-limit-user', 'maxedFailuresTokenTest@localhost.com', 'Maxed', 'Maxed', 'Failures', 'NORMAL'),
