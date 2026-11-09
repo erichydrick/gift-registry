@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"html/template"
+	"io"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -63,9 +64,18 @@ func init() {
 
 }
 
+// Initialize populates package fields.
 func Initialize(appLogger *slog.Logger) {
 
 	logger = appLogger
+
+}
+
+// WriteBytes populates the given template files with the given data, then
+// writes the resulting bytes into the given Writer object.
+func WriteBytes(writer io.Writer, name string, files []string, data any) error {
+
+	return htmlTemplates.ExecuteTemplate(writer, name, data)
 
 }
 

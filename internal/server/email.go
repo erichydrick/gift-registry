@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"gift-registry/internal/templates"
 	"net/smtp"
-	"text/template"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -79,25 +79,18 @@ func (es *emailSender) SendVerificationEmail(
 		Code: code,
 	}
 
-	/* TODO: SUPPORT THIS IN TEMPLATES */
-	templates := getenv("TEMPLATES_DIR")
-	tmpl, err := template.ParseFiles(templates + "/login_email.html")
-	if err != nil {
-		return fmt.Errorf("could not load email template: %v", err)
-	}
-
 	msg := new(bytes.Buffer)
-	if _, err = fmt.Fprintf(msg, "%s\n%s\n\n", subject, mime); err != nil {
+	if _, err := fmt.Fprintf(msg, "%s\n%s\n\n", subject, mime); err != nil {
 		return fmt.Errorf("error writing the message subject and mime type to buffer: %v", err)
 	}
 
-	if err = tmpl.ExecuteTemplate(msg, "login-email", fields); err != nil {
+	if err := templates.WriteBytes(msg, "login-email", []string{"login_email.html"}, fields); err != nil {
 		return fmt.Errorf("error loading email template: %v", err)
 	}
 
 	auth := smtp.PlainAuth("", es.fromAddress, es.passwd, es.hostname)
 
-	err = smtp.SendMail(es.hostname+":"+es.port, auth, es.fromAddress, to, msg.Bytes())
+	err := smtp.SendMail(es.hostname+":"+es.port, auth, es.fromAddress, to, msg.Bytes())
 	if err != nil {
 		span.SetAttributes(attribute.String("emailError", err.Error()))
 	}
