@@ -1,0 +1,47 @@
+{
+    "application-header": {
+        "visible": true
+    },
+    "display-name-person-1": {
+        "value": "Demo",
+        "visible": true
+    },
+    "email-group-person-1": {
+        "visible": true
+    },
+    "email-person-1": {
+        "value": "testuser@localhost.com",
+        "visible": true
+    },
+    "first-name-person-1": {
+        "value": "Test",
+        "visible": true
+    },
+    "household-name-person-1": {
+        "value": "Test Household",
+        "visible": true
+    },
+    "last-name-person-1": {
+        "value": "User",
+        "visible": true
+    },
+    "nav-links": {
+        "visible": true
+    },
+    "profile-error-person-1": {
+        "visible": false
+    },
+    "profile-form-person-1": {
+        "visible": true
+    },
+    "profile-header-person-1": {
+        "value": "Demo User Profile",
+        "visible": true
+    },
+    "profile-person-1": {
+        "visible": true
+    },
+    "profile-submit-person-1": {
+        "visible": true
+    }
+}

@@ -119,7 +119,7 @@ func WriteResponseTemplate(
 			slog.String("errorMessage", err.Error()),
 		)
 		res.WriteHeader(500)
-		res.Write([]byte("Error populating page data"))
+		res.Write([]byte("<p id=\"page-error\">Error populating page data</p>"))
 	}
 	return err
 
