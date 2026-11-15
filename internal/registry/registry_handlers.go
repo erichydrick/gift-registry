@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -15,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"gift-registry/internal/middleware"
+	"gift-registry/internal/templates"
 	"gift-registry/internal/util"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -62,6 +62,7 @@ type registryPerson struct {
 	DisplayName     string
 	Editable        bool
 	ErrorMsg        string
+	Historical      bool
 	LastName        string
 	NewItemName     string
 	NewItemQuantity int
@@ -184,30 +185,13 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 		span := trace.SpanFromContext(ctx)
 		span.SetName("add_item")
 
-		funcMap := mapRegistryFuncs(ctx, svr, false)
-
-		templatesDir := svr.Getenv("TEMPLATES_DIR")
-		tmpl, err := template.New("registry_template").
-			Funcs(funcMap).
-			ParseFiles(templatesDir+"/registry_table.html", templatesDir+"/new_item_form.html")
-		if err != nil {
-			svr.Logger.ErrorContext(
-				ctx,
-				"Error loading registry template",
-				slog.String("errorMessage", err.Error()),
-			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error loading the registry"))
-			span.SetAttributes(attribute.String("error_message", err.Error()))
-			return
-		}
-
 		personID := middleware.PersonID(req)
 		household := middleware.HouseholdID(req)
 		giftFor := req.PathValue("externalID")
 
 		requested, err := buildRequestedItem(req, giftFor)
 		if err != nil {
+			errorMessage := err.Error()
 			svr.Logger.ErrorContext(
 				ctx,
 				"Error building item request",
@@ -216,19 +200,18 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				slog.String("errorMessage", err.Error()),
 				slog.Any("requested", requested),
 			)
-			res.WriteHeader(400)
-			err = tmpl.ExecuteTemplate(res, "new-item-form", requested)
-			if err != nil {
-				errorMessage := err.Error()
-				svr.Logger.ErrorContext(
-					ctx,
-					"Error writing item back for editing!",
-					slog.String("errorMessage", errorMessage),
-				)
-				res.WriteHeader(500)
-				res.Write([]byte("Error rendering new item form"))
-				span.SetAttributes(attribute.String("error_message", errorMessage))
+			tmplErr := templates.WriteResponseTemplate(
+				ctx,
+				res,
+				400,
+				"new-item-form",
+				[]string{"new_item_form.html"},
+				requested,
+			)
+			if tmplErr != nil {
+				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
 			}
+			span.SetAttributes(attribute.String("error_message", errorMessage))
 			return
 		}
 
@@ -240,30 +223,29 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 			giftFor,
 		).Scan(&recipientID)
 		if err != nil {
+			errorMessage := err.Error()
 			svr.Logger.ErrorContext(
 				ctx,
 				"Error looking up the recipient for the requested item",
 				slog.String("giftFor", giftFor),
 				slog.String("errorMessage", err.Error()),
 			)
-			res.WriteHeader(500)
 			requested.ErrorMsg = "Sorry, we had some technical difficulties. Please reload the page and try again."
-			err = tmpl.ExecuteTemplate(res, "new-item-form", requested)
-			if err != nil {
-				errorMessage := err.Error()
-				svr.Logger.ErrorContext(
-					ctx,
-					"Error writing item back for editing!",
-					slog.String("errorMessage", errorMessage),
-				)
-				res.WriteHeader(500)
-				res.Write([]byte("Error rendering new item form"))
-				span.SetAttributes(attribute.String("error_message", errorMessage))
+			tmplErr := templates.WriteResponseTemplate(
+				ctx,
+				res,
+				500,
+				"new-item-form",
+				[]string{"new_item_form.html"},
+				requested,
+			)
+			if tmplErr != nil {
+				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
 			}
+			span.SetAttributes(attribute.String("error_message", errorMessage))
 			return
 		}
 
-		svr.Logger.DebugContext(ctx, "GOT THE RECIPIENT'S ID")
 		result, err := svr.DB.Execute(
 			ctx,
 			insertNewItemStatement,
@@ -277,6 +259,7 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 			requested.newItemSQLNotes,
 		)
 		if err != nil {
+			errorMessage := err.Error()
 			svr.Logger.ErrorContext(
 				ctx,
 				"Error saving the requested item to the database",
@@ -287,18 +270,18 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 				slog.String("itemNotes", requested.NewItemNotes),
 				slog.String("errorMessage", err.Error()),
 			)
-			res.WriteHeader(500)
-			err = tmpl.ExecuteTemplate(res, "new-item-form", requested)
-			if err != nil {
-				errorMessage := err.Error()
-				svr.Logger.ErrorContext(
-					ctx,
-					"Error writing item back for editing!",
-					slog.String("errorMessage", errorMessage),
-				)
-				res.Write([]byte("Error rendering new item form"))
-				span.SetAttributes(attribute.String("error_message", errorMessage))
+			tmplErr := templates.WriteResponseTemplate(
+				ctx,
+				res,
+				500,
+				"new-item-form",
+				[]string{"new_item_form.html"},
+				requested,
+			)
+			if tmplErr != nil {
+				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
 			}
+			span.SetAttributes(attribute.String("error_message", errorMessage))
 			return
 		} else if rowsAdded, err := result.RowsAffected(); err == nil {
 			span.SetAttributes(attribute.Int64("item_rows_added", rowsAdded))
@@ -330,24 +313,25 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 		}
 
 		res.WriteHeader(200)
-		svr.Logger.DebugContext(
+		err = templates.WriteResponseTemplate(
 			ctx,
-			"WRITING DATA BACK",
-			// slog.Any("wishlist", wishlist.Wishlists[0]),
-			slog.Any("items", wishlist.Wishlists[0].Items),
+			res,
+			200,
+			"registry-table",
+			[]string{
+				"registry_table.html",
+				"new_item_form.html",
+			},
+			wishlist.Wishlists[0],
 		)
-		err = tmpl.ExecuteTemplate(res, "registry-table", wishlist.Wishlists[0])
 		if err != nil {
-			res.WriteHeader(500)
 			errorMessage := err.Error()
 			svr.Logger.ErrorContext(
 				ctx,
 				"Error writing item back for editing!",
 				slog.String("errorMessage", errorMessage),
 			)
-			res.Write([]byte("Error rendering new item form"))
 			span.SetAttributes(attribute.String("error_message", errorMessage))
-			return
 		}
 
 	})
@@ -366,24 +350,6 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 		historicalParam := req.URL.Query().Get("historical")
 		historicalParam = strings.ToLower(strings.TrimSpace(historicalParam))
 
-		funcMap := mapRegistryFuncs(ctx, svr, historicalParam == "true")
-
-		templatesDir := svr.Getenv("TEMPLATES_DIR")
-		tmpl, err := template.New("registry_template").
-			Funcs(funcMap).
-			ParseFiles(templatesDir+"/registry_page.html", templatesDir+"/registry_table.html", templatesDir+"/new_item_form.html")
-		if err != nil {
-			svr.Logger.ErrorContext(
-				ctx,
-				"Error loading registry template",
-				slog.String("errorMessage", err.Error()),
-			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error loading the registry page"))
-			span.SetAttributes(attribute.String("error_message", err.Error()))
-			return
-		}
-
 		curUser := middleware.PersonID(req)
 		household := middleware.HouseholdID(req)
 
@@ -397,39 +363,51 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 		)
 		if err != nil {
 			errorMessage := err.Error()
-			svr.Logger.ErrorContext(
+			registries.ErrorMsg = "We had a problem building the wishlists. We're looking into this now."
+			tmplErr := templates.WriteResponsePage(
 				ctx,
-				"Error writing template!",
-				slog.String("errorMessage", errorMessage),
+				res,
+				500,
+				"registry-page",
+				[]string{
+					"new_item_form.html",
+					"registry_page.html",
+					"registry_table.html",
+				},
+				registries,
 			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error rendering registry page"))
+			if tmplErr != nil {
+				errorMessage = fmt.Sprintf("%v: %v", tmplErr, err)
+			}
 			span.SetAttributes(attribute.String("error_message", errorMessage))
 			return
 		}
 
-		res.WriteHeader(200)
-		err = tmpl.ExecuteTemplate(res, "registry-page", registries)
+		err = templates.WriteResponsePage(
+			ctx,
+			res,
+			200,
+			"registry-page",
+			[]string{
+				"new_item_form.html",
+				"registry_page.html",
+				"registry_table.html",
+			},
+			registries,
+		)
+
 		if err != nil {
-			errorMessage := err.Error()
-			svr.Logger.ErrorContext(
-				ctx,
-				"Error writing template!",
-				slog.String("errorMessage", errorMessage),
-			)
-			res.WriteHeader(500)
-			res.Write([]byte("Error rendering registry page"))
-			span.SetAttributes(attribute.String("error_message", errorMessage))
-			return
+			span.SetAttributes(attribute.String("error_message", err.Error()))
 		}
 	})
 }
 
-func createPerson(rowData itemRow) registryPerson {
+func createPerson(rowData itemRow, historical bool) registryPerson {
 	return registryPerson{
 		dbID:        rowData.personID,
 		PersonID:    rowData.personExtID,
 		DisplayName: rowData.personDispName,
+		Historical:  historical,
 		LastName:    rowData.personLastName,
 
 		Items: map[string]registryItem{},
@@ -639,7 +617,7 @@ func buildRegistries(
 		*/
 		if !ok {
 
-			person = createPerson(rawRowData)
+			person = createPerson(rawRowData, historical)
 			person.Editable = slices.Contains(selfAndMangedPeople, person.dbID)
 			people[person.PersonID] = person
 			registries.Wishlists = append(registries.Wishlists, person)
@@ -762,41 +740,5 @@ func findEditablePeople(
 	}
 
 	return editableLists
-
-}
-
-func mapRegistryFuncs(
-	ctx context.Context,
-	svr *util.ServerUtils,
-	historicalParam bool,
-) template.FuncMap {
-
-	return template.FuncMap{
-		"editable": func(editableLists []string, id string) bool {
-			return slices.Contains(editableLists, id)
-		},
-		"isHistorical": func() bool {
-			return historicalParam
-		},
-		"formatDate": func(datetime string) string {
-			if parsed, err := time.Parse("2006-01-02", datetime); err != nil {
-				svr.Logger.ErrorContext(
-					ctx,
-					"Error converting date to locale string",
-					slog.String("givenDatetime", datetime),
-					slog.String("errorMessage", err.Error()),
-				)
-				return datetime
-			} else {
-				return parsed.Format("01/02/06")
-			}
-		},
-		"max": func(leftNum int, rightNum int) int {
-			return max(leftNum, rightNum)
-		},
-		"subtract": func(requested int8, claimed int8) int8 {
-			return requested - claimed
-		},
-	}
 
 }

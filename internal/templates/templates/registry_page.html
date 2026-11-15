@@ -51,12 +51,7 @@
 
 <body>
 
-    <div id="application-header" class="center-text content shadowed" id="page-header">
-        <h1 class="centered">
-            Gift Registry
-        </h1>
-        <a href="/logout">Logout</a>
-    </div>
+    {{template "header" (dict "pageName" "registry" "loggedIn" true)}}
 
     <div id="registries">
         <div id="registry-error-message" class="centered content error overflow-y shadowed" {{if eq .ErrorMsg ""}}hidden{{end}}>{{.ErrorMsg}}</div>

@@ -1,0 +1,16 @@
+{
+    "header": {
+        "visible": true
+    },
+    "greeting": {
+        "value": "Hello, Tester.",
+        "visible": true
+    },
+    "test-content-div": {
+        "visible": true
+    },
+    "test-page-label": {
+        "value": "Test page content",
+        "visible": true
+    }
+}

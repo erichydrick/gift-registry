@@ -403,6 +403,10 @@ td {
     overflow-y: scroll
 }
 
+#nav-links {
+    display: inline;
+}
+
 #page-header {
     margin-bottom: 2rem;
 }

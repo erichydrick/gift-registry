@@ -11,6 +11,7 @@ services:
       - "8080:8080"
     volumes:
       - ${DB_PATH}:/app/database
+      - ${DATA_MIGRATIONS}:/app/database
     environment:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS}
       DB_NAME: ${DB_NAME}
@@ -18,16 +19,6 @@ services:
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_PASS: ${EMAIL_PASS}
       EMAIL_PORT: ${EMAIL_PORT}
-      MIGRATIONS_DIR: "migrations"
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTLP_EXPORTER_ENDPOINT}
       OTEL_METRIC_EXPORT_INTERVAL: "5000" # so we don't have to wait 60s for metrics
-      STATIC_FILES_DIR: "."
       PORT: ${GR_PORT}
-      TEMPLATES_DIR: "templates"
-    networks:
-      - telemetry
-
-networks:
-  telemetry:
-    name: local-bridge-network
-    external: true
