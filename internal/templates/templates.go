@@ -54,9 +54,6 @@ func init() {
 		"maxVal": func(leftNum int, rightNum int) int {
 			return max(leftNum, rightNum)
 		},
-		"subtract": func(requested int8, claimed int8) int8 {
-			return requested - claimed
-		},
 	}
 	htmlTemplates = template.Must(template.New("").
 		Funcs(commonFuncMaps).
