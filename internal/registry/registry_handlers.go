@@ -69,6 +69,7 @@ type registryPerson struct {
 	NewItemURL      string
 	NewItemNotes    string
 	PersonID        string
+	Self            bool
 
 	Items map[string]registryItem
 }
@@ -77,11 +78,12 @@ type registryItem struct {
 	ErrorMsg     string
 	ItemID       string
 	Name         string
-	Quantity     int8
-	URL          string
 	Notes        string
-	Claims       []registryItemClaim
+	Quantity     int8
+	Remaining    int8
+	URL          string
 	TotalClaimed int8
+	Claims       []registryItemClaim
 }
 
 type registryItemClaim struct {
@@ -402,13 +404,14 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 	})
 }
 
-func createPerson(rowData itemRow, historical bool) registryPerson {
+func createPerson(rowData itemRow, historical bool, personID int64) registryPerson {
 	return registryPerson{
 		dbID:        rowData.personID,
 		PersonID:    rowData.personExtID,
 		DisplayName: rowData.personDispName,
 		Historical:  historical,
 		LastName:    rowData.personLastName,
+		Self:        rowData.personID == personID,
 
 		Items: map[string]registryItem{},
 	}
@@ -445,7 +448,24 @@ func addClaim(
 		purchases (e.g. 2+ partial claims)
 	*/
 	if len(item.Claims) == 0 || (claim.Type != "" && claim.Type != "JOINT") {
+
 		item.TotalClaimed += claim.ClaimedCount
+
+		/*
+			*In theory*, we should never have a total amount of claims that exceeds the
+			number of an item requested. Just in case...cap the number remaining to a
+			minimum of 0, just so we never have a negative number in the UI.
+		*/
+		if remaining := item.Quantity - item.TotalClaimed; remaining > 0 {
+
+			item.Remaining = remaining
+
+		} else {
+
+			item.Remaining = 0
+
+		}
+
 	}
 
 	return claim, giftDate
@@ -471,12 +491,13 @@ func (person *registryPerson) addItem(
 	/* We haven't seen this item yet. */
 	if rowData.itemExtID.Valid && !ok {
 		item = registryItem{
-			ItemID:   rowData.itemExtID.String,
-			Name:     rowData.itemName.String,
-			Quantity: int8(rowData.itemQty.Int16),
-			URL:      rowData.itemURL.String,
-			Notes:    rowData.itemNotes.String,
-			Claims:   []registryItemClaim{},
+			ItemID:    rowData.itemExtID.String,
+			Name:      rowData.itemName.String,
+			Quantity:  int8(rowData.itemQty.Int16),
+			Remaining: int8(rowData.itemQty.Int16),
+			URL:       rowData.itemURL.String,
+			Notes:     rowData.itemNotes.String,
+			Claims:    []registryItemClaim{},
 		}
 	}
 
@@ -617,7 +638,7 @@ func buildRegistries(
 		*/
 		if !ok {
 
-			person = createPerson(rawRowData, historical)
+			person = createPerson(rawRowData, historical, curUser)
 			person.Editable = slices.Contains(selfAndMangedPeople, person.dbID)
 			people[person.PersonID] = person
 			registries.Wishlists = append(registries.Wishlists, person)
