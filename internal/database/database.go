@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,7 +15,16 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	_ "turso.tech/database/tursogo"
+	turso "turso.tech/database/tursogo"
 )
+
+/*
+Overrides the TursoDB connection logic so we can enforce foreign keys.
+TursodDB doesn't seem to support doing this as part of the connection URL.
+*/
+type foreignKeyConnector struct {
+	driver.Connector
+}
 
 type Database interface {
 	Close() error
@@ -380,35 +390,6 @@ func cleanup(
 }
 
 /*
-Opens a connection to the Postgres database and returns it.
-*/
-func (dbConn DBConn) open(
-	ctx context.Context,
-	url string,
-) (*sql.DB, error) {
-
-	db, err := sql.Open("turso", url)
-	if err != nil {
-		dbConn.logger.ErrorContext(ctx, "Error connecting to the database", slog.String("errorMessage", err.Error()))
-		return nil, fmt.Errorf("could not connect to database: %v", err)
-	}
-
-	/*
-		Connecting __looks__ successful even if the configs are bad. Confirm it
-		worked by pinging the DB
-	*/
-	if err = db.Ping(); err != nil {
-		return nil, fmt.Errorf("could not successfully ping database connection %s: %v", url, err)
-	}
-
-	/* Set up PRAGMAs */
-	db.Exec("PRAGMA busy_timeout=3000")
-	db.Exec("PRAGMA foreign_keys=ON")
-
-	return db, nil
-}
-
-/*
 Rolls back the given transaction if there's an error with a database
 operation. Include the original error so it's not lost if the rollback
 fails.
@@ -425,4 +406,64 @@ func txFailure(
 		histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
 		panic(fmt.Sprintf("error roll back a transaction: %v (original error: %v)", rbErr, err))
 	}
+}
+
+/*
+Opens a connection to the Postgres database and returns it.
+*/
+func (dbConn DBConn) open(
+	ctx context.Context,
+	url string,
+) (*sql.DB, error) {
+
+	connector, err := turso.NewConnector(url)
+	if err != nil {
+		dbConn.logger.ErrorContext(
+			ctx,
+			"Error creating database connector",
+			slog.String("errorMessage", err.Error()),
+		)
+		return nil, fmt.Errorf("could not connect to database: %v", err)
+	}
+	db := sql.OpenDB(foreignKeyConnector{Connector: connector})
+
+	/*
+		Connecting __looks__ successful even if the configs are bad. Confirm it
+		worked by pinging the DB
+	*/
+	if err = db.Ping(); err != nil {
+		return nil, fmt.Errorf("could not successfully ping database connection %s: %v", url, err)
+	}
+
+	return db, nil
+}
+
+// Connect executes PRAGMAS against the database connection
+func (connector foreignKeyConnector) Connect(ctx context.Context) (driver.Conn, error) {
+
+	connection, err := connector.Connector.Connect(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not open a database connection: %v", err)
+	}
+
+	execer, ok := connection.(driver.ExecerContext)
+	if !ok {
+		connection.Close()
+		return nil, fmt.Errorf("database driver connection cannot execute the needed pragmas")
+	}
+
+	_, err = execer.ExecContext(ctx, "PRAGMA foreign_keys=ON", nil)
+	if err != nil {
+		connection.Close()
+		return nil, fmt.Errorf("could not enable the foreign keys: %v", err)
+	}
+
+	_, err = execer.ExecContext(ctx, "PRAGMA busy_timeout=3000", nil)
+	if err != nil {
+		connection.Close()
+		return nil, fmt.Errorf("could not set the busy timeout: %v", err)
+	}
+
+	return connection, nil
+
 }

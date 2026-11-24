@@ -1,6 +1,7 @@
 INSERT INTO people (person_id, external_id, email, display_name, first_name, last_name, `type`) 
     VALUES (1, 'not-expired-tokens', 'notexpiredtokens@localhost.com', 'Not', 'Not', 'Expired', 'NORMAL'),
-        (2, 'expired-tokens', 'expiredtokens@localhost.com', 'Yes', 'Yes', 'Expired', 'NORMAL');
+        (2, 'expired-tokens', 'expiredtokens@localhost.com', 'Yes', 'Yes', 'Expired', 'NORMAL') , 
+        (3, 'no-initial-token', 'noinitialtoken@localhost.com', 'No', 'Initialless', 'Token', 'NORMAL');
 
 INSERT INTO sessions (session_id, person_id, expiration, user_agent) 
     VALUES ('not-expired-tokens', 1, Datetime('now', '+5 minutes'), 'test-user-agent'),
