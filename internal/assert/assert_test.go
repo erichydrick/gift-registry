@@ -39,6 +39,8 @@ func TestAssert(t *testing.T) {
 
 		t.Run(data.testName, func(t *testing.T) {
 
+			t.Parallel()
+
 			defer func() {
 				if rec := recover(); rec != nil {
 

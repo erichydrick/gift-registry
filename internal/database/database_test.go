@@ -20,9 +20,10 @@ const (
 )
 
 var (
-	ctx    context.Context
-	env    map[string]string
-	logger *slog.Logger
+	ctx        context.Context
+	env        map[string]string
+	reusableDB database.Database
+	logger     *slog.Logger
 )
 
 // TestMain sets up the database package tests initializing the logger used
@@ -44,6 +45,14 @@ func TestMain(m *testing.M) {
 	env = map[string]string{
 		"DATA_MIGRATIONS": filepath.Join("..", "..", "testing_data", "database_data", "sql"),
 		"DB_NAME":         dbPath,
+	}
+	getenv := func(name string) string {
+		return env[name]
+	}
+
+	reusableDB, err = database.Connect(ctx, logger, getenv)
+	if err != nil {
+		log.Fatal("Could not set up the reusable database connection")
 	}
 
 	exitCode := m.Run()
@@ -156,5 +165,68 @@ func TestConnect(t *testing.T) {
 
 			_ = db.Close()
 		})
+	}
+}
+
+// TestForeignKeyEnforcement tests that the database connection has pragmas that
+// correctly ensure every connection enforces foreign key relationships
+func TestForeignKeyEnforcement(t *testing.T) {
+
+	testData := []struct {
+		code     string
+		personID int64
+		testName string
+		valid    bool
+	}{
+		{
+			code:     "valid-person-id",
+			personID: 3,
+			testName: "Valid person ID",
+			valid:    true,
+		},
+		{
+			code:     "invalid-person-id",
+			personID: 0,
+			testName: "Invalid person ID",
+			valid:    false,
+		},
+	}
+
+	for _, data := range testData {
+
+		t.Run(data.testName, func(t *testing.T) {
+
+			t.Parallel()
+
+			_, err := reusableDB.Execute(
+				ctx,
+				"INSERT INTO verifications (token, person_id, token_expiration, attempts) VALUES (?, ?, Datetime('now', '+5 minutes'), 0)",
+				[]any{data.code, data.personID}...,
+			)
+			if err != nil && data.valid {
+				t.Fatal("Valid foreign key reference failed!", err)
+			} else if err == nil && !data.valid {
+				t.Fatal("Invalid foreign key reference succeeded!")
+			}
+
+			/*
+				Don't try to confirm a token got written with an invalid foreign key
+			*/
+			if data.valid {
+
+				var token string
+				err = reusableDB.QueryRow(
+					ctx,
+					"SELECT token FROM verifications WHERE person_id = ?",
+					[]any{data.personID}...,
+				).Scan(&token)
+				if err != nil {
+					t.Fatal("Could not look up the token with valid foreign key.")
+				}
+
+			}
+
+		})
+
 	}
 }
