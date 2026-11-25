@@ -110,15 +110,22 @@ func TestCleanup(t *testing.T) {
 
 			time.Sleep(1 * time.Second)
 
-			if _, err := db.Query(ctx, "SELECT expiration FROM sessions WHERE session_id = $1", data.token); err != nil {
+			rows, err := db.Query(ctx, "SELECT expiration FROM sessions WHERE session_id = $1", data.token)
+			if err != nil {
 
 				t.Fatal("Error checking session cleanup", err)
 
-			} else if _, err := db.Query(ctx, "SELECT * FROM verifications WHERE token = $1", data.token); err != nil {
+			} else {
 
-				t.Fatal("Verification token did not clean up!", err)
+				rows, err := db.Query(ctx, "SELECT * FROM verifications WHERE token = $1", data.token)
+				if err != nil {
 
+					t.Fatal("Verification token did not clean up!", err)
+
+				}
+				defer rows.Close()
 			}
+			defer rows.Close()
 
 		})
 

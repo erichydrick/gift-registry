@@ -68,7 +68,7 @@ func TestRunMigrations(t *testing.T) {
 			if err != nil {
 				t.Fatal("Error getting the updated list of migrations run", err)
 			}
-			defer func() { _ = rows.Close() }()
+			defer rows.Close()
 
 			for rows.Next() {
 

@@ -590,6 +590,7 @@ func buildRegistries(
 		)
 		return registries{}, fmt.Errorf("error building wishlist: %v", err)
 	}
+	defer results.Close()
 
 	registries := registries{}
 	people := map[string]registryPerson{}
@@ -742,6 +743,7 @@ func findEditablePeople(
 			slog.Int64("personID", curUser),
 		)
 	}
+	defer editableIDs.Close()
 
 	for editableIDs.Next() {
 

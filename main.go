@@ -44,6 +44,7 @@ func Run(
 	logger *slog.Logger,
 	getenv func(string) string,
 ) error {
+
 	/* Create context that listens for the interrupt signal from the OS. */
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
 	defer cancel()
@@ -57,12 +58,6 @@ func Run(
 		/* I don't have a logger to output this failure, panic for now*/
 		panic(err)
 	}
-	defer func() {
-		err = errors.Join(err, otelShutdown(ctx))
-		if err != nil {
-			panic(err)
-		}
-	}()
 
 	/* Get a database connection to pass to our handlers */
 	var db database.Database
@@ -94,7 +89,7 @@ func Run(
 	   Run the graceful shutdown in a separate goroutine so it listens for
 	   the shutdown signal in the background
 	*/
-	go gracefulShutdown(ctx, appServer, done, otelShutdown, logger)
+	go gracefulShutdown(ctx, appServer, done, otelShutdown, logger, db)
 
 	/* Now we actually start and run the server */
 	err = appServer.ListenAndServe()
@@ -106,13 +101,13 @@ func Run(
 	/* Wait for the graceful shutdown to complete */
 	<-done
 	logger.Info("Graceful shutdown complete.")
-	<-ctx.Done()
 
 	return nil
 }
 
 // Application entrypoint. Configures the logger, then runs, exiting with a non-0 status if startup fails.
 func main() {
+
 	ctx := context.Background()
 
 	/*
@@ -128,7 +123,15 @@ func main() {
 }
 
 /* Copied from the go-blueprint by Melkey for shutting down the server cleanly. */
-func gracefulShutdown(ctx context.Context, apiServer *http.Server, done chan bool, otelShutdown func(context.Context) error, logger *slog.Logger) {
+func gracefulShutdown(
+	ctx context.Context,
+	apiServer *http.Server,
+	done chan bool,
+	otelShutdown func(context.Context) error,
+	logger *slog.Logger,
+	db database.Database,
+) {
+
 	/* Create context that listens for the interrupt signal from the OS. */
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -149,6 +152,7 @@ func gracefulShutdown(ctx context.Context, apiServer *http.Server, done chan boo
 	}
 
 	otelShutdown(ctx)
+	db.Close()
 	logger.Info("Server exiting")
 
 	/* Notify the main goroutine that the shutdown is complete */

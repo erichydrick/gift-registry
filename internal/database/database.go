@@ -14,7 +14,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	_ "turso.tech/database/tursogo"
 	turso "turso.tech/database/tursogo"
 )
 
@@ -83,6 +82,7 @@ func (dbConn DBConn) Close() (err error) {
 
 	if dbConn.db != nil {
 
+		dbConn.db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 		err = dbConn.db.Close()
 		if err == nil {
 			dbConn = DBConn{}
@@ -129,6 +129,9 @@ func (dbConn DBConn) Execute(
 	}
 
 	histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
+
+	/* Write the update to the DB file */
+	dbConn.db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
 	return res, nil
 }
 
@@ -199,6 +202,9 @@ func (dbConn DBConn) ExecuteBatch(
 	}
 
 	histogram.Record(ctx, float64(time.Since(start).Milliseconds()))
+
+	/* Write the update to the DB file */
+	dbConn.db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
 	return
 }
 
