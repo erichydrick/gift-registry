@@ -188,6 +188,7 @@ func ProfileHandler(svr *util.ServerUtils) http.HandlerFunc {
 			*/
 			profile.Profiles[0].Errors.ErrorMessage = "Could not look up associated managed profiles."
 		}
+		defer rows.Close()
 
 		for rows.Next() {
 

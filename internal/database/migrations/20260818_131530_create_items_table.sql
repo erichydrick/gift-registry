@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS items (
     item_id INTEGER PRIMARY KEY AUTOINCREMENT CHECK (item_id > 0),
-    gift_for INTEGER REFERENCES people (person_id),
+    gift_for INTEGER REFERENCES people (person_id) ON DELETE CASCADE,
     added_by INTEGER REFERENCES people (person_id),
     last_updated_by INTEGER REFERENCES people (person_id),
     external_id VARCHAR(40) UNIQUE NOT NULL CHECK (TRIM(external_id) <> ''),
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS items (
 );
 
 CREATE TABLE IF NOT EXISTS item_claims (
-    item_id INTEGER REFERENCES items (item_id),
+    item_id INTEGER REFERENCES items (item_id) ON DELETE CASCADE,
     household_id INTEGER REFERENCES households (household_id),
     claimed_by INTEGER REFERENCES people (person_id),
     claimed_on DATE NOT NULL DEFAULT CURRENT_DATE,
