@@ -17,8 +17,16 @@ import (
 	"gift-registry/internal/templates"
 	"gift-registry/internal/util"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
+)
+
+const (
+	name = "net.hydrick.gift-registry/registry"
+)
+
+var (
+	tracer = otel.Tracer(name)
 )
 
 type itemRequest struct {
@@ -53,12 +61,16 @@ type itemRow struct {
 }
 
 type registries struct {
+	claimsAdded int
+	itemsAdded  int
+
 	ErrorMsg  string
 	Wishlists []registryPerson
 }
 
 type registryPerson struct {
-	dbID            int64
+	dbID int64
+
 	DisplayName     string
 	Editable        bool
 	ErrorMsg        string
@@ -184,8 +196,8 @@ func AddItemHandler(svr *util.ServerUtils) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx := req.Context()
-		span := trace.SpanFromContext(ctx)
-		span.SetName("add_item")
+		ctx, span := tracer.Start(ctx, "add_item_handler")
+		defer span.End()
 
 		personID := middleware.PersonID(req)
 		household := middleware.HouseholdID(req)
@@ -346,8 +358,8 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx := req.Context()
-		span := trace.SpanFromContext(ctx)
-		span.SetName("registry_handler")
+		ctx, span := tracer.Start(ctx, "registry_handler")
+		defer span.End()
 
 		historicalParam := req.URL.Query().Get("historical")
 		historicalParam = strings.ToLower(strings.TrimSpace(historicalParam))
@@ -385,6 +397,9 @@ func RegistryHandler(svr *util.ServerUtils) http.Handler {
 			return
 		}
 
+		span.SetAttributes(attribute.Int("registry_count", len(registries.Wishlists)))
+		span.SetAttributes(attribute.Int("item_count", registries.itemsAdded))
+		span.SetAttributes(attribute.Int("claim_count", registries.claimsAdded))
 		err = templates.WriteResponsePage(
 			ctx,
 			res,
@@ -477,13 +492,13 @@ func (person *registryPerson) addItem(
 	svr *util.ServerUtils,
 	rowData itemRow,
 	currentUser int64,
-	now time.Time) {
+	now time.Time) int {
 
 	/*
 		This person hasn't requested anything yet, move on.
 	*/
 	if !rowData.itemExtID.Valid || rowData.itemExtID.String == "" {
-		return
+		return 0
 	}
 
 	item, ok := person.Items[rowData.itemExtID.String]
@@ -505,7 +520,7 @@ func (person *registryPerson) addItem(
 	if !rowData.claimedHousehold.Valid || !rowData.giftDate.Valid {
 
 		person.Items[item.ItemID] = item
-		return
+		return 0
 
 	}
 
@@ -520,6 +535,8 @@ func (person *registryPerson) addItem(
 
 	item.Claims = append(item.Claims, claim)
 	person.Items[item.ItemID] = item
+
+	return 1
 
 }
 
@@ -646,7 +663,10 @@ func buildRegistries(
 
 		}
 
-		person.addItem(ctx, svr, rawRowData, curUser, now)
+		claimCount := person.addItem(ctx, svr, rawRowData, curUser, now)
+		registries.itemsAdded++
+		registries.claimsAdded += claimCount
+
 		cnt++
 
 	}

@@ -13,6 +13,9 @@ import (
 	"time"
 
 	"gift-registry/internal/util"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -53,23 +56,55 @@ var (
 )
 
 func init() {
+
 	for _, pattern := range routePatterns {
+
 		r, err := regexp.Compile(pattern)
 		if err != nil {
 			log.Println("Error initializing pattern matcher for", pattern, ", skipping")
 			continue
 		}
 		publicRoutes = append(publicRoutes, r)
+
 	}
+
 }
 
 // Enforces valid login sessions for non-public endpoints
 func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
-		// TODO: DO I WANT TO START A SPAN HERE FOR ATTRIBUTES?
 		ctx := req.Context()
+		parentSpan := trace.SpanFromContext(ctx)
+		ctx, span := tracer.Start(ctx, "auth")
+		defer span.End()
+
+		/*
+			Right now the context includes the span for this auth check, causing the
+			span for the actual handler to be a child of the auth span. The auth and
+			actual logic should be "siblings," so send the request on with the parent
+			context as the request context. Handler spans then get created at the same
+			level as this one.
+		*/
+		callNext := func() {
+
+			parentSpanCtx := trace.ContextWithSpan(ctx, parentSpan)
+			next.ServeHTTP(res, req.WithContext(parentSpanCtx))
+
+		}
+
 		pass := false
+
+		if isPublic(ctx, svr, req) {
+
+			span.SetAttributes(attribute.Bool("public", true))
+			span.SetAttributes(attribute.Bool("pass", pass))
+			res.Header().Set("Cache-Control", "no-cache,no-store,max-age=0")
+			callNext()
+			return
+
+		}
+		span.SetAttributes(attribute.Bool("public", false))
 
 		/*
 			Validate the various Sec-Fetch-* headers before forwarding the request.
@@ -77,22 +112,39 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 		svr.Logger.DebugContext(ctx, "Validating Sec-Fetch* headers")
 		secFetchDest := strings.ToLower(req.Header.Get("Sec-Fetch-Dest"))
 		if !slices.Contains(allowedDests, secFetchDest) {
+
 			// Invalid fetch mode, redirect to login
-			authNext(ctx, svr, res, req, next, pass)
+			span.SetAttributes(attribute.Bool("auth_passed", pass))
+			span.SetAttributes(attribute.Bool("sec_fetch_dest", false))
+			http.Redirect(res, req, "login", http.StatusSeeOther)
 			return
+
 		}
+		span.SetAttributes(attribute.Bool("sec_fetch_dest", true))
+
 		secFetchMode := strings.ToLower(req.Header.Get("Sec-Fetch-Mode"))
 		if !slices.Contains(allowedModes, secFetchMode) {
+
 			// Invalid fetch mode, redirect to login
-			authNext(ctx, svr, res, req, next, pass)
+			span.SetAttributes(attribute.Bool("auth_passed", pass))
+			span.SetAttributes(attribute.Bool("sec_fetch_mode", false))
+			http.Redirect(res, req, "login", http.StatusSeeOther)
 			return
+
 		}
+		span.SetAttributes(attribute.Bool("sec_fetch_mode", true))
+
 		secFetchSite := strings.ToLower(req.Header.Get("Sec-Fetch-Site"))
 		if secFetchSite != "none" && secFetchSite != "same-origin" {
+
 			// Invalid header value, redirect to login
-			authNext(ctx, svr, res, req, next, pass)
+			span.SetAttributes(attribute.Bool("auth_passed", pass))
+			span.SetAttributes(attribute.Bool("sec_fetch_site", false))
+			http.Redirect(res, req, "login", http.StatusSeeOther)
 			return
+
 		}
+		span.SetAttributes(attribute.Bool("sec_fetch_site", true))
 
 		/*
 			The route is auth-protected, so query the DB to see if the session is
@@ -102,9 +154,12 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 		cookie, err := req.Cookie(SessionCookie)
 		if err != nil {
 			/* No session data found, send the user to the login page */
-			authNext(ctx, svr, res, req, next, pass)
+			span.SetAttributes(attribute.Bool("auth_passed", pass))
+			span.SetAttributes(attribute.Bool("cookie", false))
+			http.Redirect(res, req, "login", http.StatusSeeOther)
 			return
 		}
+		span.SetAttributes(attribute.Bool("cookie", true))
 
 		svr.Logger.DebugContext(ctx, "Validating session info")
 		now := time.Now().UTC()
@@ -115,17 +170,19 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 				slog.String("cookieValue", cookie.Value),
 				slog.String("errorMessage", err.Error()),
 			)
-			authNext(ctx, svr, res, req, next, pass)
+			span.SetAttributes(attribute.Bool("auth_passed", pass))
+			span.SetAttributes(attribute.Bool("valid_session", false))
+			http.Redirect(res, req, "login", http.StatusSeeOther)
 			return
 		} else if sessInfo.sessionID == "" {
-
 			svr.Logger.InfoContext(ctx,
 				"No session info found, logging out",
 				slog.String("cookieValue", cookie.Value),
 			)
-			authNext(ctx, svr, res, req, next, pass)
+			span.SetAttributes(attribute.Bool("auth_passed", pass))
+			span.SetAttributes(attribute.Bool("valid_session", false))
+			http.Redirect(res, req, "login", http.StatusSeeOther)
 			return
-
 		}
 
 		/* Verify the session hasn't expired */
@@ -146,7 +203,9 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 					slog.String("sessionID", sessInfo.sessionID),
 				)
 			}
-			authNext(ctx, svr, res, req, next, pass)
+			span.SetAttributes(attribute.Bool("auth_passed", pass))
+			span.SetAttributes(attribute.Bool("valid_session", false))
+			http.Redirect(res, req, "login", http.StatusSeeOther)
 			return
 
 		}
@@ -169,7 +228,9 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 					slog.String("sessionID", sessInfo.sessionID),
 				)
 			}
-			authNext(ctx, svr, res, req, next, pass)
+			span.SetAttributes(attribute.Bool("auth_passed", pass))
+			span.SetAttributes(attribute.Bool("valid_session", false))
+			http.Redirect(res, req, "login", http.StatusSeeOther)
 			return
 
 		}
@@ -187,8 +248,12 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 				slog.String("errorMessage", err.Error()),
 				slog.String("sessionID", sessInfo.sessionID),
 			)
+			newExp = sessInfo.expiration
 		}
 
+		span.SetAttributes(attribute.Bool("valid_session", true))
+		span.SetAttributes(attribute.String("expiration", newExp.String()))
+		span.SetAttributes(attribute.Int64("person_id", sessInfo.personID))
 		ctx = context.WithValue(ctx, loggedInUser, sessInfo.personID)
 
 		/*
@@ -205,14 +270,36 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 				slog.String("errorMessage", err.Error()),
 				slog.Int64("personID", sessInfo.personID),
 			)
-			authNext(ctx, svr, res, req, next, pass)
+			span.SetAttributes(attribute.Bool("auth_passed", pass))
+			/*
+				Redirecting to the login because we need the household ID for use in
+				authenticated endpoints. Not having that means the application can't
+				work correctly.
+			*/
+			http.Redirect(res, req, "login", http.StatusSeeOther)
 		}
 
+		span.SetAttributes(attribute.Int64("household_id", householdID))
 		ctx = context.WithValue(ctx, loggedInHousehold, householdID)
 
-		req = req.WithContext(ctx)
 		pass = true
-		authNext(ctx, svr, res, req, next, pass)
+		span.SetAttributes(attribute.Bool("auth_passed", pass))
+
+		res.Header().Set("Cache-Control", "no-cache,no-store,max-age=0")
+
+		/*
+			If trying to view /login while logged-in, go straight to the registry just
+			as if you just completed the login flow.
+		*/
+		if isLogin(req.URL.Path) {
+
+			http.Redirect(res, req, "registry", http.StatusSeeOther)
+			return
+
+		}
+
+		callNext()
+
 	})
 }
 
@@ -233,41 +320,6 @@ func HouseholdID(req *http.Request) int64 {
 	*/
 	return req.Context().Value(loggedInHousehold).(int64)
 
-}
-
-func authNext(
-	ctx context.Context,
-	svr *util.ServerUtils,
-	res http.ResponseWriter,
-	req *http.Request,
-	next http.Handler,
-	pass bool,
-) {
-
-	if pass || isPublic(ctx, svr, req) {
-
-		/*
-			Redirect straight to the registry if trying to load the login page with a
-			valid session
-		*/
-		if pass && isLogin(req.URL.Path) {
-
-			http.Redirect(res, req, "registry", http.StatusSeeOther)
-			return
-
-		} else {
-
-			res.Header().Set("Cache-Control", "no-cache,no-store,max-age=0")
-			next.ServeHTTP(res, req)
-			return
-
-		}
-	} else {
-
-		http.Redirect(res, req, "login", http.StatusSeeOther)
-		return
-
-	}
 }
 
 func deleteSession(ctx context.Context, svr *util.ServerUtils, sessionID string) error {
@@ -342,6 +394,7 @@ func extendSession(ctx context.Context, svr *util.ServerUtils, sessionID string,
 }
 
 func isLogin(path string) bool {
+
 	loginPath, err := regexp.Compile("/login")
 	if err != nil {
 		return false
@@ -353,6 +406,7 @@ func isLogin(path string) bool {
 	}
 
 	return loginPath.Match([]byte(path)) || verifyPath.Match([]byte(path))
+
 }
 
 func isPublic(ctx context.Context, svr *util.ServerUtils, req *http.Request) bool {

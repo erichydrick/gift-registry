@@ -101,9 +101,10 @@ func (dbConn DBConn) Execute(
 	statement string,
 	params ...any,
 ) (sql.Result, error) {
+
 	start := time.Now()
 
-	ctx, span := tracer.Start(ctx, "DatabaseExecute")
+	ctx, span := tracer.Start(ctx, "database_execute")
 	defer span.End()
 
 	span.SetAttributes(attribute.String("query", statement), attribute.String("parameters", fmt.Sprintf("%v", params)))
@@ -148,7 +149,7 @@ func (dbConn DBConn) ExecuteBatch(
 	results = make([]sql.Result, len(statements))
 	errors = []error{}
 
-	ctx, span := tracer.Start(ctx, "DatabaseExecute")
+	ctx, span := tracer.Start(ctx, "database_execute")
 	defer span.End()
 
 	tx, err := dbConn.db.BeginTx(ctx, nil)
@@ -167,7 +168,7 @@ func (dbConn DBConn) ExecuteBatch(
 			if needed. Using shadowing to (and try to) keep the code clean and easy to follow
 		*/
 		start := time.Now()
-		ctx, span := tracer.Start(ctx, "QueryExecute")
+		ctx, span := tracer.Start(ctx, "query_execute")
 		span.SetAttributes(attribute.String("query", statements[idx]), attribute.String("parameters", fmt.Sprintf("%v", params[idx]...)))
 
 		res, err := tx.ExecContext(ctx, statements[idx], params[idx]...)
@@ -228,7 +229,7 @@ func (dbConn DBConn) Query(
 
 	start := time.Now()
 
-	ctx, span := tracer.Start(ctx, "DatabaseQuery")
+	ctx, span := tracer.Start(ctx, "query_execute")
 	defer span.End()
 
 	span.SetAttributes(attribute.String("query", query), attribute.String("parameters", fmt.Sprintf("%v", params)))
@@ -253,7 +254,7 @@ func (dbConn DBConn) QueryRow(
 
 	start := time.Now()
 
-	ctx, span := tracer.Start(ctx, "DatabaseQueryRow")
+	ctx, span := tracer.Start(ctx, "query_execute")
 	defer span.End()
 
 	span.SetAttributes(attribute.String("query", query), attribute.String("parameters", fmt.Sprintf("%v", params)))
