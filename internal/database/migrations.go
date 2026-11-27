@@ -45,7 +45,7 @@ func (dbConn DBConn) runMigrations(
 	ctx context.Context,
 	getenv func(string) string,
 ) (errs []error) {
-	ctx, span := tracer.Start(ctx, "RunMigrations")
+	ctx, span := tracer.Start(ctx, "run_migrations")
 	defer span.End()
 
 	ctx, cancel := context.WithCancel(ctx)

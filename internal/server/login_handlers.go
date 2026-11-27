@@ -355,7 +355,7 @@ func VerificationHandler(svr *util.ServerUtils) http.Handler {
 				submission,
 			)
 			if err != nil {
-				span.SetAttributes(attribute.String("templateError", err.Error()))
+				span.SetAttributes(attribute.String("template_error", err.Error()))
 			}
 			return
 		}

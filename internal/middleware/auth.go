@@ -15,7 +15,6 @@ import (
 	"gift-registry/internal/util"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -56,14 +55,18 @@ var (
 )
 
 func init() {
+
 	for _, pattern := range routePatterns {
+
 		r, err := regexp.Compile(pattern)
 		if err != nil {
 			log.Println("Error initializing pattern matcher for", pattern, ", skipping")
 			continue
 		}
 		publicRoutes = append(publicRoutes, r)
+
 	}
+
 }
 
 // Enforces valid login sessions for non-public endpoints
@@ -71,8 +74,8 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx := req.Context()
-		span := trace.SpanFromContext(ctx)
-		span.SetName("auth_check")
+		ctx, span := tracer.Start(ctx, "auth")
+		defer span.End()
 
 		pass := false
 
