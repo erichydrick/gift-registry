@@ -15,6 +15,7 @@ import (
 	"gift-registry/internal/util"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -74,8 +75,23 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
 		ctx := req.Context()
+		parentSpan := trace.SpanFromContext(ctx)
 		ctx, span := tracer.Start(ctx, "auth")
 		defer span.End()
+
+		/*
+			Right now the context includes the span for this auth check, causing the
+			span for the actual handler to be a child of the auth span. The auth and
+			actual logic should be "siblings," so send the request on with the parent
+			context as the request context. Handler spans then get created at the same
+			level as this one.
+		*/
+		callNext := func() {
+
+			parentSpanCtx := trace.ContextWithSpan(ctx, parentSpan)
+			next.ServeHTTP(res, req.WithContext(parentSpanCtx))
+
+		}
 
 		pass := false
 
@@ -84,7 +100,7 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 			span.SetAttributes(attribute.Bool("public", true))
 			span.SetAttributes(attribute.Bool("pass", pass))
 			res.Header().Set("Cache-Control", "no-cache,no-store,max-age=0")
-			next.ServeHTTP(res, req)
+			callNext()
 			return
 
 		}
@@ -266,7 +282,6 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 		span.SetAttributes(attribute.Int64("household_id", householdID))
 		ctx = context.WithValue(ctx, loggedInHousehold, householdID)
 
-		req = req.WithContext(ctx)
 		pass = true
 		span.SetAttributes(attribute.Bool("auth_passed", pass))
 
@@ -283,7 +298,8 @@ func Auth(svr *util.ServerUtils, next http.Handler) http.Handler {
 
 		}
 
-		next.ServeHTTP(res, req)
+		callNext()
+
 	})
 }
 

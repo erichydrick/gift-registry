@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"fmt"
-	"log/slog"
 	"net/http"
 
 	"gift-registry/internal/util"
@@ -41,21 +40,13 @@ func Telemetry(svr *util.ServerUtils, next http.Handler) http.Handler {
 
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 
-		ctx, span := tracer.Start(req.Context(), req.URL.Path)
-		defer span.End()
-
-		svr.Logger.DebugContext(
-			ctx,
-			"STARTED A TRACE",
-			slog.String("traceName", req.URL.Path),
-		)
-		span.SetAttributes(attribute.String("path", req.URL.Path))
-		req = req.WithContext(ctx)
+		ctx := req.Context()
 
 		next.ServeHTTP(res, req)
-		counter.Add(ctx, 1)
+		counter.Add(ctx, 1, metric.WithAttributes(attribute.String("pattern", req.Pattern)))
 
-		svr.Logger.InfoContext(ctx,
+		svr.Logger.InfoContext(
+			ctx,
 			fmt.Sprintf("Finished the operation %s %s", req.Method, req.URL.Path),
 		)
 
